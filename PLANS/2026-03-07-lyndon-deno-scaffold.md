@@ -26,6 +26,7 @@ A working Deno single-package project with:
 - [x] Create `.vscode/settings.json` — enable Deno LSP, lint, formatter
 - [x] Create `.vscode/extensions.json` — recommend `denoland.vscode-deno`
 - [x] Create `.github/workflows/ci.yml` — fmt check, lint, test on push/PR
+- [x] Commit `.claude/commands/` (branch, commit skills); gitignore `settings.local.json`
 
 ## Open Questions
 
