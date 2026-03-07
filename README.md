@@ -39,14 +39,3 @@ The dev server starts an HTTP server on port 8000. Tests cover the base graph JS
 
 For editor support, install the [Deno VSCode extension](https://marketplace.visualstudio.com/items?itemName=denoland.vscode-deno) — the repository includes `.vscode/settings.json` to enable it automatically.
 
-## Notions not Yet Explored
-
-* A dedicated graph database / API
-* Applying overlays and modifications to referenced graphs
-* A 'class' system for templating new nodes
-* A 'workflow' notion - along wth the existing 'persona' notion, workflows could allow you to easily create projects of a certain type
-* Embeddable explorer UI - allow interactive examples in documentation, etc.
-* Examples - lots of examples of projects and graphs - the scheme like syntax could be used for documentation examples
-  * Solar calculator - input roof properties and proposed solar placement and geographic information for predicted yields
-  * J program editor
-  * Kubernetes services configuration developer - define your cluster and have inter-service communication formalised over typed APIs or queues

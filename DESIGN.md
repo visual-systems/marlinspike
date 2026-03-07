@@ -318,14 +318,22 @@ Example personas:
 
 Personas are stored in the graph (shared) or user preferences (personal) with different scopes. A URI can be shared with a persona: `spike://acme/backend/auth-service?persona=ops`.
 
-### 6.5 Subgraph Navigation
+### 6.5 Text View
+
+The canvas and tree view are complemented by a **text view** — a code editor pane showing the currently focused subgraph as Spike-Lisp (see §13.2). Edits in the text view write to the same CRDT graph store as canvas edits; both views update in real time.
+
+The text view is backed by the same constraint plugin host that drives canvas validation — there is no separate validation path. The LSP server *is* the constraint plugin host: completions, diagnostics, and hover information in the text editor come from the same plugin pipeline that annotates nodes and edges on the canvas. This ensures the two views are genuinely isomorphic: any graph state reachable by canvas editing is reachable by text editing, and vice versa.
+
+The lossless round-trip guarantee of Spike-Lisp (§13.2) is therefore a **first-class architectural requirement**, not an optimisation. Without it, the text and canvas views can diverge, and the isomorphism breaks.
+
+### 6.6 Subgraph Navigation
 
 - **Enter** — double-click a composite node to enter its subgraph; canvas transitions in, breadcrumbs update
 - **Exit** — breadcrumb or keyboard shortcut to go up one level
 - **Jump** — click any node in the tree view to jump directly to it
 - **Share** — copy the URI of the currently focused subgraph, optionally with active persona appended
 
-### 6.6 Collaboration
+### 6.7 Collaboration
 
 Collaboration is real-time, CRDT-backed, per-subgraph-URI. Multiple users edit simultaneously. Presence (who is in which subgraph) is shown in both the tree view and the canvas. Merge diagnostics from concurrent edits appear inline as constraint diagnostics — non-blocking.
 
@@ -450,6 +458,9 @@ View mode is a persona-level setting. A developer might view an actor subgraph i
 | `force` | Bottom-up d3-force (sibling-scoped) | Thin routed wires | Equal |
 | `call-graph` | Force or manual | Labelled port connectors | High — nodes prominent |
 | `pipeline` | Sugiyama / layered, left-to-right | Thick directional arrows; back-arrows for loops/cycles; dashed for dynamic dispatch | Low — flow prominent |
+| `text` | N/A — Spike-Lisp code editor | N/A | N/A — text representation |
+
+The `text` view mode renders the subgraph as editable Spike-Lisp rather than a canvas. It is a full peer of the visual modes: the same constraint plugin host provides LSP-style completions and diagnostics, and edits write directly to the CRDT store. See §6.5 and §13 for details.
 
 In pipeline view, edge types introduced by topology schemas are rendered distinctly:
 
@@ -652,6 +663,8 @@ The interface has two components: a **Spike-Lisp** text format for reading and w
 
 Spike-Lisp is a round-trippable text representation of the graph. It is not a programming language — it is a serialisation format optimised for readability and editability by both humans and AI. It compiles to and from the canonical JSON graph format without information loss.
 
+Spike-Lisp also serves as the backing format for the IDE's **text view** (§6.5) — a human-facing code editor pane that is a full peer of the canvas. The LSP server for Spike-Lisp is the constraint plugin host; there is no separate validation path for text edits vs. canvas edits.
+
 #### Basic Structure
 
 ```lisp
@@ -815,6 +828,8 @@ This is a useful design forcing function: if a constraint plugin cannot explain 
 
 ## 14. Open Questions
 
+### Architecture
+
 1. **Schema composition semantics** — when two property schemas are simultaneously active, how are their constraints composed? Are conflicts declared statically or detected at runtime?
 
 2. **Port interface versioning** — if a subgraph's port interface changes, how are existing edges to that subgraph's URI invalidated or migrated? Semver-style breaking change detection?
@@ -830,6 +845,18 @@ This is a useful design forcing function: if a constraint plugin cannot explain 
 7. **Force layout with fixed positions** — how does the bottom-up force layout interact with manually positioned nodes? Partial lock? Per-subtree layout mode?
 
 8. **Cross-URI constraint checking** — some constraints may need to span subgraph URIs (e.g. checking that two services use compatible port schemas). How does the constraint plugin host resolve external URIs for validation?
+
+### Notions Not Yet Explored
+
+- **Graph database / API** — a dedicated store and query API for graphs, beyond simple URI-addressed document retrieval.
+- **Overlay and modification of referenced graphs** — applying patches or extensions to a referenced subgraph URI without forking it; composing compatible graphs by overlay.
+- **Class / template system** — a mechanism for templating new nodes from a prototype, similar to class inheritance, enabling reuse patterns beyond URI reference.
+- **Workflow notion** — alongside the existing persona notion, workflows could allow easily bootstrapping projects of a certain type (e.g. "K8s service", "audio DSP graph", "ETL pipeline") with pre-configured schemas and constraint plugins.
+- **Embeddable explorer UI** — an iframe-embeddable, read-only (or limited-edit) canvas for use in documentation, demos, and interactive examples.
+- **Spike-Lisp as documentation syntax** — the Lisp-like notation is human-readable enough to use directly in documentation examples. Candidate examples:
+  - *Solar calculator* — input roof geometry, proposed panel placement, and geographic data; output predicted yield
+  - *J program editor* — array-language program as a typed dataflow graph
+  - *Kubernetes services configuration* — define a cluster with inter-service communication formalised over typed port APIs or message queues
 
 ---
 
