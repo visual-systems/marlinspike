@@ -19,6 +19,23 @@ in much greater detail in `DESIGN.md`, however here is a high-level overview:
 * Composable - Overlay compatible graphs or work to make them compatible - Reuse concepts directly via reference, or inheritence
 * Collaborative - Delegate implementation work, or even design work to others - Marlinspike will help you make it coherent
 
+## Development
+
+Marlinspike is implemented in [Deno](https://deno.com). Install Deno v2 before getting started.
+
+| Task | Command |
+|---|---|
+| Dev server (watch mode) | `deno task dev` |
+| Run tests | `deno task test` |
+| Format | `deno task fmt` |
+| Lint | `deno task lint` |
+| Type check | `deno task check` |
+| Smoke test (server starts and exits) | `deno task smoke` |
+
+The dev server starts an HTTP server on port 8000. Tests cover the base graph JSON Schema validation.
+
+For editor support, install the [Deno VSCode extension](https://marketplace.visualstudio.com/items?itemName=denoland.vscode-deno) — the repository includes `.vscode/settings.json` to enable it automatically.
+
 ## Notions not Yet Explored
 
 * A dedicated graph database / API
