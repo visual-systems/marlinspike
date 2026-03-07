@@ -1,11 +1,12 @@
+import { Hono } from "@hono/hono";
+
 const PORT = 8000;
 
-const server = Deno.serve({ port: PORT }, (_req) => {
-  return new Response(
-    JSON.stringify({ name: "marlinspike", status: "ok" }),
-    { headers: { "content-type": "application/json" } },
-  );
-});
+const app = new Hono();
+
+app.get("/", (c) => c.json({ name: "marlinspike", status: "ok" }));
+
+const server = Deno.serve({ port: PORT }, app.fetch);
 
 console.log(`Marlinspike listening on http://localhost:${PORT}`);
 
