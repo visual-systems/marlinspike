@@ -50,8 +50,9 @@ jobs:
           PR_NUMBER=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null)
 
           if [ -n "$PR_NUMBER" ]; then
-            gh pr edit "$PR_NUMBER" --body "$PLAN_BODY"
-            echo "Updated PR #$PR_NUMBER with contents of ${{ steps.plan.outputs.file }}"
+            PR_TITLE=$(grep -m1 '^# ' "${{ steps.plan.outputs.file }}" | sed 's/^# //')
+            gh pr edit "$PR_NUMBER" --title "$PR_TITLE" --body "$PLAN_BODY"
+            echo "Updated PR #$PR_NUMBER with title '$PR_TITLE' and contents of ${{ steps.plan.outputs.file }}"
           else
             echo "No open PR found for $BRANCH — description will be set when a PR is opened"
           fi
