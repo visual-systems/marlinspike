@@ -44,6 +44,7 @@ Create the file `PLANS/{date}-{user-slug}-{branch-slug}.md` with the following s
 <!-- The intended outcome of this work. -->
 
 ## Approach
+<!-- High level checklist for the steps in the implementation plan details below -->
 <!-- Step-by-step implementation plan. -->
 
 ## Open Questions
