@@ -1,0 +1,57 @@
+name: Update PR from Plan
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  update-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find matching plan file
+        id: plan
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+
+          # Branch format: {user}/{branch-slug} or just {branch-slug}
+          if [[ "$BRANCH" == */* ]]; then
+            USER_SLUG="${BRANCH%%/*}"
+            BRANCH_SLUG="${BRANCH#*/}"
+            # Match PLANS/*-{user-slug}-{branch-slug}.md
+            PLAN_FILE=$(ls PLANS/*-${USER_SLUG}-${BRANCH_SLUG}.md 2>/dev/null | sort | tail -1)
+          else
+            BRANCH_SLUG="$BRANCH"
+            # Match PLANS/*-{branch-slug}.md (no user prefix)
+            PLAN_FILE=$(ls PLANS/*-${BRANCH_SLUG}.md 2>/dev/null | sort | tail -1)
+          fi
+
+          if [ -n "$PLAN_FILE" ]; then
+            echo "found=true" >> $GITHUB_OUTPUT
+            echo "file=$PLAN_FILE" >> $GITHUB_OUTPUT
+            echo "Matched plan file: $PLAN_FILE"
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+            echo "No matching plan file for branch: $BRANCH"
+          fi
+
+      - name: Update PR description from plan
+        if: steps.plan.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          PLAN_BODY=$(cat "${{ steps.plan.outputs.file }}")
+
+          PR_NUMBER=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null)
+
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr edit "$PR_NUMBER" --body "$PLAN_BODY"
+            echo "Updated PR #$PR_NUMBER with contents of ${{ steps.plan.outputs.file }}"
+          else
+            echo "No open PR found for $BRANCH — description will be set when a PR is opened"
+          fi
