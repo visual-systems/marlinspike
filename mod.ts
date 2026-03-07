@@ -1,6 +1,8 @@
 import { Hono } from "@hono/hono";
+import { parseArgs } from "@std/cli/parse-args";
 
-const PORT = 8000;
+const args = parseArgs(Deno.args);
+const PORT = Number(args.port) || 8000;
 
 const app = new Hono();
 
@@ -10,9 +12,8 @@ const server = Deno.serve({ port: PORT }, app.fetch);
 
 console.log(`Marlinspike listening on http://localhost:${PORT}`);
 
-const timeoutFlag = Deno.args.indexOf("--timeout");
-if (timeoutFlag !== -1) {
-  const ms = Number(Deno.args[timeoutFlag + 1]);
+if (args.timeout != null) {
+  const ms = Number(args.timeout);
   if (!Number.isFinite(ms) || ms <= 0) {
     console.error("Usage: --timeout <milliseconds>");
     Deno.exit(1);
