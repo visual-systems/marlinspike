@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://marlinspike.io/schema/graph/v1",
+  "title": "Marlinspike Graph",
+  "description": "Base graph format — a rose-tree of subgraphs with typed port nodes.",
+  "type": "object",
+  "required": ["$schema", "id", "uri", "meta", "nodes", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "id": { "type": "string", "format": "uuid" },
+    "uri": {
+      "type": "string",
+      "pattern": "^spike://[^/]+/.+"
+    },
+    "meta": {
+      "type": "object",
+      "required": ["name", "created", "modified"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "created": { "type": "string", "format": "date-time" },
+        "modified": { "type": "string", "format": "date-time" }
+      }
+    },
+    "nodes": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/node" }
+    },
+    "edges": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/edge" }
+    },
+    "properties": { "type": "object" },
+    "activeSchemas": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "activeImplementation": {
+      "oneOf": [{ "type": "string" }, { "type": "null" }]
+    }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["id", "kind", "label", "subgraph", "implementations", "properties"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "enum": ["node", "port"] },
+        "label": { "type": "string", "minLength": 1 },
+        "subgraph": { "oneOf": [{ "type": "string" }, { "type": "null" }] },
+        "portSchema": { "type": "string" },
+        "direction": { "enum": ["in", "out", "inout"] },
+        "implementations": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/implementation" }
+        },
+        "properties": { "type": "object" }
+      }
+    },
+    "implementation": {
+      "type": "object",
+      "required": ["label", "subgraph", "tags"],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "type": "string" },
+        "subgraph": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": ["id", "from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "from": { "$ref": "#/$defs/edgeEndpoint" },
+        "to": { "$ref": "#/$defs/edgeEndpoint" },
+        "properties": { "type": "object" }
+      }
+    },
+    "edgeEndpoint": {
+      "type": "object",
+      "required": ["node", "port"],
+      "additionalProperties": false,
+      "properties": {
+        "node": { "type": "string" },
+        "port": { "type": "string" }
+      }
+    }
+  }
+}
