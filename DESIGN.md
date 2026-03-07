@@ -1,7 +1,6 @@
 # Marlinspike — IDE Design Document
 
-> **Status:** Draft v0.2  
-> **Purpose:** Starting point for implementation. To be iterated on as a Claude Code project.
+> **Purpose:** Living document for implementation design.
 
 ---
 
