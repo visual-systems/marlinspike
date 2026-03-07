@@ -37,5 +37,5 @@ None.
 - [x] `deno lint` passes with no errors
 - [x] `deno test` runs and passes schema validation tests (4/4)
 - [x] `deno task dev` starts the server and responds on localhost:8000
-- [ ] VSCode opens with Deno LSP active (no red squiggles on imports)
+- [x] VSCode opens with Deno LSP active (no red squiggles on imports)
 - [ ] CI workflow appears in GitHub Actions on push
