@@ -1,12 +1,14 @@
 import { Hono } from "@hono/hono";
 import { parseArgs } from "@std/cli/parse-args";
+import { handleRoot } from "./src/ui/handler.tsx";
 
 const args = parseArgs(Deno.args);
 const PORT = Number(args.port) || 8000;
 
 const app = new Hono();
 
-app.get("/", (c) => c.json({ name: "marlinspike", status: "ok" }));
+app.get("/", handleRoot);
+app.get("/health", (c) => c.json({ name: "marlinspike", status: "ok" }));
 
 const server = Deno.serve({ port: PORT }, app.fetch);
 

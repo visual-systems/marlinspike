@@ -6,10 +6,12 @@
     "fmt": "deno fmt",
     "lint": "deno lint",
     "test": "deno test --allow-read",
-    "check": "deno check mod.ts src/**/*.ts"
+    "check": "deno check mod.ts src/**/*.ts src/**/*.tsx"
   },
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "@hono/hono/jsx"
   },
   "fmt": {
     "lineWidth": 100,
