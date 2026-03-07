@@ -1,9 +1,6 @@
 name: Update PR from Plan
 
 on:
-  push:
-    branches-ignore:
-      - main
   pull_request:
     types: [opened, reopened, synchronize]
 
