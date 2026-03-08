@@ -1,12 +1,12 @@
 {
   "tasks": {
-    "dev": "deno run --watch --allow-net mod.ts",
-    "start": "deno run --allow-net mod.ts",
-    "smoke": "deno run --allow-net mod.ts --timeout 3000",
+    "dev": "deno run --watch --allow-net --allow-read --allow-env mod.ts",
+    "start": "deno run --allow-net --allow-read --allow-env mod.ts",
+    "smoke": "deno run --allow-net --allow-read --allow-env mod.ts --timeout 3000",
     "fmt": "deno fmt",
     "lint": "deno lint",
     "test": "deno test --allow-read",
-    "check": "deno check mod.ts src/**/*.ts src/**/*.tsx"
+    "check": "deno check mod.ts src/graph/**/*.ts src/ui/App.tsx src/ui/handler.tsx"
   },
   "compilerOptions": {
     "strict": true,
@@ -26,6 +26,7 @@
   },
   "imports": {
     "@cfworker/json-schema": "npm:@cfworker/json-schema@^2.0.1",
+    "@deno/emit": "jsr:@deno/emit@^0.46.0",
     "@hono/hono": "jsr:@hono/hono",
     "@std/cli": "jsr:@std/cli"
   }
