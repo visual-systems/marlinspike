@@ -42,6 +42,9 @@ Additionally, `client.tsx` (~1656 lines) contains all UI components inline. The 
 - Components receive `WorkspaceState` + `Updater` as props; stories wrap with `useState<WorkspaceState>` and pass `setState`-based updater
 - The `Updater` type: `(fn: (s: WorkspaceState) => WorkspaceState) => void` — stories create this as `(fn) => setState(fn(state))`
 
+### Part 5 — DX improvements
+- [x] Enable `deno lint --fix` in the `lint` task so fixable violations are auto-corrected on every lint run
+
 ## Verification
 
 - [x] `NO_COLOR=1 deno task check` — no type errors

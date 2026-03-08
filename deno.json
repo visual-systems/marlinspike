@@ -4,7 +4,7 @@
     "start": "deno run --allow-net --allow-read --allow-env mod.tsx",
     "smoke": "deno run --allow-net --allow-read --allow-env mod.tsx --timeout 3000",
     "fmt": "deno fmt",
-    "lint": "deno lint",
+    "lint": "deno lint --fix",
     "test": "deno test --allow-read",
     "check": "deno check mod.tsx src/graph/**/*.ts src/ui/App.tsx src/ui/StoriesShell.tsx src/ui/workspace.ts"
   },
