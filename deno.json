@@ -6,7 +6,7 @@
     "fmt": "deno fmt",
     "lint": "deno lint",
     "test": "deno test --allow-read",
-    "check": "deno check mod.ts src/graph/**/*.ts src/ui/App.tsx src/ui/handler.tsx"
+    "check": "deno check mod.ts src/graph/**/*.ts src/ui/App.tsx src/ui/handler.tsx src/ui/StoriesShell.tsx src/ui/stories-handler.tsx"
   },
   "compilerOptions": {
     "strict": true,
@@ -28,6 +28,8 @@
     "@cfworker/json-schema": "npm:@cfworker/json-schema@^2.0.1",
     "@deno/emit": "jsr:@deno/emit@^0.46.0",
     "@hono/hono": "jsr:@hono/hono",
+    "@hono/hono/jsx/dom": "jsr:@hono/hono/jsx/dom",
+    "@hono/hono/jsx/dom/jsx-runtime": "jsr:@hono/hono/jsx/dom/jsx-runtime",
     "@std/cli": "jsr:@std/cli"
   }
 }
