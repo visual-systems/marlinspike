@@ -1,5 +1,6 @@
 import { Hono } from "@hono/hono";
 import { parseArgs } from "@std/cli/parse-args";
+import { bundle } from "@deno/emit";
 import { handleRoot } from "./src/ui/handler.tsx";
 
 const args = parseArgs(Deno.args);
@@ -9,6 +10,13 @@ const app = new Hono();
 
 app.get("/", handleRoot);
 app.get("/health", (c) => c.json({ name: "marlinspike", status: "ok" }));
+app.get("/client.js", async (c) => {
+  const url = new URL("./src/ui/client.ts", import.meta.url);
+  const { code } = await bundle(url);
+  return c.body(code, 200, {
+    "content-type": "application/javascript",
+  });
+});
 
 const server = Deno.serve({ port: PORT }, app.fetch);
 
