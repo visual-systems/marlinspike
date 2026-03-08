@@ -1,5 +1,14 @@
 /// <reference lib="dom" />
 
+import {
+  DROPDOWN_WIDTH,
+  el,
+  iconBtn,
+  propLabel,
+  renderDropdown,
+  smallBtn,
+} from "./components/index.ts";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -58,12 +67,6 @@ interface ConnectedGraph {
 }
 
 // ---------------------------------------------------------------------------
-// Layout constants
-// ---------------------------------------------------------------------------
-
-const DROPDOWN_WIDTH = 140; // px — keeps persona/workflow dropdowns same width so tabs and "+ Tree View" align
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -109,6 +112,24 @@ function getEdgesIn(nodeId: string): Edge[] {
 
 function getEdgesOut(nodeId: string): Edge[] {
   return state.edges.filter((e) => e.fromId === nodeId);
+}
+
+/** Collect all node IDs in the subtree rooted at node (inclusive). */
+function collectSubtreeIds(node: TreeNode): Set<string> {
+  const ids = new Set<string>();
+  const visit = (n: TreeNode): void => {
+    ids.add(n.id);
+    for (const c of n.children) visit(c);
+  };
+  visit(node);
+  return ids;
+}
+
+/** Serialise a node's full subgraph (node tree + internal edges) as JSON. */
+function subgraphJson(node: TreeNode): string {
+  const ids = collectSubtreeIds(node);
+  const internalEdges = state.edges.filter((e) => ids.has(e.fromId) && ids.has(e.toId));
+  return JSON.stringify({ root: node, edges: internalEdges }, null, 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -248,146 +269,6 @@ function saveState(): void {
 const state = loadState();
 
 // ---------------------------------------------------------------------------
-// DOM helpers
-// ---------------------------------------------------------------------------
-
-type Attrs = Record<string, string | boolean | EventListener>;
-
-function el(tag: string, attrs: Attrs = {}, children: (HTMLElement | string)[] = []): HTMLElement {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k.startsWith("on") && typeof v === "function") {
-      node.addEventListener(k.slice(2), v as EventListener);
-    } else if (typeof v === "boolean") {
-      if (v) node.setAttribute(k, "");
-    } else {
-      node.setAttribute(k, v as string);
-    }
-  }
-  for (const child of children) {
-    node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
-  }
-  return node;
-}
-
-function iconBtn(label: string, title: string, onClick: () => void): HTMLElement {
-  const btn = el("button", {
-    title,
-    style:
-      "background:none; border:none; color:#555; cursor:pointer; font-size:12px; padding:0 3px; line-height:1;",
-  }, [label]);
-  btn.addEventListener("click", onClick);
-  return btn;
-}
-
-function smallBtn(label: string, onClick: () => void): HTMLElement {
-  const btn = el("button", {
-    style: [
-      "background:none; border:1px solid #2a2a4a; color:#666;",
-      "font-size:11px; cursor:pointer; padding:2px 8px; border-radius:3px;",
-    ].join(""),
-  }, [label]);
-  btn.addEventListener("click", onClick);
-  return btn;
-}
-
-function propLabel(text: string): HTMLElement {
-  return el("div", {
-    style: "font-size:10px; color:#444; letter-spacing:0.06em; text-transform:uppercase;",
-  }, [text]);
-}
-
-// ---------------------------------------------------------------------------
-// Custom dropdown (flat, minimalist, fixed-width)
-// ---------------------------------------------------------------------------
-
-function renderCustomDropdown(
-  items: string[],
-  selected: string | null,
-  placeholder: string,
-  onSelect: (val: string) => void,
-  onEdit: () => void,
-): HTMLElement {
-  const wrap = el("div", {
-    style: `position:relative; width:${DROPDOWN_WIDTH}px; flex-shrink:0;`,
-  });
-
-  const btn = el("div", {
-    style: [
-      `width:${DROPDOWN_WIDTH}px; height:22px;`,
-      "display:flex; align-items:center; justify-content:space-between;",
-      "padding:0 8px; cursor:pointer; user-select:none;",
-      "border-bottom:1px solid #252538; font-size:11px; color:#777;",
-    ].join(""),
-  });
-  btn.appendChild(el("span", {}, [selected ?? placeholder]));
-  btn.appendChild(el("span", { style: "font-size:9px; color:#3a3a5a;" }, ["▾"]));
-
-  const menu = el("div", {
-    style: [
-      `position:absolute; top:100%; left:0; width:${DROPDOWN_WIDTH}px;`,
-      "background:#0d0d1e; border:1px solid #252538; border-top:none; z-index:200;",
-      "display:none; flex-direction:column; box-shadow:0 4px 12px rgba(0,0,0,0.5);",
-    ].join(""),
-  });
-
-  // Edit option (always first)
-  const editRow = el("div", {
-    style:
-      "padding:5px 8px; font-size:11px; color:#3a3a5a; cursor:pointer; border-bottom:1px solid #191930;",
-  }, ["✎ Edit\u2026"]);
-  editRow.addEventListener("mouseenter", () => {
-    editRow.style.color = "#888";
-  });
-  editRow.addEventListener("mouseleave", () => {
-    editRow.style.color = "#3a3a5a";
-  });
-  editRow.addEventListener("click", (e) => {
-    e.stopPropagation();
-    menu.style.display = "none";
-    onEdit();
-  });
-  menu.appendChild(editRow);
-
-  for (const item of items) {
-    const isActive = item === selected;
-    const row = el("div", {
-      style: [
-        "padding:5px 8px; font-size:11px; cursor:pointer;",
-        isActive ? "color:#9090c0;" : "color:#666;",
-      ].join(""),
-    }, [item]);
-    row.addEventListener("mouseenter", () => {
-      if (!isActive) row.style.color = "#aaa";
-    });
-    row.addEventListener("mouseleave", () => {
-      if (!isActive) row.style.color = "#666";
-    });
-    row.addEventListener("click", (e) => {
-      e.stopPropagation();
-      menu.style.display = "none";
-      onSelect(item);
-    });
-    menu.appendChild(row);
-  }
-
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const opening = menu.style.display === "none";
-    menu.style.display = opening ? "flex" : "none";
-    if (opening) {
-      document.addEventListener("click", () => {
-        menu.style.display = "none";
-      }, { once: true });
-    }
-  });
-
-  wrap.appendChild(btn);
-  wrap.appendChild(menu);
-  return wrap;
-}
-
-// ---------------------------------------------------------------------------
 // Connected graphs popover
 // ---------------------------------------------------------------------------
 
@@ -405,7 +286,7 @@ function renderConnectedGraphsBtn(): HTMLElement {
     title: "Connected graphs",
   });
   btn.appendChild(el("span", {}, [`${connectedCount} graph${connectedCount !== 1 ? "s" : ""}`]));
-  btn.appendChild(el("span", { style: "font-size:9px; color:#2a2a4a;" }, ["▾"]));
+  btn.appendChild(el("span", { style: "font-size:9px; color:#2a2a4a;" }, ["\u25be"]));
 
   const menu = el("div", {
     style: [
@@ -429,7 +310,7 @@ function renderConnectedGraphsBtn(): HTMLElement {
       ].join(""),
     });
     if (graph.connected) {
-      check.appendChild(el("span", { style: "font-size:9px; color:#7090d0;" }, ["✓"]));
+      check.appendChild(el("span", { style: "font-size:9px; color:#7090d0;" }, ["\u2713"]));
     }
 
     if (!graph.required) {
@@ -438,7 +319,7 @@ function renderConnectedGraphsBtn(): HTMLElement {
         e.stopPropagation();
         graph.connected = !graph.connected;
         saveState();
-        renderWorkspaceBar();
+        renderWorkspaceControls(); // controls bar owns connected graphs button
       });
     }
 
@@ -687,10 +568,28 @@ function closeInspector(panelId: string): void {
   renderWorkspaceArea();
 }
 
+/** Navigate directly to a node (no toggle) — used when following links from edge inspector. */
+function navigateToNode(panelId: string, nodeId: string): void {
+  const panel = getPanel(panelId);
+  if (!panel) return;
+  panel.selectedNodeId = nodeId;
+  panel.selectedEdgeId = null;
+  saveState();
+  renderWorkspaceArea();
+}
+
 function selectEdge(panelId: string, edgeId: string): void {
   const panel = getPanel(panelId);
   if (!panel) return;
-  panel.selectedEdgeId = panel.selectedEdgeId === edgeId ? null : edgeId;
+  panel.selectedEdgeId = edgeId;
+  saveState();
+  renderWorkspaceArea();
+}
+
+function closeEdgeView(panelId: string): void {
+  const panel = getPanel(panelId);
+  if (!panel) return;
+  panel.selectedEdgeId = null;
   saveState();
   renderWorkspaceArea();
 }
@@ -762,10 +661,13 @@ function deleteNode(nodeId: string): void {
     return nodes.some((n) => remove(n.children));
   };
   remove(state.treeNodes);
-  // Remove all edges involving this node
   state.edges = state.edges.filter((e) => e.fromId !== nodeId && e.toId !== nodeId);
   for (const panel of activeTab().panels) {
     if (panel.selectedNodeId === nodeId) panel.selectedNodeId = null;
+    // clear stale edge selection
+    if (panel.selectedEdgeId && !state.edges.some((e) => e.id === panel.selectedEdgeId)) {
+      panel.selectedEdgeId = null;
+    }
   }
   saveState();
   renderWorkspaceArea();
@@ -840,8 +742,8 @@ function renderWorkspaceBar(): void {
       "border-right:1px solid #1a1a2e; display:flex; align-items:center;",
     ].join(""),
   });
-  leftArea.appendChild(renderCustomDropdown(
-    state.personas,
+  leftArea.appendChild(renderDropdown(
+    state.personas.map((p) => ({ value: p, label: p })),
     state.activePersona,
     "Persona",
     setPersona,
@@ -877,7 +779,7 @@ function renderWorkspaceBar(): void {
       const close = el("span", {
         style: "font-size:11px; color:#555; line-height:1;",
         title: "Close tab",
-      }, ["×"]);
+      }, ["\xd7"]);
       close.addEventListener("click", (e) => {
         e.stopPropagation();
         closeTab(tab.id);
@@ -895,9 +797,8 @@ function renderWorkspaceBar(): void {
   tabsArea.appendChild(newBtn);
   bar.appendChild(tabsArea);
 
-  // Right: connected graphs + branding
+  // Right: branding
   const rightArea = el("div", { style: "display:flex; align-items:center; flex-shrink:0;" });
-  rightArea.appendChild(renderConnectedGraphsBtn());
   const brand = el("a", {
     href: "https://github.com/visual-systems/marlinspike#readme",
     target: "_blank",
@@ -945,8 +846,8 @@ function renderWorkspaceControls(): void {
       "border-right:1px solid #1a1a2e; display:flex; align-items:center;",
     ].join(""),
   });
-  leftArea.appendChild(renderCustomDropdown(
-    state.workflows,
+  leftArea.appendChild(renderDropdown(
+    state.workflows.map((w) => ({ value: w, label: w })),
     state.activeWorkflow,
     "Workflow",
     setWorkflow,
@@ -968,6 +869,13 @@ function renderWorkspaceControls(): void {
   addBtn.addEventListener("click", addPanel);
   viewControls.appendChild(addBtn);
   bar.appendChild(viewControls);
+
+  // Right: connected graphs
+  const rightArea = el("div", {
+    style: "display:flex; align-items:center; margin-left:auto; flex-shrink:0;",
+  });
+  rightArea.appendChild(renderConnectedGraphsBtn());
+  bar.appendChild(rightArea);
 }
 
 // ---------------------------------------------------------------------------
@@ -982,7 +890,7 @@ function renderWorkspaceArea(): void {
     area.appendChild(el("div", {
       style:
         "flex:1; display:flex; align-items:center; justify-content:center; color:#3a3a5a; font-size:13px;",
-    }, ["No views open — use the toolbar above to add one"]));
+    }, ["No views open \u2014 use the toolbar above to add one"]));
     return;
   }
   for (const panel of tab.panels) area.appendChild(renderTreePanel(panel));
@@ -997,7 +905,15 @@ function renderTreePanel(panel: Panel): HTMLElement {
   const selectedNode = panel.selectedNodeId
     ? findNode(state.treeNodes, panel.selectedNodeId)
     : null;
-  const hasInspector = selectedNode != null;
+  const selectedEdge = panel.selectedEdgeId
+    ? state.edges.find((e) => e.id === panel.selectedEdgeId)
+    : null;
+  const hasInspector = selectedNode != null || selectedEdge != null;
+
+  // Nodes connected by the selected edge get a highlight (not full selection)
+  const highlightedNodeIds: Set<string> = selectedEdge
+    ? new Set([selectedEdge.fromId, selectedEdge.toId])
+    : new Set();
 
   const wrapper = el("div", {
     style: [
@@ -1015,9 +931,9 @@ function renderTreePanel(panel: Panel): HTMLElement {
   });
   header.appendChild(el("span", {}, ["Tree View"]));
   const btns = el("div", { style: "display:flex; gap:2px; align-items:center;" });
-  btns.appendChild(iconBtn("⊞", "Expand all", () => expandAll(panel.id, state.treeNodes)));
-  btns.appendChild(iconBtn("⊟", "Collapse all", () => collapseAll(panel.id)));
-  btns.appendChild(iconBtn("×", "Close panel", () => closePanel(panel.id)));
+  btns.appendChild(iconBtn("\u229e", "Expand all", () => expandAll(panel.id, state.treeNodes)));
+  btns.appendChild(iconBtn("\u229f", "Collapse all", () => collapseAll(panel.id)));
+  btns.appendChild(iconBtn("\xd7", "Close panel", () => closePanel(panel.id)));
   header.appendChild(btns);
   wrapper.appendChild(header);
 
@@ -1030,7 +946,9 @@ function renderTreePanel(panel: Panel): HTMLElement {
     style: `flex:${treeFlex}; overflow-y:auto; padding:4px 0; min-height:0;`,
   });
   for (const node of state.treeNodes) {
-    treeContent.appendChild(renderTreeNode(node, expanded, panel.id, panel.selectedNodeId, 0));
+    treeContent.appendChild(
+      renderTreeNode(node, expanded, panel.id, panel.selectedNodeId, highlightedNodeIds, 0),
+    );
   }
   body.appendChild(treeContent);
 
@@ -1045,7 +963,7 @@ function renderTreePanel(panel: Panel): HTMLElement {
       style:
         `flex:${panel.inspectorSplit}; display:flex; flex-direction:column; overflow:hidden; min-height:0;`,
     });
-    inspectorEl.appendChild(renderInspector(panel, selectedNode));
+    inspectorEl.appendChild(renderInspector(panel));
 
     divider.addEventListener("mousedown", (e) => {
       e.preventDefault();
@@ -1076,30 +994,54 @@ function renderTreePanel(panel: Panel): HTMLElement {
 }
 
 // ---------------------------------------------------------------------------
-// Render: inspector
+// Render: inspector (dispatch)
 // ---------------------------------------------------------------------------
 
-function renderInspector(panel: Panel, node: TreeNode): HTMLElement {
-  const inspector = el("div", {
+function renderInspector(panel: Panel): HTMLElement {
+  if (panel.selectedEdgeId) {
+    const edge = state.edges.find((e) => e.id === panel.selectedEdgeId);
+    if (edge) return renderEdgeInspector(panel, edge);
+    panel.selectedEdgeId = null; // stale ref — fall through
+  }
+  if (panel.selectedNodeId) {
+    const node = findNode(state.treeNodes, panel.selectedNodeId);
+    if (node) return renderNodeInspector(panel, node);
+    panel.selectedNodeId = null; // stale ref
+  }
+  return el("div");
+}
+
+/** Shared shell: header bar with title + close button, scrollable content area. */
+function inspectorShell(
+  title: string,
+  onClose: () => void,
+): { shell: HTMLElement; content: HTMLElement } {
+  const shell = el("div", {
     style: "display:flex; flex-direction:column; overflow:hidden; background:#10102a;",
   });
 
-  const subHeader = el("div", {
+  const header = el("div", {
     style: [
       "display:flex; align-items:center; justify-content:space-between;",
       "padding:4px 8px; font-size:11px; font-weight:600; letter-spacing:0.05em;",
       "text-transform:uppercase; color:#666; border-bottom:1px solid #2a2a4a; flex-shrink:0;",
     ].join(""),
   });
-  subHeader.appendChild(el("span", {}, ["Inspector"]));
-  subHeader.appendChild(iconBtn("×", "Close inspector", () => closeInspector(panel.id)));
-  inspector.appendChild(subHeader);
+  header.appendChild(el("span", {}, [title]));
+  header.appendChild(iconBtn("\xd7", "Close", onClose));
+  shell.appendChild(header);
 
   const content = el("div", {
     style: "flex:1; overflow-y:auto; padding:8px; display:flex; flex-direction:column; gap:10px;",
   });
+  shell.appendChild(content);
+  return { shell, content };
+}
 
-  // Editable label
+function renderNodeInspector(panel: Panel, node: TreeNode): HTMLElement {
+  const { shell, content } = inspectorShell("Inspector", () => closeInspector(panel.id));
+
+  // Editable label heading
   const labelHeading = el("div", {
     style: "font-size:14px; font-weight:600; color:#c0c0e0; cursor:text; word-break:break-all;",
     title: "Click to rename",
@@ -1124,6 +1066,18 @@ function renderInspector(panel: Panel, node: TreeNode): HTMLElement {
   });
   content.appendChild(labelHeading);
 
+  // Actions immediately below label
+  const actRow = el("div", { style: "display:flex; flex-wrap:wrap; gap:4px;" });
+  actRow.appendChild(smallBtn("+ Subnode", () => addSubnode(node.id)));
+  if (node.uri) {
+    actRow.appendChild(smallBtn("Copy URI", () => navigator.clipboard.writeText(node.uri!)));
+  }
+  actRow.appendChild(
+    smallBtn("Copy Graph", () => navigator.clipboard.writeText(subgraphJson(node))),
+  );
+  actRow.appendChild(smallBtn("Delete", () => deleteNode(node.id)));
+  content.appendChild(actRow);
+
   // Version + hash
   content.appendChild(
     el("div", { style: "font-size:11px; color:#333; font-family:monospace;" }, [
@@ -1132,9 +1086,9 @@ function renderInspector(panel: Panel, node: TreeNode): HTMLElement {
   );
 
   // Parent
-  const parent = findParentOf(node.id);
   const parentSec = el("div", { style: "display:flex; flex-direction:column; gap:3px;" });
   parentSec.appendChild(propLabel("Parent"));
+  const parent = findParentOf(node.id);
   if (parent) {
     const lnk = el("div", {
       style: "font-size:12px; color:#7090d0; cursor:pointer; word-break:break-all;",
@@ -1168,11 +1122,9 @@ function renderInspector(panel: Panel, node: TreeNode): HTMLElement {
   const idSec = el("div", { style: "display:flex; flex-direction:column; gap:3px;" });
   idSec.appendChild(propLabel("ID"));
   idSec.appendChild(
-    el(
-      "div",
-      { style: "font-size:11px; color:#445; font-family:monospace; word-break:break-all;" },
-      [node.id],
-    ),
+    el("div", {
+      style: "font-size:11px; color:#445; font-family:monospace; word-break:break-all;",
+    }, [node.id]),
   );
   content.appendChild(idSec);
 
@@ -1187,9 +1139,8 @@ function renderInspector(panel: Panel, node: TreeNode): HTMLElement {
     content.appendChild(uriSec);
   }
 
-  // Edges In
+  // Edges In / Out
   content.appendChild(renderEdgesSection(panel, node, "in"));
-  // Edges Out
   content.appendChild(renderEdgesSection(panel, node, "out"));
 
   // Data
@@ -1207,23 +1158,87 @@ function renderInspector(panel: Panel, node: TreeNode): HTMLElement {
   dataSec.appendChild(smallBtn("Save data", () => updateNodeData(node.id, textarea.value)));
   content.appendChild(dataSec);
 
+  return shell;
+}
+
+function renderEdgeInspector(panel: Panel, edge: Edge): HTMLElement {
+  const fromNode = findNode(state.treeNodes, edge.fromId);
+  const toNode = findNode(state.treeNodes, edge.toId);
+  const { shell, content } = inspectorShell("Edge", () => closeEdgeView(panel.id));
+
+  // From → To nav links
+  const navRow = el("div", {
+    style: "display:flex; align-items:center; gap:6px; font-size:13px; flex-wrap:wrap;",
+  });
+  const makeLink = (n: TreeNode | undefined, id: string): HTMLElement => {
+    const lnk = el("span", {
+      style: "color:#7090d0; cursor:pointer; word-break:break-all;",
+      title: "Inspect node",
+    }, [n?.label ?? id]);
+    lnk.addEventListener("click", () => navigateToNode(panel.id, id));
+    return lnk;
+  };
+  navRow.appendChild(makeLink(fromNode, edge.fromId));
+  navRow.appendChild(el("span", { style: "color:#444;" }, ["\u2192"]));
+  navRow.appendChild(makeLink(toNode, edge.toId));
+  content.appendChild(navRow);
+
   // Actions
-  const actRow = el("div", { style: "display:flex; flex-wrap:wrap; gap:4px; padding-top:2px;" });
-  actRow.appendChild(smallBtn("+ Subnode", () => addSubnode(node.id)));
-  actRow.appendChild(smallBtn("Delete", () => deleteNode(node.id)));
+  const actRow = el("div", { style: "display:flex; gap:4px; flex-wrap:wrap;" });
+  actRow.appendChild(smallBtn("Delete", () => deleteEdge(edge.id)));
   content.appendChild(actRow);
 
-  inspector.appendChild(content);
-  return inspector;
+  // Version
+  content.appendChild(
+    el("div", { style: "font-size:11px; color:#333; font-family:monospace;" }, [
+      `v${edge.version}`,
+    ]),
+  );
+
+  // Label
+  const labelSec = el("div", { style: "display:flex; flex-direction:column; gap:3px;" });
+  labelSec.appendChild(propLabel("Label"));
+  const labelInput = el("input", {
+    value: edge.label,
+    style: [
+      "background:#0a0a18; border:1px solid #2a2a4a; color:#c0c0e0;",
+      "font-size:12px; padding:3px 6px; border-radius:3px; width:100%;",
+    ].join(""),
+  }) as HTMLInputElement;
+  labelSec.appendChild(labelInput);
+  content.appendChild(labelSec);
+
+  // Data
+  const dataSec = el("div", { style: "display:flex; flex-direction:column; gap:4px;" });
+  dataSec.appendChild(propLabel("Data"));
+  const edgeTextarea = el("textarea", {
+    style: [
+      "background:#0d0d20; border:1px solid #2a2a4a; color:#9090b0;",
+      "font-size:11px; font-family:monospace; padding:5px; border-radius:3px;",
+      "resize:vertical; min-height:60px; width:100%;",
+    ].join(""),
+  }) as HTMLTextAreaElement;
+  edgeTextarea.value = JSON.stringify(edge.data, null, 2);
+  dataSec.appendChild(edgeTextarea);
+  content.appendChild(dataSec);
+
+  content.appendChild(
+    smallBtn("Save", () => updateEdge(edge.id, labelInput.value, edgeTextarea.value)),
+  );
+
+  return shell;
 }
+
+// ---------------------------------------------------------------------------
+// Render: edges section (simplified — clicking an edge opens edge inspector)
+// ---------------------------------------------------------------------------
 
 function renderEdgesSection(panel: Panel, node: TreeNode, dir: "in" | "out"): HTMLElement {
   const edges = dir === "in" ? getEdgesIn(node.id) : getEdgesOut(node.id);
   const siblings = findSiblings(node.id);
-  const title = dir === "in" ? "Edges In" : "Edges Out";
 
   const sec = el("div", { style: "display:flex; flex-direction:column; gap:4px;" });
-  sec.appendChild(propLabel(title));
+  sec.appendChild(propLabel(dir === "in" ? "Edges In" : "Edges Out"));
 
   if (edges.length === 0 && siblings.length === 0) {
     sec.appendChild(
@@ -1236,103 +1251,58 @@ function renderEdgesSection(panel: Panel, node: TreeNode, dir: "in" | "out"): HT
     const peerId = dir === "in" ? edge.fromId : edge.toId;
     const peer = findNode(state.treeNodes, peerId);
     const peerLabel = peer?.label ?? peerId;
-    const isSelected = panel.selectedEdgeId === edge.id;
 
-    const edgeWrap = el("div", {
+    const row = el("div", {
       style: [
-        "border:1px solid #1e1e38; border-radius:3px; overflow:hidden;",
-        isSelected ? "border-color:#2a2a5a;" : "",
+        "display:flex; align-items:center; gap:6px; padding:4px 6px;",
+        "background:#13132a; border-radius:3px; cursor:pointer; font-size:12px;",
       ].join(""),
     });
-
-    // Edge row header
-    const edgeRow = el("div", {
-      style: [
-        "display:flex; align-items:center; gap:6px; padding:4px 6px; cursor:pointer;",
-        "font-size:12px;",
-        isSelected ? "background:#181830;" : "background:#13132a;",
-      ].join(""),
-    });
-    edgeRow.appendChild(
-      el("span", { style: "color:#555; font-size:10px;" }, [dir === "in" ? "←" : "→"]),
+    row.appendChild(
+      el("span", { style: "color:#555; font-size:10px; flex-shrink:0;" }, [
+        dir === "in" ? "\u2190" : "\u2192",
+      ]),
     );
-    const edgePeerLabel = el("span", {
+    row.appendChild(el("span", {
       style: "flex:1; color:#7070a0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;",
-    }, [edge.label ? `${edge.label} (${peerLabel})` : peerLabel]);
-    edgeRow.appendChild(edgePeerLabel);
-    edgeRow.appendChild(iconBtn("×", "Delete edge", () => deleteEdge(edge.id)));
-    edgeRow.addEventListener("click", () => selectEdge(panel.id, edge.id));
-    edgeWrap.appendChild(edgeRow);
+    }, [edge.label ? `${edge.label} \u00b7 ${peerLabel}` : peerLabel]));
 
-    // Expanded edge detail
-    if (isSelected) {
-      const detail = el("div", {
-        style: "padding:6px; background:#0f0f22; display:flex; flex-direction:column; gap:6px;",
-      });
+    // delete button — stop propagation so row click is not also triggered
+    const delBtn = el("button", {
+      title: "Delete edge",
+      style:
+        "background:none; border:none; color:#555; cursor:pointer; font-size:12px; padding:0 3px; line-height:1;",
+    }, ["\xd7"]);
+    delBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteEdge(edge.id);
+    });
+    row.appendChild(delBtn);
 
-      // Label field
-      const labelRow = el("div", { style: "display:flex; flex-direction:column; gap:3px;" });
-      labelRow.appendChild(propLabel("Label"));
-      const labelInput = el("input", {
-        value: edge.label,
-        style: [
-          "background:#0a0a18; border:1px solid #2a2a4a; color:#c0c0e0;",
-          "font-size:12px; padding:3px 6px; border-radius:3px; width:100%;",
-        ].join(""),
-      }) as HTMLInputElement;
-      labelRow.appendChild(labelInput);
-      detail.appendChild(labelRow);
-
-      // Data field
-      const dataRow = el("div", { style: "display:flex; flex-direction:column; gap:3px;" });
-      dataRow.appendChild(propLabel("Data"));
-      const edgeTextarea = el("textarea", {
-        style: [
-          "background:#0a0a18; border:1px solid #2a2a4a; color:#9090b0;",
-          "font-size:11px; font-family:monospace; padding:4px; border-radius:3px;",
-          "resize:vertical; min-height:48px; width:100%;",
-        ].join(""),
-      }) as HTMLTextAreaElement;
-      edgeTextarea.value = JSON.stringify(edge.data, null, 2);
-      dataRow.appendChild(edgeTextarea);
-      detail.appendChild(dataRow);
-
-      detail.appendChild(
-        smallBtn("Save", () => updateEdge(edge.id, labelInput.value, edgeTextarea.value)),
-      );
-      edgeWrap.appendChild(detail);
-    }
-
-    sec.appendChild(edgeWrap);
+    row.addEventListener("click", () => selectEdge(panel.id, edge.id));
+    row.addEventListener("mouseenter", () => {
+      row.style.background = "#181830";
+    });
+    row.addEventListener("mouseleave", () => {
+      row.style.background = "#13132a";
+    });
+    sec.appendChild(row);
   }
 
-  // Add edge button
+  // Add edge: flat dropdown + "+" button
+  // Selecting from the dropdown immediately creates the edge
   if (siblings.length > 0) {
-    const addRow = el("div", { style: "display:flex; align-items:center; gap:6px;" });
-    const sel = document.createElement("select");
-    sel.style.cssText = [
-      "background:#0f0f22; color:#666; border:1px solid #2a2a4a;",
-      "font-size:11px; padding:2px 4px; border-radius:3px; flex:1;",
-    ].join("");
-    const ph = document.createElement("option");
-    ph.value = "";
-    ph.textContent = dir === "in" ? "from sibling\u2026" : "to sibling\u2026";
-    ph.disabled = true;
-    ph.selected = true;
-    sel.appendChild(ph);
-    for (const sib of siblings) {
-      const opt = document.createElement("option");
-      opt.value = sib.id;
-      opt.textContent = sib.label;
-      sel.appendChild(opt);
-    }
-    addRow.appendChild(sel);
-    addRow.appendChild(smallBtn("+", () => {
-      if (!sel.value) return;
-      const [from, to] = dir === "in" ? [sel.value, node.id] : [node.id, sel.value];
-      addEdge(from, to);
-    }));
-    sec.appendChild(addRow);
+    sec.appendChild(renderDropdown(
+      siblings.map((s) => ({ value: s.id, label: s.label })),
+      null,
+      dir === "in" ? "+ from sibling\u2026" : "+ to sibling\u2026",
+      (id) => {
+        const [from, to] = dir === "in" ? [id, node.id] : [node.id, id];
+        addEdge(from, to);
+      },
+      undefined,
+      "fill",
+    ));
   }
 
   return sec;
@@ -1347,10 +1317,12 @@ function renderTreeNode(
   expanded: Set<string>,
   panelId: string,
   selectedNodeId: string | null,
+  highlightedNodeIds: Set<string>,
   depth: number,
 ): HTMLElement {
   const isExpanded = expanded.has(node.id);
   const isSelected = node.id === selectedNodeId;
+  const isHighlighted = !isSelected && highlightedNodeIds.has(node.id);
   const hasChildren = node.kind === "composite" && node.children.length > 0;
 
   const wrapper = el("div", {});
@@ -1359,13 +1331,17 @@ function renderTreeNode(
       "display:flex; align-items:center;",
       `padding:3px 6px 3px ${6 + depth * 16}px;`,
       "font-size:13px; user-select:none;",
-      isSelected ? "background:#1e2a4a;" : "",
+      isSelected
+        ? "background:#1e2a4a;"
+        : isHighlighted
+        ? "background:#181a30; border-left:2px solid #3a4080;"
+        : "",
     ].join(""),
   });
 
   const chevron = el("span", {
     style: "font-size:10px; width:12px; display:inline-block; color:#555; flex-shrink:0;",
-  }, [hasChildren ? (isExpanded ? "▾" : "▸") : ""]);
+  }, [hasChildren ? (isExpanded ? "\u25be" : "\u25b8") : ""]);
   if (hasChildren) {
     chevron.style.cursor = "pointer";
     chevron.addEventListener("click", (e) => {
@@ -1378,7 +1354,7 @@ function renderTreeNode(
   const labelEl = el("span", {
     style: [
       "flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;",
-      isSelected ? "color:#b0c4ff;" : "",
+      isSelected ? "color:#b0c4ff;" : isHighlighted ? "color:#8090c0;" : "",
     ].join(""),
   }, [node.label]);
   labelEl.addEventListener("click", () => selectNode(panelId, node.id));
@@ -1394,7 +1370,7 @@ function renderTreeNode(
     b.addEventListener("click", fn);
     return b;
   };
-  actions.appendChild(aBtn("✎", "Rename", (e) => {
+  actions.appendChild(aBtn("\u270e", "Rename", (e) => {
     e.stopPropagation();
     startNodeRenaming(node.id, row, labelEl, actions);
   }));
@@ -1402,25 +1378,31 @@ function renderTreeNode(
     e.stopPropagation();
     addSubnode(node.id);
   }));
-  actions.appendChild(aBtn("×", "Delete", (e) => {
+  actions.appendChild(aBtn("\u2398", "Copy URI", (e) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(node.uri ?? node.id);
+  }));
+  actions.appendChild(aBtn("\xd7", "Delete", (e) => {
     e.stopPropagation();
     deleteNode(node.id);
   }));
   row.appendChild(actions);
 
   row.addEventListener("mouseenter", () => {
-    if (!isSelected) row.style.background = "#1a1a38";
+    if (!isSelected) row.style.background = isHighlighted ? "#1e2040" : "#1a1a38";
     actions.style.display = "flex";
   });
   row.addEventListener("mouseleave", () => {
-    row.style.background = isSelected ? "#1e2a4a" : "";
+    row.style.background = isSelected ? "#1e2a4a" : isHighlighted ? "#181a30" : "";
     actions.style.display = "none";
   });
 
   wrapper.appendChild(row);
   if (hasChildren && isExpanded) {
     for (const child of node.children) {
-      wrapper.appendChild(renderTreeNode(child, expanded, panelId, selectedNodeId, depth + 1));
+      wrapper.appendChild(
+        renderTreeNode(child, expanded, panelId, selectedNodeId, highlightedNodeIds, depth + 1),
+      );
     }
   }
   return wrapper;
