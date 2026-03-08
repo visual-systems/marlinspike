@@ -1,16 +1,16 @@
 import { Hono } from "@hono/hono";
 import { parseArgs } from "@std/cli/parse-args";
 import { bundle } from "@deno/emit";
-import { handleRoot } from "./src/ui/handler.tsx";
-import { handleStories } from "./src/ui/stories-handler.tsx";
+import { App } from "./src/ui/App.tsx";
+import { StoriesShell } from "./src/ui/StoriesShell.tsx";
 
 const args = parseArgs(Deno.args);
 const PORT = Number(args.port) || 8000;
 
 const app = new Hono();
 
-app.get("/", handleRoot);
-app.get("/stories", handleStories);
+app.get("/", (c) => c.html(<App />));
+app.get("/stories", (c) => c.html(<StoriesShell />));
 app.get("/health", (c) => c.json({ name: "marlinspike", status: "ok" }));
 const importMapURL = new URL("./deno.json", import.meta.url);
 

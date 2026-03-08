@@ -1,12 +1,12 @@
 {
   "tasks": {
-    "dev": "deno run --watch --allow-net --allow-read --allow-env mod.ts",
-    "start": "deno run --allow-net --allow-read --allow-env mod.ts",
-    "smoke": "deno run --allow-net --allow-read --allow-env mod.ts --timeout 3000",
+    "dev": "deno run --watch --allow-net --allow-read --allow-env mod.tsx",
+    "start": "deno run --allow-net --allow-read --allow-env mod.tsx",
+    "smoke": "deno run --allow-net --allow-read --allow-env mod.tsx --timeout 3000",
     "fmt": "deno fmt",
-    "lint": "deno lint",
+    "lint": "deno lint --fix",
     "test": "deno test --allow-read",
-    "check": "deno check mod.ts src/graph/**/*.ts src/ui/App.tsx src/ui/handler.tsx src/ui/StoriesShell.tsx src/ui/stories-handler.tsx"
+    "check": "deno check mod.tsx src/graph/**/*.ts src/ui/App.tsx src/ui/StoriesShell.tsx src/ui/workspace.ts"
   },
   "compilerOptions": {
     "strict": true,
@@ -17,7 +17,7 @@
     "lineWidth": 100,
     "singleQuote": false,
     "indentWidth": 2,
-    "include": ["mod.ts", "src/"]
+    "include": ["mod.tsx", "src/"]
   },
   "lint": {
     "rules": {
