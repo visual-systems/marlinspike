@@ -49,18 +49,10 @@ These are various random TODO items not formalised in DESIGN.md.
 * [ ] Split out more components
 * [ ] Explore making some components available as packages
 * [ ] Limit the size of source files
-* [x] Swappable layout
-* [x] Layout playground where you can edit parameters
 * [ ] Figure out how to move hard-coded constraints into extensible constraint system
 * [ ] Figure out how to encode graph ownership concerns in constraints
 * [ ] Figure out overlaying graphs and constraints
 * [ ] How is deletion possible in CRDT framework?
-* [x] New signed-distance function layout (SDF algorithm — geometry-aware repulsion, edge clearance, virtual bounding circles for disconnected components)
 * [ ] User-scriptable layout
-* [x] How to ensure that disconnected nodes don't drift apart
-* [ ] Properties in layouts story should be specialised
-* [x] Make SDF the default layout
-* [ ] The "Dense" layout example keeps rotating slowly in SDF
 * [ ] Edges should be splines, not line segments
-* [ ] TOPOGRID has visual bugs
 * [ ] Draw arrows on edge ends
