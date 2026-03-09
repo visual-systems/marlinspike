@@ -29,9 +29,9 @@ None — complete.
 ## Verification
 
 - [x] `NO_COLOR=1 deno task fmt && deno task lint && deno task check && deno task test` all pass
-- [ ] Canvas stories: edges show arrowheads at destination end
-- [ ] Arrowheads correctly directed (point to destination, not source)
-- [ ] Selected edges: arrowhead changes to selected color (#5070c0)
-- [ ] Lines start and end at node surface (no line inside circles or group rects)
-- [ ] Canvas/BidirectionalEdges story: two arcs visibly separate
-- [ ] Edge labels still appear at midpoint
+- [x] Canvas stories: edges show arrowheads at destination end
+- [x] Arrowheads correctly directed (point to destination, not source)
+- [x] Selected edges: arrowhead changes to selected color (#5070c0)
+- [x] Lines start and end at node surface (no line inside circles or group rects)
+- [x] Canvas/BidirectionalEdges story: two arcs visibly separate
+- [x] Edge labels still appear at midpoint
