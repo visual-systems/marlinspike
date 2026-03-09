@@ -23,12 +23,19 @@ A new pluggable `SDF` layout algorithm that:
 - [x] Update `types.ts`, `index.ts` — register "SDF" as AlgorithmId
 - [x] Update `canvas.tsx` — add to dropdown and makeCanvasAlgorithm
 - [x] Update `layout.stories.tsx` — add SDF to story selector + config params + bent edge rendering + component overlay debug
+- [x] Fix `surfaceToSurface` — replace probe-centre formula with directional support formula to correctly detect overlap
+- [x] Fix Newton's 3rd law violation in edge clearance forces — distribute reaction to edge endpoints weighted by closest-point parameter `t`
+- [x] Add `centerNodes` to `force.ts` — centres child layout at origin so SDF physics body and visual bbox stay in sync
+- [x] Apply `centerNodes` in `canvas.tsx` and `layout.stories.tsx` composite ticks
+- [x] Make SDF the default layout algorithm (`workspace.ts`)
+- [x] Refactor `layout.stories.tsx` config to discriminated union — per-algorithm typed params, no `sdf*` prefixes
 - [ ] Tune parameters via stories and iterate
 - [x] Update `README.md` — mark SDF TODO done
 
 ## Open Questions
 
-- springRestLength may need tuning down (40–60) now that S2S formula is correct — old formula effectively halved it
+- springRestLength may need tuning down (40–60) — worth revisiting during parameter tuning
+- "Dense" dataset rotates slowly — Newton's 3rd fix committed but not yet verified in story
 - Per-connected-component centroid (future) — not in scope now, virtual bounding circles sufficient
 
 ## Verification
@@ -39,3 +46,5 @@ A new pluggable `SDF` layout algorithm that:
 - [x] Expanded bounding boxes don't overlap (Two Groups / Mixed datasets) — fixed by directional S2S formula
 - [x] `deno task check`, `deno task lint`, `deno task fmt`, `deno task test` pass
 - [x] JANK and TOPOGRID behaviour unchanged
+- [ ] "Dense" dataset no longer rotates after Newton's 3rd fix
+- [x] Switching algorithm in story Configurator loads only that algorithm's parameters in JSON editor
