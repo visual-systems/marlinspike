@@ -356,7 +356,10 @@ export function tickSdfLevel(
     }
   }
 
-  // Line SDF — push nodes away from non-incident edges
+  // Line SDF — push nodes away from non-incident edges.
+  // Reaction forces are applied back to the edge endpoints to satisfy Newton's
+  // 3rd law. Without this, the net impulse on the system is non-zero each tick,
+  // injecting angular momentum that causes slow rotation of the layout.
   if (edgeRepulsionK > 0) {
     for (const e of edges) {
       const ea = map.get(e.a);
@@ -367,12 +370,28 @@ export function tickSdfLevel(
         const n = map.get(id)!;
         const d = lineSdfDist(n.x, n.y, ea.x, ea.y, eb.x, eb.y);
         if (d >= edgeClearance) continue;
-        const t = 1 - d / edgeClearance;
-        const mag = edgeRepulsionK * t;
+        // Closest-point parameter t ∈ [0,1]: t=0 → force lands on ea, t=1 → eb
+        const dx = eb.x - ea.x;
+        const dy = eb.y - ea.y;
+        const lenSq = dx * dx + dy * dy;
+        const edgeT = lenSq < 1e-9
+          ? 0.5
+          : Math.max(0, Math.min(1, ((n.x - ea.x) * dx + (n.y - ea.y) * dy) / lenSq));
+        const falloff = 1 - d / edgeClearance;
+        const mag = edgeRepulsionK * falloff;
         const [gx, gy] = lineSdfGrad(n.x, n.y, ea.x, ea.y, eb.x, eb.y);
         if (!n.pinned) {
           n.vx += gx * mag;
           n.vy += gy * mag;
+        }
+        // Equal and opposite reaction on edge endpoints (weighted by t)
+        if (!ea.pinned) {
+          ea.vx -= gx * mag * (1 - edgeT);
+          ea.vy -= gy * mag * (1 - edgeT);
+        }
+        if (!eb.pinned) {
+          eb.vx -= gx * mag * edgeT;
+          eb.vy -= gy * mag * edgeT;
         }
       }
     }
