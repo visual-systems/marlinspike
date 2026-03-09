@@ -39,7 +39,7 @@ The dev server starts an HTTP server on port 8000. Tests cover the base graph JS
 
 For editor support, install the [Deno VSCode extension](https://marketplace.visualstudio.com/items?itemName=denoland.vscode-deno) — the repository includes `.vscode/settings.json` to enable it automatically.
 
-## Other TODO Items
+## Issues and Ad-Hoc TODO Items
 
 These are various random TODO items not formalised in DESIGN.md.
 
@@ -59,3 +59,10 @@ These are various random TODO items not formalised in DESIGN.md.
 * [ ] Add a toast element to show things like "copied X"
 * [ ] Disconnected siblings are spaced too far apart
 * [ ] General refactoring patterns such as enums instead of flags
+* [ ] Seems like the sibling subgraph rendering isn't using my approach of virtual edges
+* [ ] Can possibly move the edge creation mode constraints to generalised constraint framework (pending)
+* [ ] Edges are generally too long - create a story to experiment with this until I find a parameter set I like
+* [ ] In a top-to bottom layout the edge overlaps the subgraph below - still having issues with padding offset
+* [ ] More than two edges between nodes doesn't distinguish with the ellipses
+* [ ] Show edge ID/URI in inspector
+* [ ] More indication that a node is an unexpanded subgraph

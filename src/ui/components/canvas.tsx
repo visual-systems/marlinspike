@@ -446,17 +446,19 @@ function CanvasTopBar(
 
   return (
     <div style="position:absolute; top:8px; right:8px; display:flex; align-items:center; gap:4px; z-index:2; pointer-events:auto;">
-      {/* Mode toolbar */}
+      {/* Mode selector */}
       <div style={pillStyle}>
-        <span
-          title="Add edge (E)"
-          style={`cursor:pointer; user-select:none; padding:2px 6px; border-radius:3px; font-size:11px; color:${
-            mode === "add-edge" ? "#a0b4e0" : "#404466"
-          }; background:${mode === "add-edge" ? "#1e2a4a" : "transparent"};`}
-          onClick={() => onSetMode(mode === "add-edge" ? "select" : "add-edge")}
-        >
-          + edge
-        </span>
+        <span style="color:#404466; user-select:none;">mode</span>
+        <Dropdown
+          items={[
+            { value: "select", label: "Select" },
+            { value: "add-edge", label: "Add Edges" },
+          ]}
+          selectedValue={mode}
+          placeholder="mode"
+          onSelect={(v) => onSetMode(v as CanvasMode)}
+          width={90}
+        />
       </div>
       {/* Canvas-wide controls */}
       <div style={pillStyle}>
@@ -528,6 +530,17 @@ interface PanState {
   origTy: number;
 }
 
+/** All add-edge interaction state bundled for passing into renderLevel. */
+interface InteractionState {
+  mode: CanvasMode;
+  edgeDrawFromId: string | null;
+  /** levelId of the currently-selected edge source node, if any. */
+  edgeDrawLevelId: string | null;
+  hoveredNodeId: string | null;
+  onEdgeNodeClick: (id: string, x: number, y: number, levelId: string) => void;
+  onNodeHover: (id: string | null) => void;
+}
+
 export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -545,8 +558,11 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
   );
 
   const [mode, setMode] = useState<CanvasMode>("select");
-  const [edgeDraw, setEdgeDraw] = useState<{ fromId: string; x: number; y: number } | null>(null);
+  const [edgeDraw, setEdgeDraw] = useState<
+    { fromId: string; x: number; y: number; levelId: string } | null
+  >(null);
   const [mouseCanvas, setMouseCanvas] = useState<{ x: number; y: number } | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
   const wsRef = useRef(ws);
   wsRef.current = ws;
@@ -755,16 +771,17 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
     }));
   }
 
-  function onEdgeNodeClick(id: string, x: number, y: number) {
+  function onEdgeNodeClick(id: string, x: number, y: number, levelId: string) {
     if (!edgeDraw) {
-      setEdgeDraw({ fromId: id, x, y });
+      setEdgeDraw({ fromId: id, x, y, levelId });
     } else if (id === edgeDraw.fromId) {
-      // Self-click: cancel source selection
+      // Re-click source: cancel selection
       setEdgeDraw(null);
     } else {
       addEdge(edgeDraw.fromId, id);
       setEdgeDraw(null);
     }
+    setHoveredNodeId(null);
   }
 
   function selectNode(nodeId: string) {
@@ -812,7 +829,14 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
   const selectedEdgeId = ws.canvasSelectedEdgeId;
   const hasSelection = selectedNodeId !== null || selectedEdgeId !== null;
 
-  const edgeDrawFromId = edgeDraw?.fromId ?? null;
+  const interaction: InteractionState = {
+    mode,
+    edgeDrawFromId: edgeDraw?.fromId ?? null,
+    edgeDrawLevelId: edgeDraw?.levelId ?? null,
+    hoveredNodeId,
+    onEdgeNodeClick,
+    onNodeHover: setHoveredNodeId,
+  };
 
   return (
     <div
@@ -829,7 +853,9 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
     >
       <svg
         ref={svgRef}
-        style="width:100%; height:100%; display:block;"
+        style={`width:100%; height:100%; display:block;${
+          mode === "add-edge" ? " cursor:crosshair;" : ""
+        }`}
         onMouseDown={onSvgMouseDown}
         onMouseMove={onSvgMouseMove}
       >
@@ -847,9 +873,7 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
             expandNode,
             collapseNode,
             startDrag,
-            mode,
-            edgeDrawFromId,
-            onEdgeNodeClick,
+            interaction,
           )}
           {/* Ghost edge line while drawing */}
           {mode === "add-edge" && edgeDraw && mouseCanvas && (
@@ -914,9 +938,7 @@ function renderLevel(
   onExpand: (id: string) => void,
   onCollapse: (id: string) => void,
   startDrag: StartDragFn,
-  mode: CanvasMode,
-  edgeDrawFromId: string | null,
-  onEdgeNodeClick: (id: string, x: number, y: number) => void,
+  interaction: InteractionState,
 ): unknown {
   const level = layout.get(levelId);
   if (!level) return null;
@@ -956,9 +978,7 @@ function renderLevel(
                   onExpand,
                   onCollapse,
                   startDrag,
-                  mode,
-                  edgeDrawFromId,
-                  onEdgeNodeClick,
+                  interaction,
                 )}
               </g>
             );
@@ -987,9 +1007,9 @@ function renderLevel(
                 ry={8}
                 style="cursor:pointer;"
                 onMouseDown={(e: MouseEvent) => {
-                  if (mode === "add-edge") {
+                  if (interaction.mode === "add-edge" && nodes.length > 1) {
                     e.stopPropagation();
-                    onEdgeNodeClick(node.id, pos.x, pos.y);
+                    interaction.onEdgeNodeClick(node.id, pos.x, pos.y, levelId);
                     return;
                   }
                   startDrag(e, node.id, levelId, pos.x, pos.y, () => onSelectNode(node.id));
@@ -1021,9 +1041,7 @@ function renderLevel(
                 onExpand,
                 onCollapse,
                 startDrag,
-                mode,
-                edgeDrawFromId,
-                onEdgeNodeClick,
+                interaction,
               )}
             </g>
           );
@@ -1033,22 +1051,59 @@ function renderLevel(
         const isComposite = node.kind === "composite";
         const r = LEAF_R;
         const hasChildren = isComposite && node.children.length > 0;
-        const isEdgeSource = node.id === edgeDrawFromId;
-        const fill = isSelected || isEdgeSource ? "#1e2a4a" : isComposite ? "#141430" : "#111125";
-        const stroke = isSelected || isEdgeSource ? "#5070c0" : isComposite ? "#303060" : "#252545";
+
+        // Edge-draw visual state
+        const isEdgeSource = node.id === interaction.edgeDrawFromId;
+        const hasSourceSelected = interaction.edgeDrawFromId !== null;
+        const sameLevel = interaction.edgeDrawLevelId === levelId;
+        // Candidate: can be clicked as from/to; requires sibling(s) and, once source is chosen,
+        // must be at the same level as the source.
+        const isCandidate = interaction.mode === "add-edge" && nodes.length > 1 &&
+          !isEdgeSource && (!hasSourceSelected || sameLevel);
+        // Inactive: source is selected but this node cannot be a target.
+        const isInactive = interaction.mode === "add-edge" && hasSourceSelected &&
+          !isEdgeSource && !isCandidate;
+        const isHovered = interaction.hoveredNodeId === node.id && isCandidate;
+
+        const fill = isEdgeSource || isHovered || isSelected
+          ? "#1e2a4a"
+          : isComposite
+          ? "#141430"
+          : "#111125";
+        const stroke = isEdgeSource || isSelected
+          ? "#5070c0"
+          : isHovered
+          ? "#6080e0"
+          : isCandidate
+          ? "#3050a0"
+          : isComposite
+          ? "#303060"
+          : "#252545";
+        const strokeWidth = isEdgeSource || isSelected || isHovered ? 2 : isCandidate ? 1.5 : 1;
+        const nodeCursor = interaction.mode === "add-edge"
+          ? (isCandidate || isEdgeSource ? "crosshair" : "default")
+          : "pointer";
 
         return (
           <g
             key={node.id}
             transform={`translate(${pos.x}, ${pos.y})`}
-            style="cursor:pointer;"
+            style={`cursor:${nodeCursor};${isInactive ? " opacity:0.3;" : ""}`}
             onMouseDown={(e: MouseEvent) => {
-              if (mode === "add-edge") {
+              if (interaction.mode === "add-edge" && (isCandidate || isEdgeSource)) {
                 e.stopPropagation();
-                onEdgeNodeClick(node.id, pos.x, pos.y);
+                interaction.onEdgeNodeClick(node.id, pos.x, pos.y, levelId);
                 return;
               }
-              startDrag(e, node.id, levelId, pos.x, pos.y, () => onSelectNode(node.id));
+              if (interaction.mode === "select") {
+                startDrag(e, node.id, levelId, pos.x, pos.y, () => onSelectNode(node.id));
+              }
+            }}
+            onMouseEnter={() => {
+              if (isCandidate) interaction.onNodeHover(node.id);
+            }}
+            onMouseLeave={() => {
+              if (isCandidate) interaction.onNodeHover(null);
             }}
             onDblClick={(e: MouseEvent) => {
               e.stopPropagation();
@@ -1061,7 +1116,7 @@ function renderLevel(
               r={r}
               fill={fill}
               stroke={stroke}
-              stroke-width={isSelected || isEdgeSource ? 2 : 1}
+              stroke-width={strokeWidth}
             />
             <text
               x={0}
