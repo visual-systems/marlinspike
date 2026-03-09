@@ -63,3 +63,4 @@ These are various random TODO items not formalised in DESIGN.md.
 * [ ] The "Dense" layout example keeps rotating slowly in SDF
 * [ ] Edges should be splines, not line segments
 * [ ] TOPOGRID has visual bugs
+* [ ] Draw arrows on edge ends

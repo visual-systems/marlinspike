@@ -29,13 +29,13 @@ const GROUP_PADDING = 32;
 const LABEL_H = 22;
 
 // ---------------------------------------------------------------------------
-// Config — flat object covering params for all algorithms
+// Config — per-algorithm discriminated union, each matching its algorithm's
+// own parameter names. The `id` field doubles as the algorithm selector.
 // ---------------------------------------------------------------------------
 
-interface LayoutConfig {
-  /** Circle radius (shared) */
+interface JankAlgConfig {
+  id: "JANK";
   leafR: number;
-  // JANK params
   spread: number;
   settleV: number;
   repulsion: number;
@@ -43,31 +43,42 @@ interface LayoutConfig {
   springK: number;
   springL: number;
   damping: number;
-  // TOPOGRID params
-  hSpacing: number;
-  vSpacing: number;
-  // SDF params
-  sdfRepulsionStrength: number;
-  sdfRestGap: number;
-  sdfMaxRepulsionDist: number;
-  sdfGradientEps: number;
-  sdfSpringK: number;
-  sdfSpringRestLength: number;
-  sdfEdgeClearance: number;
-  sdfEdgeRepulsionK: number;
-  sdfComponentRepulsionK: number;
-  sdfDamping: number;
-  sdfMaxVelocity: number;
-  sdfCircleThreshold: number;
-  sdfSettleV: number;
-  sdfMaxTicks: number;
-  /** Show component bounding circles as a debug overlay (SDF only) */
-  sdfShowComponents: boolean;
-  /** Draw each node's SDF shape (circle or rect) as a translucent overlay (SDF only) */
-  sdfShowSdfs: boolean;
 }
 
-const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
+interface TopogridAlgConfig {
+  id: "TOPOGRID";
+  leafR: number;
+  hSpacing: number;
+  vSpacing: number;
+}
+
+interface SdfAlgConfig {
+  id: "SDF";
+  leafR: number;
+  repulsionStrength: number;
+  restGap: number;
+  maxRepulsionDist: number;
+  sdfGradientEps: number;
+  springK: number;
+  springRestLength: number;
+  edgeClearance: number;
+  edgeRepulsionK: number;
+  componentRepulsionK: number;
+  damping: number;
+  maxVelocity: number;
+  circleThreshold: number;
+  spread: number;
+  settleV: number;
+  /** Show component bounding circles as a debug overlay */
+  showComponents: boolean;
+  /** Draw each node's SDF shape as a translucent overlay */
+  showSdfs: boolean;
+}
+
+type AlgorithmConfig = JankAlgConfig | TopogridAlgConfig | SdfAlgConfig;
+
+const DEFAULT_JANK_STORY: JankAlgConfig = {
+  id: "JANK",
   leafR: 26,
   spread: DEFAULT_JANK_CONFIG.spread,
   settleV: DEFAULT_JANK_CONFIG.settleV,
@@ -76,57 +87,52 @@ const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
   springK: DEFAULT_JANK_CONFIG.springK,
   springL: DEFAULT_JANK_CONFIG.springL,
   damping: DEFAULT_JANK_CONFIG.damping,
-  hSpacing: DEFAULT_TOPOGRID_CONFIG.hSpacing,
-  vSpacing: DEFAULT_TOPOGRID_CONFIG.vSpacing,
-  sdfRepulsionStrength: DEFAULT_SDF_CONFIG.repulsionStrength,
-  sdfRestGap: DEFAULT_SDF_CONFIG.restGap,
-  sdfMaxRepulsionDist: DEFAULT_SDF_CONFIG.maxRepulsionDist,
-  sdfGradientEps: DEFAULT_SDF_CONFIG.sdfGradientEps,
-  sdfSpringK: DEFAULT_SDF_CONFIG.springK,
-  sdfSpringRestLength: DEFAULT_SDF_CONFIG.springRestLength,
-  sdfEdgeClearance: DEFAULT_SDF_CONFIG.edgeClearance,
-  sdfEdgeRepulsionK: DEFAULT_SDF_CONFIG.edgeRepulsionK,
-  sdfComponentRepulsionK: DEFAULT_SDF_CONFIG.componentRepulsionK,
-  sdfDamping: DEFAULT_SDF_CONFIG.damping,
-  sdfMaxVelocity: DEFAULT_SDF_CONFIG.maxVelocity,
-  sdfCircleThreshold: DEFAULT_SDF_CONFIG.circleThreshold,
-  sdfSettleV: DEFAULT_SDF_CONFIG.settleV,
-  sdfMaxTicks: DEFAULT_SDF_CONFIG.maxTicks,
-  sdfShowComponents: false,
-  sdfShowSdfs: false,
 };
 
-function makeAlgorithm(id: AlgorithmId, cfg: LayoutConfig): LayoutAlgorithm {
-  if (id === "TOPOGRID") return createTOPOGRID({ hSpacing: cfg.hSpacing, vSpacing: cfg.vSpacing });
-  if (id === "SDF") {
-    return createSDF({
-      repulsionStrength: cfg.sdfRepulsionStrength,
-      restGap: cfg.sdfRestGap,
-      maxRepulsionDist: cfg.sdfMaxRepulsionDist,
-      sdfGradientEps: cfg.sdfGradientEps,
-      springK: cfg.sdfSpringK,
-      springRestLength: cfg.sdfSpringRestLength,
-      edgeClearance: cfg.sdfEdgeClearance,
-      edgeRepulsionK: cfg.sdfEdgeRepulsionK,
-      componentRepulsionK: cfg.sdfComponentRepulsionK,
-      damping: cfg.sdfDamping,
-      maxVelocity: cfg.sdfMaxVelocity,
-      circleThreshold: cfg.sdfCircleThreshold,
-      spread: cfg.spread,
-      settleV: cfg.sdfSettleV,
-      maxTicks: Infinity, // story runs until user pauses
-    });
+const DEFAULT_TOPOGRID_STORY: TopogridAlgConfig = {
+  id: "TOPOGRID",
+  leafR: 26,
+  hSpacing: DEFAULT_TOPOGRID_CONFIG.hSpacing,
+  vSpacing: DEFAULT_TOPOGRID_CONFIG.vSpacing,
+};
+
+const DEFAULT_SDF_STORY: SdfAlgConfig = {
+  id: "SDF",
+  leafR: 26,
+  repulsionStrength: DEFAULT_SDF_CONFIG.repulsionStrength,
+  restGap: DEFAULT_SDF_CONFIG.restGap,
+  maxRepulsionDist: DEFAULT_SDF_CONFIG.maxRepulsionDist,
+  sdfGradientEps: DEFAULT_SDF_CONFIG.sdfGradientEps,
+  springK: DEFAULT_SDF_CONFIG.springK,
+  springRestLength: DEFAULT_SDF_CONFIG.springRestLength,
+  edgeClearance: DEFAULT_SDF_CONFIG.edgeClearance,
+  edgeRepulsionK: DEFAULT_SDF_CONFIG.edgeRepulsionK,
+  componentRepulsionK: DEFAULT_SDF_CONFIG.componentRepulsionK,
+  damping: DEFAULT_SDF_CONFIG.damping,
+  maxVelocity: DEFAULT_SDF_CONFIG.maxVelocity,
+  circleThreshold: DEFAULT_SDF_CONFIG.circleThreshold,
+  spread: DEFAULT_SDF_CONFIG.spread,
+  settleV: DEFAULT_SDF_CONFIG.settleV,
+  showComponents: false,
+  showSdfs: false,
+};
+
+function defaultAlgConfig(id: AlgorithmId): AlgorithmConfig {
+  if (id === "JANK") return DEFAULT_JANK_STORY;
+  if (id === "TOPOGRID") return DEFAULT_TOPOGRID_STORY;
+  return DEFAULT_SDF_STORY;
+}
+
+function makeAlgorithm(cfg: AlgorithmConfig): LayoutAlgorithm {
+  if (cfg.id === "TOPOGRID") {
+    return createTOPOGRID({ hSpacing: cfg.hSpacing, vSpacing: cfg.vSpacing });
   }
-  return createJANK({
-    spread: cfg.spread,
-    settleV: cfg.settleV,
-    maxTicks: Infinity, // story runs until user pauses
-    repulsion: cfg.repulsion,
-    maxForce: cfg.maxForce,
-    springK: cfg.springK,
-    springL: cfg.springL,
-    damping: cfg.damping,
-  });
+  if (cfg.id === "SDF") {
+    const { id: _id, leafR: _r, showComponents: _sc, showSdfs: _ss, ...sdfParams } = cfg;
+    return createSDF({ ...sdfParams, maxTicks: Infinity });
+  }
+  const { id: _id, leafR: _r, ...jankParams } = cfg;
+  return createJANK({ ...jankParams, maxTicks: Infinity });
 }
 
 // ---------------------------------------------------------------------------
@@ -410,7 +416,7 @@ function findParentLevel(nodes: NodeDef[], targetId: string): string | null {
 
 function initSim(
   dataset: Dataset,
-  cfg: LayoutConfig,
+  cfg: AlgorithmConfig,
   algorithm: LayoutAlgorithm,
 ): SimState {
   const map = new Map<string, LevelState>();
@@ -438,7 +444,7 @@ function initSim(
 function tickSim(
   prev: SimState,
   dataset: Dataset,
-  cfg: LayoutConfig,
+  cfg: AlgorithmConfig,
   algorithm: LayoutAlgorithm,
 ): SimState {
   const next = new Map(prev);
@@ -531,15 +537,13 @@ function renderLevel(
   nodes: NodeDef[],
   edges: { id: string; a: string; b: string }[],
   sim: SimState,
-  cfg: LayoutConfig,
-  algorithmId: AlgorithmId,
+  cfg: AlgorithmConfig,
   invScale: number,
 ) {
   const level = sim.get(parentId);
   if (!level) return null;
   const posMap = new Map(level.nodes.map((n) => [n.id, n]));
   const r = cfg.leafR;
-  const useSdf = algorithmId === "SDF";
 
   return (
     <>
@@ -571,15 +575,7 @@ function renderLevel(
             >
               {n.label}
             </text>
-            {renderLevel(
-              n.id,
-              n.children!,
-              n.edges ?? [],
-              sim,
-              cfg,
-              algorithmId,
-              invScale,
-            )}
+            {renderLevel(n.id, n.children!, n.edges ?? [], sim, cfg, invScale)}
           </g>
         );
       })}
@@ -588,7 +584,7 @@ function renderLevel(
         const a = posMap.get(e.a);
         const b = posMap.get(e.b);
         if (!a || !b) return null;
-        if (useSdf && cfg.sdfEdgeClearance > 0) {
+        if (cfg.id === "SDF" && cfg.edgeClearance > 0) {
           const pts = bentEdgePoints(
             a.x,
             a.y,
@@ -596,7 +592,7 @@ function renderLevel(
             b.y,
             level.nodes,
             [e.a, e.b],
-            cfg.sdfEdgeClearance,
+            cfg.edgeClearance,
           );
           const pointsStr = pts.reduce(
             (acc, v, i) => acc + (i % 2 === 0 ? (i === 0 ? "" : " ") + v : "," + v),
@@ -625,7 +621,7 @@ function renderLevel(
         );
       })}
       {/* SDF debug: component bounding circles */}
-      {useSdf && cfg.sdfShowComponents && parentId === "" && (() => {
+      {cfg.id === "SDF" && cfg.showComponents && parentId === "" && (() => {
         const ids = level.nodes.map((n) => n.id);
         const edgesAB = edges.map((e) => ({ a: e.a, b: e.b }));
         const comps = connectedComponents(ids, edgesAB);
@@ -676,7 +672,7 @@ function renderLevel(
         });
       })()}
       {/* SDF debug: draw each node's SDF shape (zero-level set) as a translucent overlay */}
-      {useSdf && cfg.sdfShowSdfs && (() => {
+      {cfg.id === "SDF" && cfg.showSdfs && (() => {
         const palette = [
           "#ff5555",
           "#55ff55",
@@ -691,7 +687,7 @@ function renderLevel(
         ];
         return level.nodes.map((fn, i) => {
           const color = palette[i % palette.length];
-          if (isCircleNode(fn, cfg.sdfCircleThreshold)) {
+          if (isCircleNode(fn, cfg.circleThreshold)) {
             return (
               <circle
                 key={`sdf-${fn.id}`}
@@ -761,24 +757,21 @@ function renderLevel(
 
 export function Configurator() {
   const [datasetIdx, setDatasetIdx] = useState(0);
-  const [algorithmId, setAlgorithmId] = useState<AlgorithmId>("SDF");
-  const [config, setConfig] = useState<LayoutConfig>(DEFAULT_LAYOUT_CONFIG);
+  const [algCfg, setAlgCfg] = useState<AlgorithmConfig>(DEFAULT_SDF_STORY);
   const [configText, setConfigText] = useState(
-    () => JSON.stringify(DEFAULT_LAYOUT_CONFIG, null, 2),
+    () => JSON.stringify(DEFAULT_SDF_STORY, null, 2),
   );
   const [configError, setConfigError] = useState<string | null>(null);
   const [sim, setSim] = useState<SimState>(() =>
-    initSim(DATASETS[0], DEFAULT_LAYOUT_CONFIG, makeAlgorithm("JANK", DEFAULT_LAYOUT_CONFIG))
+    initSim(DATASETS[0], DEFAULT_SDF_STORY, makeAlgorithm(DEFAULT_SDF_STORY))
   );
   const [paused, setPaused] = useState(false);
 
   // Stable refs read by the RAF loop (avoids stale closures)
   const datasetIdxRef = useRef(datasetIdx);
   datasetIdxRef.current = datasetIdx;
-  const configRef = useRef(config);
-  configRef.current = config;
-  const algorithmIdRef = useRef(algorithmId);
-  algorithmIdRef.current = algorithmId;
+  const algCfgRef = useRef(algCfg);
+  algCfgRef.current = algCfg;
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
 
@@ -788,10 +781,9 @@ export function Configurator() {
     function frame() {
       if (!pausedRef.current) {
         setSim((prev) => {
-          const cfg = configRef.current!;
+          const cfg = algCfgRef.current!;
           const ds = DATASETS[datasetIdxRef.current!];
-          const alg = makeAlgorithm(algorithmIdRef.current!, cfg);
-          return tickSim(prev, ds, cfg, alg);
+          return tickSim(prev, ds, cfg, makeAlgorithm(cfg));
         });
       }
       rafId = requestAnimationFrame(frame);
@@ -802,34 +794,35 @@ export function Configurator() {
 
   function applyAndRestart() {
     try {
-      const parsed = JSON.parse(configText) as Partial<LayoutConfig>;
-      const merged: LayoutConfig = { ...DEFAULT_LAYOUT_CONFIG, ...parsed };
-      setConfig(merged);
+      const parsed = JSON.parse(configText) as Partial<AlgorithmConfig>;
+      const merged = {
+        ...defaultAlgConfig(algCfgRef.current!.id),
+        ...parsed,
+        id: algCfgRef.current!.id,
+      } as AlgorithmConfig;
+      setAlgCfg(merged);
       setConfigError(null);
-      setSim(
-        initSim(
-          DATASETS[datasetIdxRef.current!],
-          merged,
-          makeAlgorithm(algorithmIdRef.current!, merged),
-        ),
-      );
+      setSim(initSim(DATASETS[datasetIdxRef.current!], merged, makeAlgorithm(merged)));
     } catch (e) {
       setConfigError(String(e));
     }
   }
 
   function restart() {
-    setSim(initSim(DATASETS[datasetIdx], config, makeAlgorithm(algorithmId, config)));
+    setSim(initSim(DATASETS[datasetIdx], algCfg, makeAlgorithm(algCfg)));
   }
 
   function handleDatasetChange(idx: number) {
     setDatasetIdx(idx);
-    setSim(initSim(DATASETS[idx], config, makeAlgorithm(algorithmId, config)));
+    setSim(initSim(DATASETS[idx], algCfg, makeAlgorithm(algCfg)));
   }
 
   function handleAlgorithmChange(id: AlgorithmId) {
-    setAlgorithmId(id);
-    setSim(initSim(DATASETS[datasetIdx], config, makeAlgorithm(id, config)));
+    const newCfg = defaultAlgConfig(id);
+    setAlgCfg(newCfg);
+    setConfigText(JSON.stringify(newCfg, null, 2));
+    setConfigError(null);
+    setSim(initSim(DATASETS[datasetIdx], newCfg, makeAlgorithm(newCfg)));
   }
 
   const dataset = DATASETS[datasetIdx];
@@ -840,7 +833,7 @@ export function Configurator() {
     totalMv = Math.max(totalMv, maxVelocity(level.nodes));
   }
   const rootTicks = sim.get("")?.ticks ?? 0;
-  const settled = totalMv < config.settleV;
+  const settled = totalMv < ("settleV" in algCfg ? algCfg.settleV : 0);
 
   // Auto-fit the SVG viewport — use root bbox if available
   const SVG_W = 600;
@@ -913,9 +906,9 @@ export function Configurator() {
             onChange={(e: Event) =>
               handleAlgorithmChange((e.target as HTMLSelectElement).value as AlgorithmId)}
           >
-            <option value="JANK" selected={algorithmId === "JANK"}>JANK</option>
-            <option value="TOPOGRID" selected={algorithmId === "TOPOGRID"}>TOPOGRID</option>
-            <option value="SDF" selected={algorithmId === "SDF"}>SDF</option>
+            <option value="JANK" selected={algCfg.id === "JANK"}>JANK</option>
+            <option value="TOPOGRID" selected={algCfg.id === "TOPOGRID"}>TOPOGRID</option>
+            <option value="SDF" selected={algCfg.id === "SDF"}>SDF</option>
           </select>
         </div>
 
@@ -948,7 +941,7 @@ export function Configurator() {
               style="background:none; border:1px solid #2a2a4a; color:#555; font-size:12px; cursor:pointer; padding:5px 8px; border-radius:3px;"
               title="Restore textarea to current applied config"
               onClick={() => {
-                setConfigText(JSON.stringify(config, null, 2));
+                setConfigText(JSON.stringify(algCfg, null, 2));
                 setConfigError(null);
               }}
             >
@@ -993,7 +986,7 @@ export function Configurator() {
         viewBox={`0 0 ${SVG_W} ${SVG_H}`}
       >
         <g transform={`translate(${tx}, ${ty}) scale(${scale})`}>
-          {renderLevel("", dataset.nodes, dataset.edges, sim, config, algorithmId, 1 / scale)}
+          {renderLevel("", dataset.nodes, dataset.edges, sim, algCfg, 1 / scale)}
         </g>
       </svg>
     </div>
