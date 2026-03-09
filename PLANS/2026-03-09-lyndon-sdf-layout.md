@@ -29,7 +29,7 @@ A new pluggable `SDF` layout algorithm that:
 - [x] Apply `centerNodes` in `canvas.tsx` and `layout.stories.tsx` composite ticks
 - [x] Make SDF the default layout algorithm (`workspace.ts`)
 - [x] Refactor `layout.stories.tsx` config to discriminated union — per-algorithm typed params, no `sdf*` prefixes
-- [ ] Tune parameters via stories and iterate
+- [x] Tune parameters via stories and iterate
 - [x] Update `README.md` — mark SDF TODO done
 
 ## Open Questions
@@ -41,10 +41,10 @@ A new pluggable `SDF` layout algorithm that:
 ## Verification
 
 - [x] "SDF" appears in layout dropdown in canvas and stories
-- [ ] "No edges (5 nodes)" dataset: nodes cluster, don't drift (key test — verify via story)
-- [ ] No overlap at rest on Triangle/Ring/Star/Grid datasets
+- [x] "No edges (5 nodes)" dataset: nodes cluster, don't drift (key test — verify via story)
+- [x] No overlap at rest on Triangle/Ring/Star/Grid datasets
 - [x] Expanded bounding boxes don't overlap (Two Groups / Mixed datasets) — fixed by directional S2S formula
 - [x] `deno task check`, `deno task lint`, `deno task fmt`, `deno task test` pass
 - [x] JANK and TOPOGRID behaviour unchanged
-- [ ] "Dense" dataset no longer rotates after Newton's 3rd fix
+- [x] "Dense" dataset no longer rotates after Newton's 3rd fix
 - [x] Switching algorithm in story Configurator loads only that algorithm's parameters in JSON editor
