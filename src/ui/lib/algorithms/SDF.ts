@@ -4,10 +4,7 @@
 
 import type { LayoutAlgorithm } from "./types.ts";
 import { initPositions, maxVelocity } from "../force.ts";
-import {
-  type SdfPhysicsConfig,
-  tickSdfLevel,
-} from "../sdf-force.ts";
+import { type SdfPhysicsConfig, tickSdfLevel } from "../sdf-force.ts";
 
 // ---------------------------------------------------------------------------
 // SdfConfig

@@ -678,8 +678,16 @@ function renderLevel(
       {/* SDF debug: draw each node's SDF shape (zero-level set) as a translucent overlay */}
       {useSdf && cfg.sdfShowSdfs && (() => {
         const palette = [
-          "#ff5555", "#55ff55", "#5599ff", "#ffff44", "#ff55ff",
-          "#55ffff", "#ff9944", "#aa55ff", "#ff4499", "#44ffaa",
+          "#ff5555",
+          "#55ff55",
+          "#5599ff",
+          "#ffff44",
+          "#ff55ff",
+          "#55ffff",
+          "#ff9944",
+          "#aa55ff",
+          "#ff4499",
+          "#44ffaa",
         ];
         return level.nodes.map((fn, i) => {
           const color = palette[i % palette.length];
