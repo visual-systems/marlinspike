@@ -56,3 +56,5 @@ These are various random TODO items not formalised in DESIGN.md.
 * [ ] User-scriptable layout
 * [ ] Edges should be splines, not line segments
 * [ ] Draw arrows on edge ends
+* [ ] Add a toast element to show things like "copied X"
+
