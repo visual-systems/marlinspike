@@ -43,10 +43,10 @@ For editor support, install the [Deno VSCode extension](https://marketplace.visu
 
 These are various random TODO items not formalised in DESIGN.md.
 
-* [ ] Fix broken stories
-* [ ] Make story items interactive
+* [x] Fix broken stories
+* [x] Make story items interactive
 * [ ] Figure out how to save the IDE state (Maybe as a graph?)
-* [ ] Split out more components
+* [x] Split out more components
 * [ ] Explore making some components available as packages
 * [ ] Limit the size of source files
 * [ ] Figure out how to move hard-coded constraints into extensible constraint system
@@ -54,7 +54,7 @@ These are various random TODO items not formalised in DESIGN.md.
 * [ ] Figure out overlaying graphs and constraints
 * [ ] How is deletion possible in CRDT framework?
 * [ ] User-scriptable layout
-* [ ] Edges should be splines, not line segments
-* [ ] Draw arrows on edge ends
+* [x] Edges should be splines, not line segments
+* [x] Draw arrows on edge ends
 * [ ] Add a toast element to show things like "copied X"
-
+* [ ] Disconnected siblings are spaced too far apart

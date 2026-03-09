@@ -45,6 +45,43 @@ export function WithEdgesAndSelection() {
   return <StoryWrapper initial={ws} />;
 }
 
+export function BidirectionalEdges() {
+  const ws = defaultState();
+  const fromId = "spike://acme/backend/auth-service";
+  const toId = "spike://acme/backend/frontend";
+  ws.edges = [
+    { id: "edge-1", fromId, toId, label: "calls", data: {}, version: 1 },
+    { id: "edge-2", fromId: toId, toId: fromId, label: "responds", data: {}, version: 1 },
+  ];
+  ws.canvasExpandedNodes = ["spike://acme/backend"];
+  return <StoryWrapper initial={ws} />;
+}
+
+export function EdgeConfigurations() {
+  const ws = defaultState();
+  // Six isolated nodes: pairs for each edge configuration
+  ws.treeNodes = [
+    makeNode("a1", "sender", "leaf", []),
+    makeNode("b1", "receiver", "leaf", []),
+    makeNode("a2", "ping", "leaf", []),
+    makeNode("b2", "pong", "leaf", []),
+    makeNode("a3", "writer", "leaf", []),
+    makeNode("b3", "store", "leaf", []),
+  ];
+  ws.edges = [
+    // Single directed edge: a1 -> b1
+    { id: "e1", fromId: "a1", toId: "b1", label: "a→b", data: {}, version: 1 },
+    // Bidirectional pair: a2 <-> b2
+    { id: "e2", fromId: "a2", toId: "b2", label: "ping", data: {}, version: 1 },
+    { id: "e3", fromId: "b2", toId: "a2", label: "pong", data: {}, version: 1 },
+    // Two parallel same-direction edges: a3 =>> b3
+    { id: "e4", fromId: "a3", toId: "b3", label: "write", data: {}, version: 1 },
+    { id: "e5", fromId: "a3", toId: "b3", label: "flush", data: {}, version: 1 },
+  ];
+  ws.canvasExpandedNodes = [];
+  return <StoryWrapper initial={ws} />;
+}
+
 export function BigGraph() {
   const ws = defaultState();
   ws.treeNodes = [

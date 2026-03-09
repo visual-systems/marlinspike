@@ -40,6 +40,86 @@ const LABEL_H = 22;
 const DRAG_THRESHOLD_SQ = 16; // 4px
 
 // ---------------------------------------------------------------------------
+// Edge helpers
+// ---------------------------------------------------------------------------
+
+/** Unit vector of the path's direction of travel at its endpoint (dst).
+ *  For straight paths this is the chord direction; for arcs it is the circle tangent. */
+function pathEndTangent(
+  src: { x: number; y: number },
+  dst: { x: number; y: number },
+  needsArc: boolean,
+  r: number,
+  sweep: number,
+): { x: number; y: number } {
+  const dx = dst.x - src.x;
+  const dy = dst.y - src.y;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  if (d < 0.001) return { x: 1, y: 0 };
+  if (!needsArc) return { x: dx / d, y: dy / d };
+  // Compute circle center; sweep=1 → center to the right of src→dst (-n̂)
+  const ux = dx / d, uy = dy / d;
+  const nx = -uy, ny = ux; // left normal
+  const h = Math.sqrt(Math.max(0, r * r - (d / 2) * (d / 2)));
+  const sign = sweep === 1 ? -1 : 1;
+  const cx = (src.x + dst.x) / 2 + sign * h * nx;
+  const cy = (src.y + dst.y) / 2 + sign * h * ny;
+  // Radius vector at dst; CW tangent = (rv.y, -rv.x); CCW = (-rv.y, rv.x)
+  const rvx = dst.x - cx, rvy = dst.y - cy;
+  const tx = sweep === 1 ? rvy : -rvy;
+  const ty = sweep === 1 ? -rvx : rvx;
+  const tl = Math.sqrt(tx * tx + ty * ty);
+  return tl < 0.001 ? { x: ux, y: uy } : { x: tx / tl, y: ty / tl };
+}
+
+/** Returns the geometric midpoint of a circular arc defined by endpoints and sweep flag. */
+function arcMidpoint(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  r: number,
+  sweep: number,
+): { x: number; y: number } {
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  if (d < 0.001) return { x: mx, y: my };
+  const ux = dx / d;
+  const uy = dy / d;
+  // Left normal of the direction P1→P2
+  const nx = -uy;
+  const ny = ux;
+  const h = Math.sqrt(Math.max(0, r * r - (d / 2) * (d / 2)));
+  // Arc midpoint is offset from chord midpoint by (r - h) in the arc's bulge direction.
+  // sweep=0 → arc bulges in -n̂ direction; sweep=1 → +n̂
+  const sign = sweep === 0 ? -1 : 1;
+  const offset = r - h;
+  return { x: mx + sign * offset * nx, y: my + sign * offset * ny };
+}
+
+/** Returns the point on `from`'s boundary in the direction of `to`, offset outward by `gap` px. */
+function surfacePoint(from: ForceNode, to: ForceNode, gap = 0): { x: number; y: number } {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < 0.001) return { x: from.x, y: from.y };
+  const ux = dx / dist;
+  const uy = dy / dist;
+  if (from.w === LEAF_W && from.h === LEAF_H) {
+    // collapsed circle node
+    return { x: from.x + ux * (LEAF_R + gap), y: from.y + uy * (LEAF_R + gap) };
+  }
+  // expanded rectangle: ray-AABB clip
+  const tx = Math.abs(ux) > 0.001 ? (from.w / 2) / Math.abs(ux) : Infinity;
+  const ty = Math.abs(uy) > 0.001 ? (from.h / 2) / Math.abs(uy) : Infinity;
+  const t = Math.min(tx, ty);
+  return { x: from.x + ux * (t + gap), y: from.y + uy * (t + gap) };
+}
+
+// ---------------------------------------------------------------------------
 // Layout state types
 // ---------------------------------------------------------------------------
 
@@ -886,41 +966,136 @@ function renderLevel(
       })}
 
       {/* Edges last — on top of all shapes */}
-      {levelEdges.map((edge) => {
-        const pa = posMap.get(edge.fromId);
-        const pb = posMap.get(edge.toId);
-        if (!pa || !pb) return null;
-        const isSelected = selectedEdgeId === edge.id;
+      {(() => {
+        // Group edges by unordered node pair (canonical key = minId|maxId).
+        // Each group gets indices 0,1,2... — used to alternate arc sweep so
+        // parallel and bidirectional edges separate visually.
+        const groupIndex = new Map<string, number>();
+        const groupCount = new Map<string, number>();
+        for (const e of levelEdges) {
+          const key = [e.fromId, e.toId].sort().join("|");
+          groupIndex.set(e.id, groupCount.get(key) ?? 0);
+          groupCount.set(key, (groupCount.get(key) ?? 0) + 1);
+        }
+
+        // Pre-compute path data for each edge so we can do two render passes:
+        // pass 1 — all paths (so no arc draws over another edge's label),
+        // pass 2 — all labels on top.
+        type EdgeRenderData = {
+          edge: (typeof levelEdges)[0];
+          pa: ForceNode;
+          pb: ForceNode;
+          src: { x: number; y: number };
+          dst: { x: number; y: number };
+          d: string;
+          needsArc: boolean;
+          r: number;
+          sweep: number;
+          isSelected: boolean;
+        };
+        const renderData: EdgeRenderData[] = [];
+        for (const edge of levelEdges) {
+          const pa = posMap.get(edge.fromId);
+          const pb = posMap.get(edge.toId);
+          if (!pa || !pb) continue;
+          const src = surfacePoint(pa, pb, 5);
+          // Destination: pull back by arrowhead length so stroke ends at arrowhead base,
+          // not tip — prevents the line from visually extending through the arrowhead.
+          const dst = surfacePoint(pb, pa, 5 + 10);
+          const dx = pb.x - pa.x;
+          const dy = pb.y - pa.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const key = [edge.fromId, edge.toId].sort().join("|");
+          const needsArc = (groupCount.get(key) ?? 1) > 1;
+          const idx = groupIndex.get(edge.id) ?? 0;
+          const baseSweep = edge.fromId < edge.toId ? 0 : 1;
+          const sweep = idx % 2 === 0 ? baseSweep : 1 - baseSweep;
+          const r = dist * 0.6;
+          const d = needsArc
+            ? `M${src.x},${src.y} A${r},${r} 0 0,${sweep} ${dst.x},${dst.y}`
+            : `M${src.x},${src.y} L${dst.x},${dst.y}`;
+          renderData.push({
+            edge,
+            pa,
+            pb,
+            src,
+            dst,
+            d,
+            needsArc,
+            r,
+            sweep,
+            isSelected: selectedEdgeId === edge.id,
+          });
+        }
+
         return (
-          <g key={edge.id}>
-            <line
-              x1={pa.x}
-              y1={pa.y}
-              x2={pb.x}
-              y2={pb.y}
-              stroke={isSelected ? "#5070c0" : "#2a2a50"}
-              stroke-width={isSelected ? 2 : 1}
-              style="cursor:pointer;"
-              onClick={(e: MouseEvent) => {
-                e.stopPropagation();
-                onSelectEdge(edge.id);
-              }}
-            />
-            {edge.label && (
-              <text
-                x={(pa.x + pb.x) / 2}
-                y={(pa.y + pb.y) / 2 - 4}
-                text-anchor="middle"
-                fill="#334"
-                font-size="10"
-                style="pointer-events:none; user-select:none;"
-              >
-                {edge.label}
-              </text>
-            )}
-          </g>
+          <>
+            {/* Pass 1: all edge paths */}
+            {renderData.map(({ edge, d, src, dst, needsArc, r, sweep, isSelected }) => {
+              const stroke = isSelected ? "#5070c0" : "#2a2a50";
+              const tangent = pathEndTangent(src, dst, needsArc, r, sweep);
+              const perp = { x: -tangent.y, y: tangent.x };
+              const tip = { x: dst.x + tangent.x * 10, y: dst.y + tangent.y * 10 };
+              const arrowPoints = `${tip.x},${tip.y} ${dst.x + perp.x * 3.5},${
+                dst.y + perp.y * 3.5
+              } ${dst.x - perp.x * 3.5},${dst.y - perp.y * 3.5}`;
+              return (
+                <g key={edge.id}>
+                  {/* Wide transparent hit-area */}
+                  <path
+                    d={d}
+                    stroke="transparent"
+                    stroke-width={8}
+                    fill="none"
+                    style="cursor:pointer;"
+                    onClick={(e: MouseEvent) => {
+                      e.stopPropagation();
+                      onSelectEdge(edge.id);
+                    }}
+                  />
+                  {/* Visible path */}
+                  <path
+                    d={d}
+                    stroke={stroke}
+                    stroke-width={isSelected ? 2 : 1}
+                    fill="none"
+                    style="pointer-events:none;"
+                  />
+                  {/* Arrowhead polygon */}
+                  <polygon
+                    points={arrowPoints}
+                    fill={stroke}
+                    style="pointer-events:none;"
+                  />
+                </g>
+              );
+            })}
+            {/* Pass 2: all labels on top of all paths */}
+            {renderData.map(({ edge, pa, pb, src, dst, needsArc, r, sweep }) => {
+              if (!edge.label) return null;
+              const lp = needsArc
+                ? arcMidpoint(src.x, src.y, dst.x, dst.y, r, sweep)
+                : { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+              return (
+                <text
+                  key={`${edge.id}-label`}
+                  x={lp.x}
+                  y={lp.y - 4}
+                  text-anchor="middle"
+                  fill="#556"
+                  font-size="10"
+                  stroke="#0d0d1e"
+                  stroke-width="4"
+                  stroke-linejoin="round"
+                  style="pointer-events:none; user-select:none; paint-order:stroke;"
+                >
+                  {edge.label}
+                </text>
+              );
+            })}
+          </>
         );
-      })}
+      })()}
     </>
   );
 }
