@@ -82,6 +82,13 @@ export function EdgeConfigurations() {
   return <StoryWrapper initial={ws} />;
 }
 
+export function EdgeAddition() {
+  const ws = defaultState();
+  ws.canvasExpandedNodes = [];
+  ws.edges = [];
+  return <StoryWrapper initial={ws} />;
+}
+
 export function BigGraph() {
   const ws = defaultState();
   ws.treeNodes = [

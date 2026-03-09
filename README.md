@@ -58,3 +58,4 @@ These are various random TODO items not formalised in DESIGN.md.
 * [x] Draw arrows on edge ends
 * [ ] Add a toast element to show things like "copied X"
 * [ ] Disconnected siblings are spaced too far apart
+* [ ] General refactoring patterns such as enums instead of flags

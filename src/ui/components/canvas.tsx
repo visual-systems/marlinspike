@@ -25,6 +25,13 @@ import {
 } from "../lib/algorithms/index.ts";
 
 // ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/** Extensible canvas interaction mode. Add new modes here as needed. */
+type CanvasMode = "select" | "add-edge";
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
@@ -412,7 +419,14 @@ function CanvasInspector(
 // Contains canvas-wide controls (layout selector) + breadcrumb navigation.
 // ---------------------------------------------------------------------------
 
-function CanvasTopBar({ ws, update }: { ws: WorkspaceState; update: Updater }) {
+function CanvasTopBar(
+  { ws, update, mode, onSetMode }: {
+    ws: WorkspaceState;
+    update: Updater;
+    mode: CanvasMode;
+    onSetMode: (m: CanvasMode) => void;
+  },
+) {
   function selectNode(id: string) {
     update((s) => ({ ...s, canvasSelectedNodeId: id, canvasSelectedEdgeId: null }));
   }
@@ -432,6 +446,18 @@ function CanvasTopBar({ ws, update }: { ws: WorkspaceState; update: Updater }) {
 
   return (
     <div style="position:absolute; top:8px; right:8px; display:flex; align-items:center; gap:4px; z-index:2; pointer-events:auto;">
+      {/* Mode toolbar */}
+      <div style={pillStyle}>
+        <span
+          title="Add edge (E)"
+          style={`cursor:pointer; user-select:none; padding:2px 6px; border-radius:3px; font-size:11px; color:${
+            mode === "add-edge" ? "#a0b4e0" : "#404466"
+          }; background:${mode === "add-edge" ? "#1e2a4a" : "transparent"};`}
+          onClick={() => onSetMode(mode === "add-edge" ? "select" : "add-edge")}
+        >
+          + edge
+        </span>
+      </div>
       {/* Canvas-wide controls */}
       <div style={pillStyle}>
         <span style="color:#404466; user-select:none;">layout</span>
@@ -518,10 +544,16 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
     )
   );
 
+  const [mode, setMode] = useState<CanvasMode>("select");
+  const [edgeDraw, setEdgeDraw] = useState<{ fromId: string; x: number; y: number } | null>(null);
+  const [mouseCanvas, setMouseCanvas] = useState<{ x: number; y: number } | null>(null);
+
   const wsRef = useRef(ws);
   wsRef.current = ws;
   const viewRef = useRef(view);
   viewRef.current = view;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   // Sync layout when tree, edges, expanded nodes, or algorithm change
   useEffect(() => {
@@ -682,6 +714,11 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
   }
 
   function onSvgMouseDown(e: MouseEvent) {
+    if (modeRef.current === "add-edge") {
+      // Background click in add-edge mode: cancel source selection
+      setEdgeDraw(null);
+      return;
+    }
     panRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -690,6 +727,44 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
     };
     document.addEventListener("mousemove", onDocMouseMove as EventListener);
     document.addEventListener("mouseup", onDocMouseUp);
+  }
+
+  function onSvgMouseMove(e: MouseEvent) {
+    if (modeRef.current !== "add-edge") return;
+    const el = svgRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const v = viewRef.current!;
+    setMouseCanvas({
+      x: (e.clientX - rect.left - v.tx) / v.scale,
+      y: (e.clientY - rect.top - v.ty) / v.scale,
+    });
+  }
+
+  function addEdge(fromId: string, toId: string) {
+    update((s) => ({
+      ...s,
+      edges: [...s.edges, {
+        id: crypto.randomUUID(),
+        fromId,
+        toId,
+        label: "",
+        data: {},
+        version: 1,
+      }],
+    }));
+  }
+
+  function onEdgeNodeClick(id: string, x: number, y: number) {
+    if (!edgeDraw) {
+      setEdgeDraw({ fromId: id, x, y });
+    } else if (id === edgeDraw.fromId) {
+      // Self-click: cancel source selection
+      setEdgeDraw(null);
+    } else {
+      addEdge(edgeDraw.fromId, id);
+      setEdgeDraw(null);
+    }
   }
 
   function selectNode(nodeId: string) {
@@ -737,15 +812,26 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
   const selectedEdgeId = ws.canvasSelectedEdgeId;
   const hasSelection = selectedNodeId !== null || selectedEdgeId !== null;
 
+  const edgeDrawFromId = edgeDraw?.fromId ?? null;
+
   return (
     <div
       ref={containerRef}
-      style="position:absolute; inset:0; overflow:hidden; background:#0d0d1e;"
+      // deno-lint-ignore no-explicit-any
+      tabIndex={0 as any}
+      style="position:absolute; inset:0; overflow:hidden; background:#0d0d1e; outline:none;"
+      onKeyDown={(e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          setMode("select");
+          setEdgeDraw(null);
+        }
+      }}
     >
       <svg
         ref={svgRef}
         style="width:100%; height:100%; display:block;"
         onMouseDown={onSvgMouseDown}
+        onMouseMove={onSvgMouseMove}
       >
         <g transform={`translate(${view.tx}, ${view.ty}) scale(${view.scale})`}>
           {renderLevel(
@@ -761,12 +847,28 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
             expandNode,
             collapseNode,
             startDrag,
+            mode,
+            edgeDrawFromId,
+            onEdgeNodeClick,
+          )}
+          {/* Ghost edge line while drawing */}
+          {mode === "add-edge" && edgeDraw && mouseCanvas && (
+            <line
+              x1={edgeDraw.x}
+              y1={edgeDraw.y}
+              x2={mouseCanvas.x}
+              y2={mouseCanvas.y}
+              stroke="#5070c0"
+              stroke-width={1.5}
+              stroke-dasharray="6 4"
+              style="pointer-events:none;"
+            />
           )}
         </g>
       </svg>
 
       {/* Top-right bar: canvas-wide controls + breadcrumb */}
-      <CanvasTopBar ws={ws} update={update} />
+      <CanvasTopBar ws={ws} update={update} mode={mode} onSetMode={setMode} />
 
       {/* Inspector overlay — bottom-right */}
       {hasSelection && (
@@ -812,6 +914,9 @@ function renderLevel(
   onExpand: (id: string) => void,
   onCollapse: (id: string) => void,
   startDrag: StartDragFn,
+  mode: CanvasMode,
+  edgeDrawFromId: string | null,
+  onEdgeNodeClick: (id: string, x: number, y: number) => void,
 ): unknown {
   const level = layout.get(levelId);
   if (!level) return null;
@@ -851,6 +956,9 @@ function renderLevel(
                   onExpand,
                   onCollapse,
                   startDrag,
+                  mode,
+                  edgeDrawFromId,
+                  onEdgeNodeClick,
                 )}
               </g>
             );
@@ -878,8 +986,14 @@ function renderLevel(
                 rx={8}
                 ry={8}
                 style="cursor:pointer;"
-                onMouseDown={(e: MouseEvent) =>
-                  startDrag(e, node.id, levelId, pos.x, pos.y, () => onSelectNode(node.id))}
+                onMouseDown={(e: MouseEvent) => {
+                  if (mode === "add-edge") {
+                    e.stopPropagation();
+                    onEdgeNodeClick(node.id, pos.x, pos.y);
+                    return;
+                  }
+                  startDrag(e, node.id, levelId, pos.x, pos.y, () => onSelectNode(node.id));
+                }}
                 onDblClick={(e: MouseEvent) => {
                   e.stopPropagation();
                   onCollapse(node.id);
@@ -907,6 +1021,9 @@ function renderLevel(
                 onExpand,
                 onCollapse,
                 startDrag,
+                mode,
+                edgeDrawFromId,
+                onEdgeNodeClick,
               )}
             </g>
           );
@@ -916,16 +1033,23 @@ function renderLevel(
         const isComposite = node.kind === "composite";
         const r = LEAF_R;
         const hasChildren = isComposite && node.children.length > 0;
-        const fill = isSelected ? "#1e2a4a" : isComposite ? "#141430" : "#111125";
-        const stroke = isSelected ? "#5070c0" : isComposite ? "#303060" : "#252545";
+        const isEdgeSource = node.id === edgeDrawFromId;
+        const fill = isSelected || isEdgeSource ? "#1e2a4a" : isComposite ? "#141430" : "#111125";
+        const stroke = isSelected || isEdgeSource ? "#5070c0" : isComposite ? "#303060" : "#252545";
 
         return (
           <g
             key={node.id}
             transform={`translate(${pos.x}, ${pos.y})`}
             style="cursor:pointer;"
-            onMouseDown={(e: MouseEvent) =>
-              startDrag(e, node.id, levelId, pos.x, pos.y, () => onSelectNode(node.id))}
+            onMouseDown={(e: MouseEvent) => {
+              if (mode === "add-edge") {
+                e.stopPropagation();
+                onEdgeNodeClick(node.id, pos.x, pos.y);
+                return;
+              }
+              startDrag(e, node.id, levelId, pos.x, pos.y, () => onSelectNode(node.id));
+            }}
             onDblClick={(e: MouseEvent) => {
               e.stopPropagation();
               if (isComposite) onExpand(node.id);
@@ -937,7 +1061,7 @@ function renderLevel(
               r={r}
               fill={fill}
               stroke={stroke}
-              stroke-width={isSelected ? 2 : 1}
+              stroke-width={isSelected || isEdgeSource ? 2 : 1}
             />
             <text
               x={0}
