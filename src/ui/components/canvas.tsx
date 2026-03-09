@@ -43,6 +43,35 @@ const DRAG_THRESHOLD_SQ = 16; // 4px
 // Edge helpers
 // ---------------------------------------------------------------------------
 
+/** Unit vector of the path's direction of travel at its endpoint (dst).
+ *  For straight paths this is the chord direction; for arcs it is the circle tangent. */
+function pathEndTangent(
+  src: { x: number; y: number },
+  dst: { x: number; y: number },
+  needsArc: boolean,
+  r: number,
+  sweep: number,
+): { x: number; y: number } {
+  const dx = dst.x - src.x;
+  const dy = dst.y - src.y;
+  const d = Math.sqrt(dx * dx + dy * dy);
+  if (d < 0.001) return { x: 1, y: 0 };
+  if (!needsArc) return { x: dx / d, y: dy / d };
+  // Compute circle center; sweep=1 → center to the right of src→dst (-n̂)
+  const ux = dx / d, uy = dy / d;
+  const nx = -uy, ny = ux; // left normal
+  const h = Math.sqrt(Math.max(0, r * r - (d / 2) * (d / 2)));
+  const sign = sweep === 1 ? -1 : 1;
+  const cx = (src.x + dst.x) / 2 + sign * h * nx;
+  const cy = (src.y + dst.y) / 2 + sign * h * ny;
+  // Radius vector at dst; CW tangent = (rv.y, -rv.x); CCW = (-rv.y, rv.x)
+  const rvx = dst.x - cx, rvy = dst.y - cy;
+  const tx = sweep === 1 ? rvy : -rvy;
+  const ty = sweep === 1 ? -rvx : rvx;
+  const tl = Math.sqrt(tx * tx + ty * ty);
+  return tl < 0.001 ? { x: ux, y: uy } : { x: tx / tl, y: ty / tl };
+}
+
 /** Returns the geometric midpoint of a circular arc defined by endpoints and sweep flag. */
 function arcMidpoint(
   x1: number,
@@ -718,21 +747,6 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
         style="width:100%; height:100%; display:block;"
         onMouseDown={onSvgMouseDown}
       >
-        <defs>
-          <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-            <path d="M0,0 L8,3 L0,6 z" fill="#2a2a50" />
-          </marker>
-          <marker
-            id="arrow-sel"
-            markerWidth="8"
-            markerHeight="6"
-            refX="8"
-            refY="3"
-            orient="auto"
-          >
-            <path d="M0,0 L8,3 L0,6 z" fill="#5070c0" />
-          </marker>
-        </defs>
         <g transform={`translate(${view.tx}, ${view.ty}) scale(${view.scale})`}>
           {renderLevel(
             ws.treeNodes,
@@ -985,7 +999,9 @@ function renderLevel(
           const pb = posMap.get(edge.toId);
           if (!pa || !pb) continue;
           const src = surfacePoint(pa, pb, 5);
-          const dst = surfacePoint(pb, pa, 5);
+          // Destination: pull back by arrowhead length so stroke ends at arrowhead base,
+          // not tip — prevents the line from visually extending through the arrowhead.
+          const dst = surfacePoint(pb, pa, 5 + 10);
           const dx = pb.x - pa.x;
           const dy = pb.y - pa.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
@@ -1015,11 +1031,17 @@ function renderLevel(
         return (
           <>
             {/* Pass 1: all edge paths */}
-            {renderData.map(({ edge, d, isSelected }) => {
+            {renderData.map(({ edge, d, src, dst, needsArc, r, sweep, isSelected }) => {
               const stroke = isSelected ? "#5070c0" : "#2a2a50";
-              const marker = isSelected ? "url(#arrow-sel)" : "url(#arrow)";
+              const tangent = pathEndTangent(src, dst, needsArc, r, sweep);
+              const perp = { x: -tangent.y, y: tangent.x };
+              const tip = { x: dst.x + tangent.x * 10, y: dst.y + tangent.y * 10 };
+              const arrowPoints = `${tip.x},${tip.y} ${dst.x + perp.x * 3.5},${
+                dst.y + perp.y * 3.5
+              } ${dst.x - perp.x * 3.5},${dst.y - perp.y * 3.5}`;
               return (
                 <g key={edge.id}>
+                  {/* Wide transparent hit-area */}
                   <path
                     d={d}
                     stroke="transparent"
@@ -1031,12 +1053,18 @@ function renderLevel(
                       onSelectEdge(edge.id);
                     }}
                   />
+                  {/* Visible path */}
                   <path
                     d={d}
                     stroke={stroke}
                     stroke-width={isSelected ? 2 : 1}
                     fill="none"
-                    marker-end={marker}
+                    style="pointer-events:none;"
+                  />
+                  {/* Arrowhead polygon */}
+                  <polygon
+                    points={arrowPoints}
+                    fill={stroke}
                     style="pointer-events:none;"
                   />
                 </g>
