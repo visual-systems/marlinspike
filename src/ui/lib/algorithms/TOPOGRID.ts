@@ -2,7 +2,7 @@
 // TOPOGRID — deterministic topological grid layout
 // ---------------------------------------------------------------------------
 
-import { topoGridLayout } from "../topo-grid.ts";
+import { topoGridLayout, topoGridLayoutSized } from "../topo-grid.ts";
 import type { LayoutAlgorithm } from "./types.ts";
 
 export interface TopogridConfig {
@@ -25,8 +25,14 @@ export function createTOPOGRID(config: TopogridConfig): LayoutAlgorithm {
     initNodes(ids, edges, leafW, leafH, _defaults) {
       return topoGridLayout(ids, edges, leafW, leafH, config.hSpacing, config.vSpacing);
     },
-    tick(nodes, _edges, _ticks) {
-      return { nodes, settled: true };
+    tick(nodes, edges, _ticks) {
+      // Recompute positions using actual node dimensions so that expanded
+      // composite nodes don't overlap. Settle once positions have converged.
+      const next = topoGridLayoutSized(nodes, edges, config.hSpacing, config.vSpacing);
+      const settled = next.every(
+        (n, i) => Math.abs(n.x - nodes[i].x) < 0.5 && Math.abs(n.y - nodes[i].y) < 0.5,
+      );
+      return { nodes: next, settled };
     },
   };
 }

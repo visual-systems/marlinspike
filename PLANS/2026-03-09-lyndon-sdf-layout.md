@@ -31,6 +31,7 @@ A new pluggable `SDF` layout algorithm that:
 - [x] Refactor `layout.stories.tsx` config to discriminated union — per-algorithm typed params, no `sdf*` prefixes
 - [x] Tune parameters via stories and iterate
 - [x] Update `README.md` — mark SDF TODO done
+- [x] Fix TOPOGRID subgraph overlap — add `topoGridLayoutSized` (size-aware, surface-to-surface gaps) and make `tick` recompute positions from actual `node.w`/`node.h` until converged
 
 ## Open Questions
 
@@ -45,6 +46,7 @@ A new pluggable `SDF` layout algorithm that:
 - [x] No overlap at rest on Triangle/Ring/Star/Grid datasets
 - [x] Expanded bounding boxes don't overlap (Two Groups / Mixed datasets) — fixed by directional S2S formula
 - [x] `deno task check`, `deno task lint`, `deno task fmt`, `deno task test` pass
-- [x] JANK and TOPOGRID behaviour unchanged
+- [x] JANK and TOPOGRID flat-graph behaviour unchanged
+- [x] TOPOGRID subgraph: composite bounding boxes no longer overlap
 - [x] "Dense" dataset no longer rotates after Newton's 3rd fix
 - [x] Switching algorithm in story Configurator loads only that algorithm's parameters in JSON editor
