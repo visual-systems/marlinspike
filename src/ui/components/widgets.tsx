@@ -22,13 +22,15 @@ export function IconBtn({ label, title, onClick }: IconBtnProps) {
 
 interface SmallBtnProps {
   label: string;
+  title?: string;
   onClick: () => void;
 }
 
-export function SmallBtn({ label, onClick }: SmallBtnProps) {
+export function SmallBtn({ label, title, onClick }: SmallBtnProps) {
   return (
     <button
       type="button"
+      title={title}
       onClick={onClick}
       style="background:none; border:1px solid #2a2a4a; color:#666; font-size:11px; cursor:pointer; padding:2px 8px; border-radius:3px;"
     >

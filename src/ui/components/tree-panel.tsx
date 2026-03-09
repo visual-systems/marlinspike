@@ -96,13 +96,18 @@ export function TreePanel(
   const treeFlex = hasInspector ? 1 - localSplit : 1;
 
   return (
-    <div style="display:flex; flex-direction:column; width:300px; min-width:200px; flex-shrink:0; border-right:1px solid #2a2a4a; background:#14142a; overflow:hidden;">
+    <div style="display:flex; flex-direction:column; width:300px; min-width:200px; flex-shrink:0; border-right:1px solid #2a2a4a; background:#14142a; overflow:hidden; height:100%;">
       {/* Header */}
       <div style="display:flex; align-items:center; justify-content:space-between; padding:4px 8px; font-size:11px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:#666; border-bottom:1px solid #2a2a4a; flex-shrink:0;">
         <span>Tree View</span>
         <div style="display:flex; gap:2px; align-items:center;">
           <IconBtn label="⊞" title="Expand all" onClick={expandAll} />
           <IconBtn label="⊟" title="Collapse all" onClick={collapseAll} />
+          <IconBtn
+            label="⬡"
+            title="Mirror on canvas"
+            onClick={() => update((s) => ({ ...s, canvasExpandedNodes: [...panel.expandedNodes] }))}
+          />
           <IconBtn label="×" title="Close panel" onClick={closePanel} />
         </div>
       </div>

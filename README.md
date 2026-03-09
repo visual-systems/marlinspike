@@ -39,3 +39,15 @@ The dev server starts an HTTP server on port 8000. Tests cover the base graph JS
 
 For editor support, install the [Deno VSCode extension](https://marketplace.visualstudio.com/items?itemName=denoland.vscode-deno) — the repository includes `.vscode/settings.json` to enable it automatically.
 
+## Other TODO Items
+
+These are various random TODO items not formalised in DESIGN.md.
+
+* [ ] Fix broken stories
+* [ ] Make story items interactive
+* [ ] Figure out how to save the IDE state (Maybe as a graph?)
+* [ ] Split out more components
+* [ ] Explore making some components available as packages
+* [ ] Limit the size of source files
+* [ ] Swappable layout
+* [ ] Layout playground where you can edit parameters

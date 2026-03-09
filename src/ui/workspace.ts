@@ -3,6 +3,8 @@
 // Types
 // ---------------------------------------------------------------------------
 
+import type { AlgorithmId } from "./lib/algorithms/index.ts";
+
 export interface Panel {
   id: string;
   type: "tree";
@@ -28,6 +30,11 @@ export interface WorkspaceState {
   workflows: string[];
   activeWorkflow: string | null;
   connectedGraphs: ConnectedGraph[];
+  canvasExpandedNodes: string[];
+  canvasNodePositions: Record<string, { x: number; y: number; pinned?: boolean }>;
+  canvasSelectedNodeId: string | null;
+  canvasSelectedEdgeId: string | null;
+  canvasAlgorithm: AlgorithmId;
 }
 
 export interface TreeNode {
@@ -188,6 +195,11 @@ export function defaultState(): WorkspaceState {
       connected: true,
       required: true,
     }],
+    canvasExpandedNodes: defaultTreeNodes().map((n) => n.id),
+    canvasNodePositions: {},
+    canvasSelectedNodeId: null,
+    canvasSelectedEdgeId: null,
+    canvasAlgorithm: "JANK",
   };
 }
 
@@ -251,6 +263,13 @@ export function loadState(): WorkspaceState {
         activeWorkflow: (parsed.activeWorkflow as string | null | undefined) ?? null,
         connectedGraphs: (parsed.connectedGraphs as ConnectedGraph[] | undefined) ??
           ds.connectedGraphs,
+        canvasExpandedNodes: (parsed.canvasExpandedNodes as string[] | undefined) ?? [],
+        canvasNodePositions: (parsed.canvasNodePositions as
+          | Record<string, { x: number; y: number; pinned?: boolean }>
+          | undefined) ?? {},
+        canvasSelectedNodeId: null,
+        canvasSelectedEdgeId: null,
+        canvasAlgorithm: (parsed.canvasAlgorithm as AlgorithmId | undefined) ?? "JANK",
       };
     }
   } catch {
