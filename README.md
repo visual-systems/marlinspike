@@ -66,4 +66,5 @@ These are various random TODO items not formalised in DESIGN.md.
 * [x] More than two edges between nodes doesn't distinguish with the ellipses
 * [x] Show edge ID/URI in inspector
 * [ ] More indication that a node is an unexpanded subgraph
-* [ ] Clicking the canvas background should deselect everything and change mode to select
+* [x] Clicking the canvas background should deselect everything and change mode to select
+* [x] Arrow heads get cluttered

@@ -126,6 +126,44 @@ function surfacePoint(from: ForceNode, to: ForceNode, gap = 0): { x: number; y: 
   return { x: from.x + ux * (t + gap), y: from.y + uy * (t + gap) };
 }
 
+/**
+ * Returns the point where an arc circle (center arcC, radius r) exits a collapsed node's
+ * bounding circle (radius clipR, centered at nodeCenter). nodeCenter must lie on the arc circle.
+ * otherCenter is the other arc endpoint, used to select the correct intersection.
+ */
+function arcClipPoint(
+  arcC: { x: number; y: number },
+  r: number,
+  nodeCenter: { x: number; y: number },
+  clipR: number,
+  otherCenter: { x: number; y: number },
+): { x: number; y: number } {
+  // |arcC - nodeCenter| = r  (nodeCenter is on the arc circle)
+  const dcx = nodeCenter.x - arcC.x;
+  const dcy = nodeCenter.y - arcC.y;
+  // Standard circle-circle intersection (d = r):
+  const a = (r * r + r * r - clipR * clipR) / (2 * r);
+  const hh = r * r - a * a;
+  if (hh < 0 || r < 0.001) {
+    // Degenerate — fall back to straight surface point
+    const ddx = otherCenter.x - nodeCenter.x;
+    const ddy = otherCenter.y - nodeCenter.y;
+    const dd = Math.sqrt(ddx * ddx + ddy * ddy);
+    if (dd < 0.001) return nodeCenter;
+    return { x: nodeCenter.x + (ddx / dd) * clipR, y: nodeCenter.y + (ddy / dd) * clipR };
+  }
+  const h = Math.sqrt(hh);
+  const mx = arcC.x + a * dcx / r;
+  const my = arcC.y + a * dcy / r;
+  const px = -dcy / r;
+  const py = dcx / r;
+  const p1 = { x: mx + h * px, y: my + h * py };
+  const p2 = { x: mx - h * px, y: my - h * py };
+  const d1sq = (p1.x - otherCenter.x) ** 2 + (p1.y - otherCenter.y) ** 2;
+  const d2sq = (p2.x - otherCenter.x) ** 2 + (p2.y - otherCenter.y) ** 2;
+  return d1sq < d2sq ? p1 : p2;
+}
+
 // ---------------------------------------------------------------------------
 // Layout state types
 // ---------------------------------------------------------------------------
@@ -731,8 +769,10 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
 
   function onSvgMouseDown(e: MouseEvent) {
     if (modeRef.current === "add-edge") {
-      // Background click in add-edge mode: cancel source selection
+      // Background click: return to select mode and clear everything (same as Escape)
       setEdgeDraw(null);
+      setMode("select");
+      update((s) => ({ ...s, canvasSelectedNodeId: null, canvasSelectedEdgeId: null }));
       return;
     }
     panRef.current = {
@@ -874,24 +914,17 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
             collapseNode,
             startDrag,
             interaction,
+            { x: 0, y: 0 },
           )}
           {/* Ghost edge line while drawing */}
           {mode === "add-edge" && edgeDraw && mouseCanvas && (() => {
-            const srcLevel = layout.get(edgeDraw.levelId);
-            const srcNode = srcLevel?.nodes.find((n) => n.id === edgeDraw.fromId);
-            const mouseNode = {
-              x: mouseCanvas.x,
-              y: mouseCanvas.y,
-              w: 0,
-              h: 0,
-              vx: 0,
-              vy: 0,
-              pinned: false,
-              id: "",
+            const gdx = mouseCanvas.x - edgeDraw.x;
+            const gdy = mouseCanvas.y - edgeDraw.y;
+            const gd = Math.sqrt(gdx * gdx + gdy * gdy);
+            const gp = gd < 0.001 ? { x: edgeDraw.x, y: edgeDraw.y } : {
+              x: edgeDraw.x + gdx / gd * (LEAF_R + 5),
+              y: edgeDraw.y + gdy / gd * (LEAF_R + 5),
             };
-            const gp = srcNode
-              ? surfacePoint(srcNode, mouseNode, 5)
-              : { x: edgeDraw.x, y: edgeDraw.y };
             return (
               <line
                 x1={gp.x}
@@ -956,6 +989,7 @@ function renderLevel(
   onCollapse: (id: string) => void,
   startDrag: StartDragFn,
   interaction: InteractionState,
+  worldOffset: { x: number; y: number },
 ): unknown {
   const level = layout.get(levelId);
   if (!level) return null;
@@ -996,6 +1030,7 @@ function renderLevel(
                   onCollapse,
                   startDrag,
                   interaction,
+                  { x: worldOffset.x + pos.x, y: worldOffset.y + pos.y },
                 )}
               </g>
             );
@@ -1026,7 +1061,12 @@ function renderLevel(
                 onMouseDown={(e: MouseEvent) => {
                   if (interaction.mode === "add-edge" && nodes.length > 1) {
                     e.stopPropagation();
-                    interaction.onEdgeNodeClick(node.id, pos.x, pos.y, levelId);
+                    interaction.onEdgeNodeClick(
+                      node.id,
+                      worldOffset.x + pos.x,
+                      worldOffset.y + pos.y,
+                      levelId,
+                    );
                     return;
                   }
                   startDrag(e, node.id, levelId, pos.x, pos.y, () => onSelectNode(node.id));
@@ -1059,6 +1099,7 @@ function renderLevel(
                 onCollapse,
                 startDrag,
                 interaction,
+                { x: worldOffset.x + pos.x, y: worldOffset.y + pos.y },
               )}
             </g>
           );
@@ -1109,7 +1150,12 @@ function renderLevel(
             onMouseDown={(e: MouseEvent) => {
               if (interaction.mode === "add-edge" && (isCandidate || isEdgeSource)) {
                 e.stopPropagation();
-                interaction.onEdgeNodeClick(node.id, pos.x, pos.y, levelId);
+                interaction.onEdgeNodeClick(
+                  node.id,
+                  worldOffset.x + pos.x,
+                  worldOffset.y + pos.y,
+                  levelId,
+                );
                 return;
               }
               if (interaction.mode === "select") {
@@ -1179,8 +1225,6 @@ function renderLevel(
         // pass 2 — all labels on top.
         type EdgeRenderData = {
           edge: (typeof levelEdges)[0];
-          pa: ForceNode;
-          pb: ForceNode;
           src: { x: number; y: number };
           dst: { x: number; y: number };
           d: string;
@@ -1194,10 +1238,6 @@ function renderLevel(
           const pa = posMap.get(edge.fromId);
           const pb = posMap.get(edge.toId);
           if (!pa || !pb) continue;
-          const src = surfacePoint(pa, pb, 5);
-          // Destination: pull back by arrowhead length so stroke ends at arrowhead base,
-          // not tip — prevents the line from visually extending through the arrowhead.
-          const dst = surfacePoint(pb, pa, 5 + 10);
           const dx = pb.x - pa.x;
           const dy = pb.y - pa.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
@@ -1206,14 +1246,40 @@ function renderLevel(
           const idx = groupIndex.get(edge.id) ?? 0;
           const baseSweep = edge.fromId < edge.toId ? 0 : 1;
           const sweep = idx % 2 === 0 ? baseSweep : 1 - baseSweep;
-          const r = dist * (0.5 + Math.floor(idx / 2) * 0.35);
+          // Wider radius per additional pair so bundles of 3+ edges separate visually.
+          const r = dist * (0.55 + Math.floor(idx / 2) * 0.45);
+
+          // For arcs, compute the arc-circle center so each arc exits the node boundary at
+          // a different point (instead of all sharing the same straight surfacePoint).
+          let src: { x: number; y: number };
+          let dst: { x: number; y: number };
+          if (needsArc) {
+            const ux = dx / dist, uy = dy / dist;
+            const nx = -uy, ny = ux;
+            const hh = Math.max(0, r * r - (dist / 2) * (dist / 2));
+            const hv = Math.sqrt(hh);
+            const sign = sweep === 1 ? -1 : 1;
+            const arcC = {
+              x: (pa.x + pb.x) / 2 + sign * hv * nx,
+              y: (pa.y + pb.y) / 2 + sign * hv * ny,
+            };
+            const isSrcCircle = pa.w === LEAF_W && pa.h === LEAF_H;
+            const isDstCircle = pb.w === LEAF_W && pb.h === LEAF_H;
+            src = isSrcCircle ? arcClipPoint(arcC, r, pa, LEAF_R + 5, pb) : surfacePoint(pa, pb, 5);
+            // Destination: pull back by arrowhead length (10px) past the boundary.
+            dst = isDstCircle
+              ? arcClipPoint(arcC, r, pb, LEAF_R + 5 + 10, pa)
+              : surfacePoint(pb, pa, 5 + 10);
+          } else {
+            src = surfacePoint(pa, pb, 5);
+            dst = surfacePoint(pb, pa, 5 + 10);
+          }
+
           const d = needsArc
             ? `M${src.x},${src.y} A${r},${r} 0 0,${sweep} ${dst.x},${dst.y}`
             : `M${src.x},${src.y} L${dst.x},${dst.y}`;
           renderData.push({
             edge,
-            pa,
-            pb,
             src,
             dst,
             d,
