@@ -170,6 +170,28 @@ export function boundingBox(nodes: ForceNode[], padding: number): BBox {
 }
 
 // ---------------------------------------------------------------------------
+// centerNodes — translate nodes so their bounding box is centred at (0, 0)
+//
+// Used after each composite child-level tick so that ForceNode.w/h (which the
+// SDF uses as a rect centred at the node position) matches the actual visual
+// bounding box drawn by the renderer using bb.minX/minY.  Both derive from the
+// same boundingBox() call once nodes are centred — single source of truth.
+//
+// Skipped when any node is pinned to avoid silently moving user-locked positions.
+// Never applied to the root level (those nodes are positioned in canvas space).
+// ---------------------------------------------------------------------------
+
+export function centerNodes(nodes: ForceNode[]): ForceNode[] {
+  if (nodes.length === 0 || nodes.some((n) => n.pinned)) return nodes;
+  // Use zero-padding bbox to find the content centre
+  const raw = boundingBox(nodes, 0);
+  const ox = (raw.minX + raw.maxX) / 2;
+  const oy = (raw.minY + raw.maxY) / 2;
+  if (Math.abs(ox) < 0.5 && Math.abs(oy) < 0.5) return nodes;
+  return nodes.map((n) => ({ ...n, x: n.x - ox, y: n.y - oy }));
+}
+
+// ---------------------------------------------------------------------------
 // initPositions — deterministic circular arrangement centred at (0, 0)
 // ---------------------------------------------------------------------------
 

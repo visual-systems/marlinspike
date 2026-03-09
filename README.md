@@ -55,6 +55,7 @@ These are various random TODO items not formalised in DESIGN.md.
 * [ ] Figure out how to encode graph ownership concerns in constraints
 * [ ] Figure out overlaying graphs and constraints
 * [ ] How is deletion possible in CRDT framework?
-* [ ] New signed-distance function layout
+* [x] New signed-distance function layout (SDF algorithm — geometry-aware repulsion, edge clearance, virtual bounding circles for disconnected components)
 * [ ] User-scriptable layout
 * [ ] How to ensure that disconnected nodes don't drift apart
+* [ ] Properties in layouts story should be specialised

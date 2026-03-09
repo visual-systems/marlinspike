@@ -1,15 +1,23 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
-import { type BBox, boundingBox, type ForceNode, maxVelocity } from "../lib/force.ts";
+import { type BBox, boundingBox, centerNodes, type ForceNode, maxVelocity } from "../lib/force.ts";
 import {
   type AlgorithmId,
   createJANK,
+  createSDF,
   createTOPOGRID,
   DEFAULT_JANK_CONFIG,
+  DEFAULT_SDF_CONFIG,
   DEFAULT_TOPOGRID_CONFIG,
   type LayoutAlgorithm,
 } from "../lib/algorithms/index.ts";
+import {
+  connectedComponents,
+  isCircleNode,
+  lineClosestPoint,
+  lineSdfDist,
+} from "../lib/sdf-force.ts";
 
 export const meta = { title: "Layout" };
 
@@ -38,6 +46,25 @@ interface LayoutConfig {
   // TOPOGRID params
   hSpacing: number;
   vSpacing: number;
+  // SDF params
+  sdfRepulsionStrength: number;
+  sdfRestGap: number;
+  sdfMaxRepulsionDist: number;
+  sdfGradientEps: number;
+  sdfSpringK: number;
+  sdfSpringRestLength: number;
+  sdfEdgeClearance: number;
+  sdfEdgeRepulsionK: number;
+  sdfComponentRepulsionK: number;
+  sdfDamping: number;
+  sdfMaxVelocity: number;
+  sdfCircleThreshold: number;
+  sdfSettleV: number;
+  sdfMaxTicks: number;
+  /** Show component bounding circles as a debug overlay (SDF only) */
+  sdfShowComponents: boolean;
+  /** Draw each node's SDF shape (circle or rect) as a translucent overlay (SDF only) */
+  sdfShowSdfs: boolean;
 }
 
 const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
@@ -51,10 +78,45 @@ const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
   damping: DEFAULT_JANK_CONFIG.damping,
   hSpacing: DEFAULT_TOPOGRID_CONFIG.hSpacing,
   vSpacing: DEFAULT_TOPOGRID_CONFIG.vSpacing,
+  sdfRepulsionStrength: DEFAULT_SDF_CONFIG.repulsionStrength,
+  sdfRestGap: DEFAULT_SDF_CONFIG.restGap,
+  sdfMaxRepulsionDist: DEFAULT_SDF_CONFIG.maxRepulsionDist,
+  sdfGradientEps: DEFAULT_SDF_CONFIG.sdfGradientEps,
+  sdfSpringK: DEFAULT_SDF_CONFIG.springK,
+  sdfSpringRestLength: DEFAULT_SDF_CONFIG.springRestLength,
+  sdfEdgeClearance: DEFAULT_SDF_CONFIG.edgeClearance,
+  sdfEdgeRepulsionK: DEFAULT_SDF_CONFIG.edgeRepulsionK,
+  sdfComponentRepulsionK: DEFAULT_SDF_CONFIG.componentRepulsionK,
+  sdfDamping: DEFAULT_SDF_CONFIG.damping,
+  sdfMaxVelocity: DEFAULT_SDF_CONFIG.maxVelocity,
+  sdfCircleThreshold: DEFAULT_SDF_CONFIG.circleThreshold,
+  sdfSettleV: DEFAULT_SDF_CONFIG.settleV,
+  sdfMaxTicks: DEFAULT_SDF_CONFIG.maxTicks,
+  sdfShowComponents: false,
+  sdfShowSdfs: false,
 };
 
 function makeAlgorithm(id: AlgorithmId, cfg: LayoutConfig): LayoutAlgorithm {
   if (id === "TOPOGRID") return createTOPOGRID({ hSpacing: cfg.hSpacing, vSpacing: cfg.vSpacing });
+  if (id === "SDF") {
+    return createSDF({
+      repulsionStrength: cfg.sdfRepulsionStrength,
+      restGap: cfg.sdfRestGap,
+      maxRepulsionDist: cfg.sdfMaxRepulsionDist,
+      sdfGradientEps: cfg.sdfGradientEps,
+      springK: cfg.sdfSpringK,
+      springRestLength: cfg.sdfSpringRestLength,
+      edgeClearance: cfg.sdfEdgeClearance,
+      edgeRepulsionK: cfg.sdfEdgeRepulsionK,
+      componentRepulsionK: cfg.sdfComponentRepulsionK,
+      damping: cfg.sdfDamping,
+      maxVelocity: cfg.sdfMaxVelocity,
+      circleThreshold: cfg.sdfCircleThreshold,
+      spread: cfg.spread,
+      settleV: cfg.sdfSettleV,
+      maxTicks: Infinity, // story runs until user pauses
+    });
+  }
   return createJANK({
     spread: cfg.spread,
     settleV: cfg.settleV,
@@ -389,8 +451,9 @@ function tickSim(
 
     const edges = composite.edges ?? [];
     const { nodes: ticked } = algorithm.tick(level.nodes, edges, level.ticks);
-    const bb = boundingBox(ticked, GROUP_PADDING);
-    next.set(composite.id, { nodes: ticked, ticks: level.ticks + 1, bbox: bb });
+    const centered = centerNodes(ticked);
+    const bb = boundingBox(centered, GROUP_PADDING);
+    next.set(composite.id, { nodes: centered, ticks: level.ticks + 1, bbox: bb });
 
     // Propagate updated size up to parent level
     const parentId = findParentLevel(dataset.nodes, composite.id) ?? "";
@@ -418,18 +481,65 @@ function tickSim(
 // Recursive SVG rendering
 // ---------------------------------------------------------------------------
 
+/**
+ * Compute bent edge path points for an edge (a→b) avoiding non-incident nodes.
+ * Returns [ax, ay, bx, by] for a straight line, or [ax, ay, mx, my, bx, by]
+ * when a node obstructs the edge within clearance.
+ */
+function bentEdgePoints(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  levelNodes: Array<{ id: string; x: number; y: number }>,
+  edgeNodeIds: [string, string],
+  clearance: number,
+): number[] {
+  let bestDist = clearance;
+  let bestT = 0.5;
+  let bestGx = 0;
+  let bestGy = 0;
+  let bestBendMag = 0;
+
+  for (const n of levelNodes) {
+    if (n.id === edgeNodeIds[0] || n.id === edgeNodeIds[1]) continue;
+    const d = lineSdfDist(n.x, n.y, ax, ay, bx, by);
+    if (d >= clearance || d >= bestDist) continue;
+    const { t, cx, cy } = lineClosestPoint(n.x, n.y, ax, ay, bx, by);
+    // Perpendicular direction away from n, at the closest point on segment
+    const ex = cx - n.x;
+    const ey = cy - n.y;
+    const len = Math.sqrt(ex * ex + ey * ey);
+    if (len < 1e-9) continue;
+    bestDist = d;
+    bestT = t;
+    bestGx = ex / len;
+    bestGy = ey / len;
+    bestBendMag = clearance - d;
+  }
+
+  if (bestBendMag === 0) return [ax, ay, bx, by];
+
+  // Bend point at parameter bestT along the segment, displaced perpendicularly
+  const bendX = ax + bestT * (bx - ax) + bestGx * bestBendMag;
+  const bendY = ay + bestT * (by - ay) + bestGy * bestBendMag;
+  return [ax, ay, bendX, bendY, bx, by];
+}
+
 function renderLevel(
   parentId: string,
   nodes: NodeDef[],
   edges: { id: string; a: string; b: string }[],
   sim: SimState,
   cfg: LayoutConfig,
+  algorithmId: AlgorithmId,
   invScale: number,
 ) {
   const level = sim.get(parentId);
   if (!level) return null;
   const posMap = new Map(level.nodes.map((n) => [n.id, n]));
   const r = cfg.leafR;
+  const useSdf = algorithmId === "SDF";
 
   return (
     <>
@@ -461,15 +571,47 @@ function renderLevel(
             >
               {n.label}
             </text>
-            {renderLevel(n.id, n.children!, n.edges ?? [], sim, cfg, invScale)}
+            {renderLevel(
+              n.id,
+              n.children!,
+              n.edges ?? [],
+              sim,
+              cfg,
+              algorithmId,
+              invScale,
+            )}
           </g>
         );
       })}
-      {/* Edges (on top of group boxes) */}
+      {/* Edges (on top of group boxes) — bent when SDF is active */}
       {edges.map((e) => {
         const a = posMap.get(e.a);
         const b = posMap.get(e.b);
         if (!a || !b) return null;
+        if (useSdf && cfg.sdfEdgeClearance > 0) {
+          const pts = bentEdgePoints(
+            a.x,
+            a.y,
+            b.x,
+            b.y,
+            level.nodes,
+            [e.a, e.b],
+            cfg.sdfEdgeClearance,
+          );
+          const pointsStr = pts.reduce(
+            (acc, v, i) => acc + (i % 2 === 0 ? (i === 0 ? "" : " ") + v : "," + v),
+            "",
+          );
+          return (
+            <polyline
+              key={e.id}
+              points={pointsStr}
+              fill="none"
+              stroke="#2a2a50"
+              stroke-width={invScale}
+            />
+          );
+        }
         return (
           <line
             key={e.id}
@@ -482,6 +624,96 @@ function renderLevel(
           />
         );
       })}
+      {/* SDF debug: component bounding circles */}
+      {useSdf && cfg.sdfShowComponents && parentId === "" && (() => {
+        const ids = level.nodes.map((n) => n.id);
+        const edgesAB = edges.map((e) => ({ a: e.a, b: e.b }));
+        const comps = connectedComponents(ids, edgesAB);
+        return comps.map((comp, i) => {
+          if (comp.length === 1) {
+            const n = posMap.get(comp[0]);
+            if (!n) return null;
+            const cr = Math.sqrt(n.w * n.w + n.h * n.h) / 2;
+            return (
+              <circle
+                key={`comp-${i}`}
+                cx={n.x}
+                cy={n.y}
+                r={cr}
+                fill="none"
+                stroke="#3a5a3a"
+                stroke-width={invScale}
+                stroke-dasharray={`${4 * invScale},${4 * invScale}`}
+                opacity={0.5}
+              />
+            );
+          }
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const id of comp) {
+            const n = posMap.get(id);
+            if (!n) continue;
+            minX = Math.min(minX, n.x - n.w / 2);
+            minY = Math.min(minY, n.y - n.h / 2);
+            maxX = Math.max(maxX, n.x + n.w / 2);
+            maxY = Math.max(maxY, n.y + n.h / 2);
+          }
+          const cx = (minX + maxX) / 2;
+          const cy = (minY + maxY) / 2;
+          const cr = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2) / 2;
+          return (
+            <circle
+              key={`comp-${i}`}
+              cx={cx}
+              cy={cy}
+              r={cr}
+              fill="none"
+              stroke="#3a5a3a"
+              stroke-width={invScale}
+              stroke-dasharray={`${4 * invScale},${4 * invScale}`}
+              opacity={0.5}
+            />
+          );
+        });
+      })()}
+      {/* SDF debug: draw each node's SDF shape (zero-level set) as a translucent overlay */}
+      {useSdf && cfg.sdfShowSdfs && (() => {
+        const palette = [
+          "#ff5555", "#55ff55", "#5599ff", "#ffff44", "#ff55ff",
+          "#55ffff", "#ff9944", "#aa55ff", "#ff4499", "#44ffaa",
+        ];
+        return level.nodes.map((fn, i) => {
+          const color = palette[i % palette.length];
+          if (isCircleNode(fn, cfg.sdfCircleThreshold)) {
+            return (
+              <circle
+                key={`sdf-${fn.id}`}
+                cx={fn.x}
+                cy={fn.y}
+                r={fn.w / 2}
+                fill={color}
+                opacity={0.18}
+                stroke={color}
+                stroke-width={invScale * 1.5}
+                stroke-opacity={0.6}
+              />
+            );
+          }
+          return (
+            <rect
+              key={`sdf-${fn.id}`}
+              x={fn.x - fn.w / 2}
+              y={fn.y - fn.h / 2}
+              width={fn.w}
+              height={fn.h}
+              fill={color}
+              opacity={0.18}
+              stroke={color}
+              stroke-width={invScale * 1.5}
+              stroke-opacity={0.6}
+            />
+          );
+        });
+      })()}
       {/* Leaf nodes and composites without a bbox yet */}
       {nodes.map((n) => {
         const pos = posMap.get(n.id);
@@ -675,6 +907,7 @@ export function Configurator() {
           >
             <option value="JANK" selected={algorithmId === "JANK"}>JANK</option>
             <option value="TOPOGRID" selected={algorithmId === "TOPOGRID"}>TOPOGRID</option>
+            <option value="SDF" selected={algorithmId === "SDF"}>SDF</option>
           </select>
         </div>
 
@@ -752,7 +985,7 @@ export function Configurator() {
         viewBox={`0 0 ${SVG_W} ${SVG_H}`}
       >
         <g transform={`translate(${tx}, ${ty}) scale(${scale})`}>
-          {renderLevel("", dataset.nodes, dataset.edges, sim, config, 1 / scale)}
+          {renderLevel("", dataset.nodes, dataset.edges, sim, config, algorithmId, 1 / scale)}
         </g>
       </svg>
     </div>
