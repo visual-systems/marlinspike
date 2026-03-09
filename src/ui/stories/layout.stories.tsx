@@ -761,7 +761,7 @@ function renderLevel(
 
 export function Configurator() {
   const [datasetIdx, setDatasetIdx] = useState(0);
-  const [algorithmId, setAlgorithmId] = useState<AlgorithmId>("JANK");
+  const [algorithmId, setAlgorithmId] = useState<AlgorithmId>("SDF");
   const [config, setConfig] = useState<LayoutConfig>(DEFAULT_LAYOUT_CONFIG);
   const [configText, setConfigText] = useState(
     () => JSON.stringify(DEFAULT_LAYOUT_CONFIG, null, 2),

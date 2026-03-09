@@ -199,7 +199,7 @@ export function defaultState(): WorkspaceState {
     canvasNodePositions: {},
     canvasSelectedNodeId: null,
     canvasSelectedEdgeId: null,
-    canvasAlgorithm: "JANK",
+    canvasAlgorithm: "SDF",
   };
 }
 
@@ -269,7 +269,7 @@ export function loadState(): WorkspaceState {
           | undefined) ?? {},
         canvasSelectedNodeId: null,
         canvasSelectedEdgeId: null,
-        canvasAlgorithm: (parsed.canvasAlgorithm as AlgorithmId | undefined) ?? "JANK",
+        canvasAlgorithm: (parsed.canvasAlgorithm as AlgorithmId | undefined) ?? "SDF",
       };
     }
   } catch {
