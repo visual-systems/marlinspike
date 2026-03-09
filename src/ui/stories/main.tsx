@@ -66,7 +66,10 @@ function App() {
   return (
     <>
       <Sidebar current={current} onNavigate={navigate} />
-      <StoryCanvas story={activeStory} />
+      <StoryCanvas
+        story={activeStory}
+        key={current ? `${current.group}/${current.story}` : "none"}
+      />
     </>
   );
 }
@@ -147,13 +150,13 @@ function StoryCanvas({ story }: { story: { name: string; fn: StoryFn } | undefin
     );
   }
 
-  const element = story.fn() as unknown;
+  const Story = story.fn as unknown as () => JSX.Element;
   return (
     <div id="stories-main">
       <div style="font-size:11px; color:#3a3a5a; margin-bottom:16px; letter-spacing:0.05em;">
         {story.name}
       </div>
-      {element as never}
+      <Story />
     </div>
   );
 }

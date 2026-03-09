@@ -18,7 +18,9 @@ function StoryWrapper({ initial }: { initial: WorkspaceState }) {
 }
 
 export function Default() {
-  return <StoryWrapper initial={defaultState()} />;
+  const ws = defaultState();
+  ws.canvasExpandedNodes = [];
+  return <StoryWrapper initial={ws} />;
 }
 
 export function WithExpanded() {
