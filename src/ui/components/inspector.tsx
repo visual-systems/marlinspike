@@ -62,16 +62,39 @@ export function InspectorShell(
 }
 
 // ---------------------------------------------------------------------------
+// CopyField — compact monospace value; hover shows label tooltip, click copies
+// ---------------------------------------------------------------------------
+
+function CopyField({ title, value }: { title: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  }
+  return (
+    <div
+      title={copied ? "Copied!" : title}
+      style="font-size:11px; color:#333355; font-family:monospace; word-break:break-all; cursor:pointer; padding:1px 0;"
+      onClick={copy}
+    >
+      {value}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Node inspector
 // ---------------------------------------------------------------------------
 
 export function NodeInspector(
-  { node, panel, tab, ws, update }: {
+  { node, panel, tab, ws, update, extraActions }: {
     node: TreeNode;
     panel: Panel;
     tab: Tab;
     ws: WorkspaceState;
     update: Updater;
+    extraActions?: unknown;
   },
 ) {
   const [editingLabel, setEditingLabel] = useState(false);
@@ -248,22 +271,23 @@ export function NodeInspector(
       {/* Actions */}
       <div style="display:flex; flex-wrap:wrap; gap:4px;">
         <SmallBtn label="+ Subnode" onClick={addSubnode} />
-        {node.uri && (
-          <SmallBtn
-            label="Copy URI"
-            onClick={() => navigator.clipboard.writeText(node.uri!)}
-          />
-        )}
         <SmallBtn
-          label="Copy Graph"
+          label="Export"
+          title="copy graph as json"
           onClick={() => navigator.clipboard.writeText(subgraphJson(node, ws.edges))}
         />
         <SmallBtn label="Delete" onClick={deleteNode} />
+        {extraActions}
       </div>
 
-      {/* Version + hash */}
-      <div style="font-size:11px; color:#333; font-family:monospace;">
-        v{node.version} • {nodeHash(node)}
+      {/* Identity: version/hash/id/uri — compact, no labels, hover to identify */}
+      <div style="display:flex; flex-direction:column; gap:1px;">
+        <CopyField
+          title={`v${node.version} • hash (click to copy)`}
+          value={`v${node.version} • ${nodeHash(node)}`}
+        />
+        <CopyField title="ID (click to copy)" value={node.id} />
+        {node.uri && <CopyField title="URI (click to copy)" value={node.uri} />}
       </div>
 
       {/* Parent */}
@@ -296,24 +320,6 @@ export function NodeInspector(
               {child.label}
             </div>
           ))}
-        </div>
-      )}
-
-      {/* ID */}
-      <div style="display:flex; flex-direction:column; gap:3px;">
-        <PropLabel text="ID" />
-        <div style="font-size:11px; color:#445; font-family:monospace; word-break:break-all;">
-          {node.id}
-        </div>
-      </div>
-
-      {/* URI */}
-      {node.uri && (
-        <div style="display:flex; flex-direction:column; gap:3px;">
-          <PropLabel text="URI" />
-          <div style="font-size:11px; color:#445; font-family:monospace; word-break:break-all;">
-            {node.uri}
-          </div>
         </div>
       )}
 

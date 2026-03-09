@@ -4,6 +4,7 @@ import { render, useEffect, useRef, useState } from "@hono/hono/jsx/dom";
 import { Dropdown, DROPDOWN_WIDTH } from "./components/index.ts";
 import { SmallBtn } from "./components/widgets.tsx";
 import { TreePanel } from "./components/tree-panel.tsx";
+import { Canvas } from "./components/canvas.tsx";
 import {
   defaultPanel,
   getActiveTab,
@@ -443,28 +444,26 @@ function ConnectedGraphsBtn({ ws, update }: { ws: WorkspaceState; update: Update
 function WorkspaceArea({ ws, update }: { ws: WorkspaceState; update: Updater }) {
   const tab = getActiveTab(ws);
 
-  if (tab.panels.length === 0) {
-    return (
-      <div
-        id="workspace-area"
-        style="flex:1; align-items:center; justify-content:center; color:#3a3a5a; font-size:13px;"
-      >
-        No views open — use the toolbar above to add one
-      </div>
-    );
-  }
-
   return (
-    <div id="workspace-area">
-      {tab.panels.map((panel) => (
-        <TreePanel
-          key={panel.id}
-          panel={panel}
-          tab={tab}
-          ws={ws}
-          update={update}
-        />
-      ))}
+    <div id="workspace-area" style="position:relative; overflow:hidden;">
+      {/* Canvas — always visible as the background layer */}
+      <Canvas ws={ws} update={update} />
+
+      {/* Tree panels — overlaid on top of the canvas, left-aligned */}
+      {tab.panels.length > 0 && (
+        <div style="position:absolute; top:0; left:0; bottom:0; display:flex; z-index:1; pointer-events:none;">
+          {tab.panels.map((panel) => (
+            <div key={panel.id} style="pointer-events:auto; height:100%; display:flex;">
+              <TreePanel
+                panel={panel}
+                tab={tab}
+                ws={ws}
+                update={update}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

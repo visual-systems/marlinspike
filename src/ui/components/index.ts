@@ -10,3 +10,4 @@ export {
   InspectorShell,
   NodeInspector,
 } from "./inspector.tsx";
+export { Canvas } from "./canvas.tsx";
