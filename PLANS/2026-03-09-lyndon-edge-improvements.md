@@ -24,7 +24,16 @@ Edges were rendered as simple center-to-center `<line>` elements with no arrowhe
 
 ## Open Questions
 
-None — complete.
+### SVG marker-end color on selection (resolved)
+
+Arrowhead color proved difficult to update dynamically. Several approaches failed:
+
+- **`context-stroke`** — `fill="context-stroke"` on the marker path rendered black in-browser (Chromium/WebKit do not support it reliably outside inline SVG).
+- **`currentColor`** — setting `color={stroke}` on the path element and `fill="currentColor"` on the marker rendered white; SVG `currentColor` inheritance does not flow into `<marker>` content from a referencing element's computed style.
+- **Two named markers + conditional `marker-end`** — `marker-end={isSelected ? "url(#arrow-sel)" : "url(#arrow)"}` set the correct initial color but never updated on re-render; Hono JSX's VDOM diffing does not reliably apply `marker-end` attribute changes to existing DOM nodes.
+- **CSS custom properties on a `<g class>`** — `.edge { --ec: #2a2a50 } .edge-sel { --ec: #5070c0 }` with `fill="var(--ec)"` inside the marker also failed; CSS custom properties do not cascade into SVG `<marker>` shadow content.
+
+**Resolution:** abandon `<marker>` entirely. Render a `<polygon fill={stroke}>` directly in the scene per-edge. Explicit `fill` attribute updates work correctly through Hono JSX's VDOM diffing. A `pathEndTangent()` helper was added to align the polygon with the arc tangent at the endpoint rather than the chord direction.
 
 ## Verification
 
