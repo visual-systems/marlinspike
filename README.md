@@ -49,12 +49,10 @@ These are various random TODO items not formalised in DESIGN.md.
 * [ ] Split out more components
 * [ ] Explore making some components available as packages
 * [ ] Limit the size of source files
-* [ ] Swappable layout
-* [ ] Layout playground where you can edit parameters
 * [ ] Figure out how to move hard-coded constraints into extensible constraint system
 * [ ] Figure out how to encode graph ownership concerns in constraints
 * [ ] Figure out overlaying graphs and constraints
 * [ ] How is deletion possible in CRDT framework?
-* [ ] New signed-distance function layout
 * [ ] User-scriptable layout
-* [ ] How to ensure that disconnected nodes don't drift apart
+* [ ] Edges should be splines, not line segments
+* [ ] Draw arrows on edge ends

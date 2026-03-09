@@ -14,11 +14,13 @@ import {
 import { EdgeInspector, NodeInspector } from "./inspector.tsx";
 import { Dropdown } from "./dropdown.tsx";
 import { SmallBtn } from "./widgets.tsx";
-import { type BBox, boundingBox, type ForceNode } from "../lib/force.ts";
+import { type BBox, boundingBox, centerNodes, type ForceNode } from "../lib/force.ts";
 import {
   createJANK,
+  createSDF,
   createTOPOGRID,
   DEFAULT_JANK_CONFIG,
+  DEFAULT_SDF_CONFIG,
   type LayoutAlgorithm,
 } from "../lib/algorithms/index.ts";
 
@@ -184,9 +186,9 @@ function stepLayout(
     const childIds = node.children.map((c) => c.id);
     const levelEdges = getEdgesAtLevel(edges, childIds);
     const { nodes: ticked, settled } = algorithm.tick(level.nodes, levelEdges, level.ticks);
-
-    const bb = boundingBox(ticked, GROUP_PADDING);
-    next.set(nodeId, { nodes: ticked, settled, ticks: level.ticks + 1, bbox: bb });
+    const centered = centerNodes(ticked);
+    const bb = boundingBox(centered, GROUP_PADDING);
+    next.set(nodeId, { nodes: centered, settled, ticks: level.ticks + 1, bbox: bb });
 
     const gw = Math.max(bb.w, LEAF_W * 2 + GROUP_PADDING);
     const gh = Math.max(bb.h + LABEL_H, LEAF_H * 2 + GROUP_PADDING);
@@ -225,9 +227,8 @@ function stepLayout(
 // ---------------------------------------------------------------------------
 
 function makeCanvasAlgorithm(id: WorkspaceState["canvasAlgorithm"]): LayoutAlgorithm {
-  if (id === "TOPOGRID") {
-    return createTOPOGRID({ hSpacing: 160, vSpacing: 130 });
-  }
+  if (id === "TOPOGRID") return createTOPOGRID({ hSpacing: 160, vSpacing: 130 });
+  if (id === "SDF") return createSDF(DEFAULT_SDF_CONFIG);
   return createJANK(DEFAULT_JANK_CONFIG);
 }
 
@@ -358,6 +359,7 @@ function CanvasTopBar({ ws, update }: { ws: WorkspaceState; update: Updater }) {
           items={[
             { value: "JANK", label: "JANK" },
             { value: "TOPOGRID", label: "TOPOGRID" },
+            { value: "SDF", label: "SDF" },
           ]}
           selectedValue={ws.canvasAlgorithm}
           placeholder="layout"

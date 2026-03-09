@@ -1,15 +1,23 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
-import { type BBox, boundingBox, type ForceNode, maxVelocity } from "../lib/force.ts";
+import { type BBox, boundingBox, centerNodes, type ForceNode, maxVelocity } from "../lib/force.ts";
 import {
   type AlgorithmId,
   createJANK,
+  createSDF,
   createTOPOGRID,
   DEFAULT_JANK_CONFIG,
+  DEFAULT_SDF_CONFIG,
   DEFAULT_TOPOGRID_CONFIG,
   type LayoutAlgorithm,
 } from "../lib/algorithms/index.ts";
+import {
+  connectedComponents,
+  isCircleNode,
+  lineClosestPoint,
+  lineSdfDist,
+} from "../lib/sdf-force.ts";
 
 export const meta = { title: "Layout" };
 
@@ -21,13 +29,13 @@ const GROUP_PADDING = 32;
 const LABEL_H = 22;
 
 // ---------------------------------------------------------------------------
-// Config — flat object covering params for all algorithms
+// Config — per-algorithm discriminated union, each matching its algorithm's
+// own parameter names. The `id` field doubles as the algorithm selector.
 // ---------------------------------------------------------------------------
 
-interface LayoutConfig {
-  /** Circle radius (shared) */
+interface JankAlgConfig {
+  id: "JANK";
   leafR: number;
-  // JANK params
   spread: number;
   settleV: number;
   repulsion: number;
@@ -35,12 +43,42 @@ interface LayoutConfig {
   springK: number;
   springL: number;
   damping: number;
-  // TOPOGRID params
+}
+
+interface TopogridAlgConfig {
+  id: "TOPOGRID";
+  leafR: number;
   hSpacing: number;
   vSpacing: number;
 }
 
-const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
+interface SdfAlgConfig {
+  id: "SDF";
+  leafR: number;
+  repulsionStrength: number;
+  restGap: number;
+  maxRepulsionDist: number;
+  sdfGradientEps: number;
+  springK: number;
+  springRestLength: number;
+  edgeClearance: number;
+  edgeRepulsionK: number;
+  componentRepulsionK: number;
+  damping: number;
+  maxVelocity: number;
+  circleThreshold: number;
+  spread: number;
+  settleV: number;
+  /** Show component bounding circles as a debug overlay */
+  showComponents: boolean;
+  /** Draw each node's SDF shape as a translucent overlay */
+  showSdfs: boolean;
+}
+
+type AlgorithmConfig = JankAlgConfig | TopogridAlgConfig | SdfAlgConfig;
+
+const DEFAULT_JANK_STORY: JankAlgConfig = {
+  id: "JANK",
   leafR: 26,
   spread: DEFAULT_JANK_CONFIG.spread,
   settleV: DEFAULT_JANK_CONFIG.settleV,
@@ -49,22 +87,52 @@ const DEFAULT_LAYOUT_CONFIG: LayoutConfig = {
   springK: DEFAULT_JANK_CONFIG.springK,
   springL: DEFAULT_JANK_CONFIG.springL,
   damping: DEFAULT_JANK_CONFIG.damping,
+};
+
+const DEFAULT_TOPOGRID_STORY: TopogridAlgConfig = {
+  id: "TOPOGRID",
+  leafR: 26,
   hSpacing: DEFAULT_TOPOGRID_CONFIG.hSpacing,
   vSpacing: DEFAULT_TOPOGRID_CONFIG.vSpacing,
 };
 
-function makeAlgorithm(id: AlgorithmId, cfg: LayoutConfig): LayoutAlgorithm {
-  if (id === "TOPOGRID") return createTOPOGRID({ hSpacing: cfg.hSpacing, vSpacing: cfg.vSpacing });
-  return createJANK({
-    spread: cfg.spread,
-    settleV: cfg.settleV,
-    maxTicks: Infinity, // story runs until user pauses
-    repulsion: cfg.repulsion,
-    maxForce: cfg.maxForce,
-    springK: cfg.springK,
-    springL: cfg.springL,
-    damping: cfg.damping,
-  });
+const DEFAULT_SDF_STORY: SdfAlgConfig = {
+  id: "SDF",
+  leafR: 26,
+  repulsionStrength: DEFAULT_SDF_CONFIG.repulsionStrength,
+  restGap: DEFAULT_SDF_CONFIG.restGap,
+  maxRepulsionDist: DEFAULT_SDF_CONFIG.maxRepulsionDist,
+  sdfGradientEps: DEFAULT_SDF_CONFIG.sdfGradientEps,
+  springK: DEFAULT_SDF_CONFIG.springK,
+  springRestLength: DEFAULT_SDF_CONFIG.springRestLength,
+  edgeClearance: DEFAULT_SDF_CONFIG.edgeClearance,
+  edgeRepulsionK: DEFAULT_SDF_CONFIG.edgeRepulsionK,
+  componentRepulsionK: DEFAULT_SDF_CONFIG.componentRepulsionK,
+  damping: DEFAULT_SDF_CONFIG.damping,
+  maxVelocity: DEFAULT_SDF_CONFIG.maxVelocity,
+  circleThreshold: DEFAULT_SDF_CONFIG.circleThreshold,
+  spread: DEFAULT_SDF_CONFIG.spread,
+  settleV: DEFAULT_SDF_CONFIG.settleV,
+  showComponents: false,
+  showSdfs: false,
+};
+
+function defaultAlgConfig(id: AlgorithmId): AlgorithmConfig {
+  if (id === "JANK") return DEFAULT_JANK_STORY;
+  if (id === "TOPOGRID") return DEFAULT_TOPOGRID_STORY;
+  return DEFAULT_SDF_STORY;
+}
+
+function makeAlgorithm(cfg: AlgorithmConfig): LayoutAlgorithm {
+  if (cfg.id === "TOPOGRID") {
+    return createTOPOGRID({ hSpacing: cfg.hSpacing, vSpacing: cfg.vSpacing });
+  }
+  if (cfg.id === "SDF") {
+    const { id: _id, leafR: _r, showComponents: _sc, showSdfs: _ss, ...sdfParams } = cfg;
+    return createSDF({ ...sdfParams, maxTicks: Infinity });
+  }
+  const { id: _id, leafR: _r, ...jankParams } = cfg;
+  return createJANK({ ...jankParams, maxTicks: Infinity });
 }
 
 // ---------------------------------------------------------------------------
@@ -348,7 +416,7 @@ function findParentLevel(nodes: NodeDef[], targetId: string): string | null {
 
 function initSim(
   dataset: Dataset,
-  cfg: LayoutConfig,
+  cfg: AlgorithmConfig,
   algorithm: LayoutAlgorithm,
 ): SimState {
   const map = new Map<string, LevelState>();
@@ -376,7 +444,7 @@ function initSim(
 function tickSim(
   prev: SimState,
   dataset: Dataset,
-  cfg: LayoutConfig,
+  cfg: AlgorithmConfig,
   algorithm: LayoutAlgorithm,
 ): SimState {
   const next = new Map(prev);
@@ -389,8 +457,9 @@ function tickSim(
 
     const edges = composite.edges ?? [];
     const { nodes: ticked } = algorithm.tick(level.nodes, edges, level.ticks);
-    const bb = boundingBox(ticked, GROUP_PADDING);
-    next.set(composite.id, { nodes: ticked, ticks: level.ticks + 1, bbox: bb });
+    const centered = centerNodes(ticked);
+    const bb = boundingBox(centered, GROUP_PADDING);
+    next.set(composite.id, { nodes: centered, ticks: level.ticks + 1, bbox: bb });
 
     // Propagate updated size up to parent level
     const parentId = findParentLevel(dataset.nodes, composite.id) ?? "";
@@ -418,12 +487,57 @@ function tickSim(
 // Recursive SVG rendering
 // ---------------------------------------------------------------------------
 
+/**
+ * Compute bent edge path points for an edge (a→b) avoiding non-incident nodes.
+ * Returns [ax, ay, bx, by] for a straight line, or [ax, ay, mx, my, bx, by]
+ * when a node obstructs the edge within clearance.
+ */
+function bentEdgePoints(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  levelNodes: Array<{ id: string; x: number; y: number }>,
+  edgeNodeIds: [string, string],
+  clearance: number,
+): number[] {
+  let bestDist = clearance;
+  let bestT = 0.5;
+  let bestGx = 0;
+  let bestGy = 0;
+  let bestBendMag = 0;
+
+  for (const n of levelNodes) {
+    if (n.id === edgeNodeIds[0] || n.id === edgeNodeIds[1]) continue;
+    const d = lineSdfDist(n.x, n.y, ax, ay, bx, by);
+    if (d >= clearance || d >= bestDist) continue;
+    const { t, cx, cy } = lineClosestPoint(n.x, n.y, ax, ay, bx, by);
+    // Perpendicular direction away from n, at the closest point on segment
+    const ex = cx - n.x;
+    const ey = cy - n.y;
+    const len = Math.sqrt(ex * ex + ey * ey);
+    if (len < 1e-9) continue;
+    bestDist = d;
+    bestT = t;
+    bestGx = ex / len;
+    bestGy = ey / len;
+    bestBendMag = clearance - d;
+  }
+
+  if (bestBendMag === 0) return [ax, ay, bx, by];
+
+  // Bend point at parameter bestT along the segment, displaced perpendicularly
+  const bendX = ax + bestT * (bx - ax) + bestGx * bestBendMag;
+  const bendY = ay + bestT * (by - ay) + bestGy * bestBendMag;
+  return [ax, ay, bendX, bendY, bx, by];
+}
+
 function renderLevel(
   parentId: string,
   nodes: NodeDef[],
   edges: { id: string; a: string; b: string }[],
   sim: SimState,
-  cfg: LayoutConfig,
+  cfg: AlgorithmConfig,
   invScale: number,
 ) {
   const level = sim.get(parentId);
@@ -465,11 +579,35 @@ function renderLevel(
           </g>
         );
       })}
-      {/* Edges (on top of group boxes) */}
+      {/* Edges (on top of group boxes) — bent when SDF is active */}
       {edges.map((e) => {
         const a = posMap.get(e.a);
         const b = posMap.get(e.b);
         if (!a || !b) return null;
+        if (cfg.id === "SDF" && cfg.edgeClearance > 0) {
+          const pts = bentEdgePoints(
+            a.x,
+            a.y,
+            b.x,
+            b.y,
+            level.nodes,
+            [e.a, e.b],
+            cfg.edgeClearance,
+          );
+          const pointsStr = pts.reduce(
+            (acc, v, i) => acc + (i % 2 === 0 ? (i === 0 ? "" : " ") + v : "," + v),
+            "",
+          );
+          return (
+            <polyline
+              key={e.id}
+              points={pointsStr}
+              fill="none"
+              stroke="#2a2a50"
+              stroke-width={invScale}
+            />
+          );
+        }
         return (
           <line
             key={e.id}
@@ -482,6 +620,104 @@ function renderLevel(
           />
         );
       })}
+      {/* SDF debug: component bounding circles */}
+      {cfg.id === "SDF" && cfg.showComponents && parentId === "" && (() => {
+        const ids = level.nodes.map((n) => n.id);
+        const edgesAB = edges.map((e) => ({ a: e.a, b: e.b }));
+        const comps = connectedComponents(ids, edgesAB);
+        return comps.map((comp, i) => {
+          if (comp.length === 1) {
+            const n = posMap.get(comp[0]);
+            if (!n) return null;
+            const cr = Math.sqrt(n.w * n.w + n.h * n.h) / 2;
+            return (
+              <circle
+                key={`comp-${i}`}
+                cx={n.x}
+                cy={n.y}
+                r={cr}
+                fill="none"
+                stroke="#3a5a3a"
+                stroke-width={invScale}
+                stroke-dasharray={`${4 * invScale},${4 * invScale}`}
+                opacity={0.5}
+              />
+            );
+          }
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          for (const id of comp) {
+            const n = posMap.get(id);
+            if (!n) continue;
+            minX = Math.min(minX, n.x - n.w / 2);
+            minY = Math.min(minY, n.y - n.h / 2);
+            maxX = Math.max(maxX, n.x + n.w / 2);
+            maxY = Math.max(maxY, n.y + n.h / 2);
+          }
+          const cx = (minX + maxX) / 2;
+          const cy = (minY + maxY) / 2;
+          const cr = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2) / 2;
+          return (
+            <circle
+              key={`comp-${i}`}
+              cx={cx}
+              cy={cy}
+              r={cr}
+              fill="none"
+              stroke="#3a5a3a"
+              stroke-width={invScale}
+              stroke-dasharray={`${4 * invScale},${4 * invScale}`}
+              opacity={0.5}
+            />
+          );
+        });
+      })()}
+      {/* SDF debug: draw each node's SDF shape (zero-level set) as a translucent overlay */}
+      {cfg.id === "SDF" && cfg.showSdfs && (() => {
+        const palette = [
+          "#ff5555",
+          "#55ff55",
+          "#5599ff",
+          "#ffff44",
+          "#ff55ff",
+          "#55ffff",
+          "#ff9944",
+          "#aa55ff",
+          "#ff4499",
+          "#44ffaa",
+        ];
+        return level.nodes.map((fn, i) => {
+          const color = palette[i % palette.length];
+          if (isCircleNode(fn, cfg.circleThreshold)) {
+            return (
+              <circle
+                key={`sdf-${fn.id}`}
+                cx={fn.x}
+                cy={fn.y}
+                r={fn.w / 2}
+                fill={color}
+                opacity={0.18}
+                stroke={color}
+                stroke-width={invScale * 1.5}
+                stroke-opacity={0.6}
+              />
+            );
+          }
+          return (
+            <rect
+              key={`sdf-${fn.id}`}
+              x={fn.x - fn.w / 2}
+              y={fn.y - fn.h / 2}
+              width={fn.w}
+              height={fn.h}
+              fill={color}
+              opacity={0.18}
+              stroke={color}
+              stroke-width={invScale * 1.5}
+              stroke-opacity={0.6}
+            />
+          );
+        });
+      })()}
       {/* Leaf nodes and composites without a bbox yet */}
       {nodes.map((n) => {
         const pos = posMap.get(n.id);
@@ -521,24 +757,21 @@ function renderLevel(
 
 export function Configurator() {
   const [datasetIdx, setDatasetIdx] = useState(0);
-  const [algorithmId, setAlgorithmId] = useState<AlgorithmId>("JANK");
-  const [config, setConfig] = useState<LayoutConfig>(DEFAULT_LAYOUT_CONFIG);
+  const [algCfg, setAlgCfg] = useState<AlgorithmConfig>(DEFAULT_SDF_STORY);
   const [configText, setConfigText] = useState(
-    () => JSON.stringify(DEFAULT_LAYOUT_CONFIG, null, 2),
+    () => JSON.stringify(DEFAULT_SDF_STORY, null, 2),
   );
   const [configError, setConfigError] = useState<string | null>(null);
   const [sim, setSim] = useState<SimState>(() =>
-    initSim(DATASETS[0], DEFAULT_LAYOUT_CONFIG, makeAlgorithm("JANK", DEFAULT_LAYOUT_CONFIG))
+    initSim(DATASETS[0], DEFAULT_SDF_STORY, makeAlgorithm(DEFAULT_SDF_STORY))
   );
   const [paused, setPaused] = useState(false);
 
   // Stable refs read by the RAF loop (avoids stale closures)
   const datasetIdxRef = useRef(datasetIdx);
   datasetIdxRef.current = datasetIdx;
-  const configRef = useRef(config);
-  configRef.current = config;
-  const algorithmIdRef = useRef(algorithmId);
-  algorithmIdRef.current = algorithmId;
+  const algCfgRef = useRef(algCfg);
+  algCfgRef.current = algCfg;
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
 
@@ -548,10 +781,9 @@ export function Configurator() {
     function frame() {
       if (!pausedRef.current) {
         setSim((prev) => {
-          const cfg = configRef.current!;
+          const cfg = algCfgRef.current!;
           const ds = DATASETS[datasetIdxRef.current!];
-          const alg = makeAlgorithm(algorithmIdRef.current!, cfg);
-          return tickSim(prev, ds, cfg, alg);
+          return tickSim(prev, ds, cfg, makeAlgorithm(cfg));
         });
       }
       rafId = requestAnimationFrame(frame);
@@ -562,34 +794,35 @@ export function Configurator() {
 
   function applyAndRestart() {
     try {
-      const parsed = JSON.parse(configText) as Partial<LayoutConfig>;
-      const merged: LayoutConfig = { ...DEFAULT_LAYOUT_CONFIG, ...parsed };
-      setConfig(merged);
+      const parsed = JSON.parse(configText) as Partial<AlgorithmConfig>;
+      const merged = {
+        ...defaultAlgConfig(algCfgRef.current!.id),
+        ...parsed,
+        id: algCfgRef.current!.id,
+      } as AlgorithmConfig;
+      setAlgCfg(merged);
       setConfigError(null);
-      setSim(
-        initSim(
-          DATASETS[datasetIdxRef.current!],
-          merged,
-          makeAlgorithm(algorithmIdRef.current!, merged),
-        ),
-      );
+      setSim(initSim(DATASETS[datasetIdxRef.current!], merged, makeAlgorithm(merged)));
     } catch (e) {
       setConfigError(String(e));
     }
   }
 
   function restart() {
-    setSim(initSim(DATASETS[datasetIdx], config, makeAlgorithm(algorithmId, config)));
+    setSim(initSim(DATASETS[datasetIdx], algCfg, makeAlgorithm(algCfg)));
   }
 
   function handleDatasetChange(idx: number) {
     setDatasetIdx(idx);
-    setSim(initSim(DATASETS[idx], config, makeAlgorithm(algorithmId, config)));
+    setSim(initSim(DATASETS[idx], algCfg, makeAlgorithm(algCfg)));
   }
 
   function handleAlgorithmChange(id: AlgorithmId) {
-    setAlgorithmId(id);
-    setSim(initSim(DATASETS[datasetIdx], config, makeAlgorithm(id, config)));
+    const newCfg = defaultAlgConfig(id);
+    setAlgCfg(newCfg);
+    setConfigText(JSON.stringify(newCfg, null, 2));
+    setConfigError(null);
+    setSim(initSim(DATASETS[datasetIdx], newCfg, makeAlgorithm(newCfg)));
   }
 
   const dataset = DATASETS[datasetIdx];
@@ -600,7 +833,7 @@ export function Configurator() {
     totalMv = Math.max(totalMv, maxVelocity(level.nodes));
   }
   const rootTicks = sim.get("")?.ticks ?? 0;
-  const settled = totalMv < config.settleV;
+  const settled = totalMv < ("settleV" in algCfg ? algCfg.settleV : 0);
 
   // Auto-fit the SVG viewport — use root bbox if available
   const SVG_W = 600;
@@ -673,8 +906,9 @@ export function Configurator() {
             onChange={(e: Event) =>
               handleAlgorithmChange((e.target as HTMLSelectElement).value as AlgorithmId)}
           >
-            <option value="JANK" selected={algorithmId === "JANK"}>JANK</option>
-            <option value="TOPOGRID" selected={algorithmId === "TOPOGRID"}>TOPOGRID</option>
+            <option value="JANK" selected={algCfg.id === "JANK"}>JANK</option>
+            <option value="TOPOGRID" selected={algCfg.id === "TOPOGRID"}>TOPOGRID</option>
+            <option value="SDF" selected={algCfg.id === "SDF"}>SDF</option>
           </select>
         </div>
 
@@ -707,7 +941,7 @@ export function Configurator() {
               style="background:none; border:1px solid #2a2a4a; color:#555; font-size:12px; cursor:pointer; padding:5px 8px; border-radius:3px;"
               title="Restore textarea to current applied config"
               onClick={() => {
-                setConfigText(JSON.stringify(config, null, 2));
+                setConfigText(JSON.stringify(algCfg, null, 2));
                 setConfigError(null);
               }}
             >
@@ -752,7 +986,7 @@ export function Configurator() {
         viewBox={`0 0 ${SVG_W} ${SVG_H}`}
       >
         <g transform={`translate(${tx}, ${ty}) scale(${scale})`}>
-          {renderLevel("", dataset.nodes, dataset.edges, sim, config, 1 / scale)}
+          {renderLevel("", dataset.nodes, dataset.edges, sim, algCfg, 1 / scale)}
         </g>
       </svg>
     </div>
