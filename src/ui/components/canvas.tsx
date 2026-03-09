@@ -876,18 +876,35 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
             interaction,
           )}
           {/* Ghost edge line while drawing */}
-          {mode === "add-edge" && edgeDraw && mouseCanvas && (
-            <line
-              x1={edgeDraw.x}
-              y1={edgeDraw.y}
-              x2={mouseCanvas.x}
-              y2={mouseCanvas.y}
-              stroke="#5070c0"
-              stroke-width={1.5}
-              stroke-dasharray="6 4"
-              style="pointer-events:none;"
-            />
-          )}
+          {mode === "add-edge" && edgeDraw && mouseCanvas && (() => {
+            const srcLevel = layout.get(edgeDraw.levelId);
+            const srcNode = srcLevel?.nodes.find((n) => n.id === edgeDraw.fromId);
+            const mouseNode = {
+              x: mouseCanvas.x,
+              y: mouseCanvas.y,
+              w: 0,
+              h: 0,
+              vx: 0,
+              vy: 0,
+              pinned: false,
+              id: "",
+            };
+            const gp = srcNode
+              ? surfacePoint(srcNode, mouseNode, 5)
+              : { x: edgeDraw.x, y: edgeDraw.y };
+            return (
+              <line
+                x1={gp.x}
+                y1={gp.y}
+                x2={mouseCanvas.x}
+                y2={mouseCanvas.y}
+                stroke="#5070c0"
+                stroke-width={1.5}
+                stroke-dasharray="6 4"
+                style="pointer-events:none;"
+              />
+            );
+          })()}
         </g>
       </svg>
 
@@ -1189,7 +1206,7 @@ function renderLevel(
           const idx = groupIndex.get(edge.id) ?? 0;
           const baseSweep = edge.fromId < edge.toId ? 0 : 1;
           const sweep = idx % 2 === 0 ? baseSweep : 1 - baseSweep;
-          const r = dist * 0.6;
+          const r = dist * (0.5 + Math.floor(idx / 2) * 0.35);
           const d = needsArc
             ? `M${src.x},${src.y} A${r},${r} 0 0,${sweep} ${dst.x},${dst.y}`
             : `M${src.x},${src.y} L${dst.x},${dst.y}`;
@@ -1250,11 +1267,11 @@ function renderLevel(
               );
             })}
             {/* Pass 2: all labels on top of all paths */}
-            {renderData.map(({ edge, pa, pb, src, dst, needsArc, r, sweep }) => {
+            {renderData.map(({ edge, src, dst, needsArc, r, sweep }) => {
               if (!edge.label) return null;
               const lp = needsArc
                 ? arcMidpoint(src.x, src.y, dst.x, dst.y, r, sweep)
-                : { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+                : { x: (src.x + dst.x) / 2, y: (src.y + dst.y) / 2 };
               return (
                 <text
                   key={`${edge.id}-label`}

@@ -543,6 +543,9 @@ export function EdgeInspector(
         </span>
       </div>
 
+      {/* ID */}
+      <CopyField title="Edge ID (click to copy)" value={edge.id} />
+
       {/* Actions */}
       <div style="display:flex; gap:4px; flex-wrap:wrap;">
         <SmallBtn label="Delete" onClick={deleteEdge} />

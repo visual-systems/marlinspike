@@ -61,8 +61,9 @@ These are various random TODO items not formalised in DESIGN.md.
 * [ ] General refactoring patterns such as enums instead of flags
 * [ ] Seems like the sibling subgraph rendering isn't using my approach of virtual edges
 * [ ] Can possibly move the edge creation mode constraints to generalised constraint framework (pending)
-* [ ] Edges are generally too long - create a story to experiment with this until I find a parameter set I like
+* [x] Edges are generally too long - create a story to experiment with this until I find a parameter set I like
 * [ ] In a top-to bottom layout the edge overlaps the subgraph below - still having issues with padding offset
-* [ ] More than two edges between nodes doesn't distinguish with the ellipses
-* [ ] Show edge ID/URI in inspector
+* [x] More than two edges between nodes doesn't distinguish with the ellipses
+* [x] Show edge ID/URI in inspector
 * [ ] More indication that a node is an unexpanded subgraph
+* [ ] Clicking the canvas background should deselect everything and change mode to select
