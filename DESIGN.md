@@ -230,6 +230,8 @@ The constraint system is best understood as a **modular, networked type system**
 
 The key difference from a conventional type system: schemas are **composable, runtime-extensible, and apply at any entity granularity**. There is no fixed schema baked into the IDE. Any combination of schemas may be active on any entity at any time, including schemas loaded from remote sources or applied against graphs referenced by URI.
 
+**Constraints are the primary abstraction.** Interactions with the validation system — activating a schema, reading diagnostics, querying completions — happen at the level of named, versioned constraints. The underlying mechanism a constraint plugin uses to evaluate those constraints (JSON Schema, a type-checker, a Prolog solver, a remote API call) is an implementation detail hidden behind the plugin protocol. JSON Schema is one valid authoring format for writing a constraint definition, not the interface you work with at runtime. You would deal with JSON Schema directly only when *authoring or publishing* a new constraint plugin.
+
 ### 5.2 Schema Composition: Commutative Monoid
 
 The set of active schemas on any entity forms a **commutative monoid**:
@@ -297,19 +299,33 @@ Diagnostics carry a severity (error, warning, info), a location (node id, edge i
 
 | Stage | Trigger | Mechanism | Examples |
 |---|---|---|---|
-| **Live** | Every graph change | JSON Schema validation + active plugin subscriptions | Required fields, port type mismatches |
+| **Live** | Every graph change | Active constraint plugins (subscribed to `graph/didChange`) | Required fields, port type mismatches |
 | **Server-side** | On demand / on save | Constraint plugin protocol | Cross-node invariants, impl interface compatibility, remote ref validation |
 | **Compile-time** | On targeting a runtime | Plugin compile hook | K8s resource limits, audio buffer sizes, mock coverage |
 
+All three stages use the same constraint plugin protocol (§5.4). The "live" stage simply has lower latency requirements and tighter plugin subscription granularity.
+
 ### 5.6 Constraint Authoring
 
-Constraint plugins can be:
+A constraint plugin can evaluate constraints using any mechanism. Common implementation strategies:
 
-- **Bundled** — shipped with a property schema package
-- **External** — a running process connected over stdio or HTTP (same pattern as LSP)
-- **Inline** — a small script defined in the graph's properties for project-local rules
-- **Delegated** — a remote service (e.g. an API validating against an OpenAPI spec)
-- **Remote** — a schema plugin running on a different machine, reached over the network; enables shared, organisation-wide constraint servers
+| Strategy | When to use |
+|---|---|
+| JSON Schema | Property shape validation — required fields, value ranges, enum membership |
+| Type algebra | Port interface compatibility — structural subtyping, schema-set intersection |
+| Graph traversal | Topology checks — cycle detection, connectivity, reachability |
+| Remote API | External specification validation — OpenAPI, gRPC IDL, custom registries |
+| Rule engine | Complex cross-entity invariants — multi-node constraints, ordering rules |
+| Custom logic | Anything else |
+
+These are **internal implementation details of a plugin**. The IDE never sees them. All that crosses the protocol boundary is the named constraint, the entities it applies to, and the resulting diagnostics.
+
+Constraint plugins can be packaged and deployed as:
+
+- **Bundled** — shipped as part of a schema package; activated when the schema is applied
+- **External** — a running process connected over stdio or HTTP
+- **Inline** — a small script in the graph's properties for project-local rules
+- **Remote** — a network-accessible server; enables shared, organisation-wide constraint evaluation
 
 ---
 
@@ -628,7 +644,7 @@ A runtime target consumes a **validated, schema-annotated, implementation-resolv
 - [ ] CRDT graph store per subgraph URI (Automerge)
 - [ ] Minimal canvas UI (place nodes, draw edges, enter/exit subgraphs)
 - [ ] Tree view panel (rose-tree navigation, sync with canvas)
-- [ ] JSON Schema-based live validation of the *base format* only (no plugin system yet)
+- [ ] Live validation of the *base format* constraint (internally implemented with JSON Schema, but surfaced through the constraint interface — not as raw JSON Schema errors)
 - [ ] Save/load graph from disk
 
 ### Phase 2 — Ports and Structure
