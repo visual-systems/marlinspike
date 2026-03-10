@@ -203,14 +203,15 @@ Implementations must satisfy the same port interface as the default subgraph. Th
 Every subgraph has a URI of the form:
 
 ```
-spike://<authority>/<repo>/<path>[@<version>]
+spike://<authority>/<repo>/<path>[@<version>][#<hash>]
 ```
 
 Examples:
 ```
 spike://acme/backend/auth-service
 spike://acme/backend/auth-service/token-validator@v2.1.0
-spike://community/stdlib/map-reduce
+spike://community/stdlib/map-reduce#sha256:a3f8...
+spike://acme/backend/auth-service/token-validator@v2.1.0#sha256:c9d1...
 ```
 
 URIs are the unit of sharing, versioning, and referencing. A composite node's `subgraph` field is always a URI — subgraphs are never embedded inline. This means:
@@ -219,6 +220,13 @@ URIs are the unit of sharing, versioning, and referencing. A composite node's `s
 - Subgraph URIs can be shared and opened directly in the IDE
 - Version pinning is explicit
 - The CRDT operates per-URI — each subgraph is a separate CRDT document
+
+**Hash fragment** (`#<hash>`) serves two roles depending on context:
+
+- **Content addressing** — a URI with only a hash and no `@version` identifies a graph by its exact serialised content digest, independent of any mutable tag. Useful for immutable snapshots, build artefacts, and audit trails.
+- **Verification** — when both `@version` and `#hash` are present, the hash is a check: the resolver fetches the version-tagged graph and verifies its digest matches before returning it. A mismatch is a resolution error (tampering or corruption detected).
+
+The hash value is an opaque string with an optional algorithm prefix (e.g. `sha256:<hex>`). The IDE and resolver treat it as opaque; algorithm selection is a storage/registry concern.
 
 ---
 
