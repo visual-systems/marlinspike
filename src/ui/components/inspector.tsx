@@ -32,7 +32,11 @@ export function Inspector(
 ) {
   if (panel.selectedEdgeId) {
     const edge = ws.edges.find((e) => e.id === panel.selectedEdgeId);
-    if (edge) return <EdgeInspector edge={edge} panel={panel} tab={tab} ws={ws} update={update} />;
+    if (edge) {
+      return (
+        <EdgeInspector key={edge.id} edge={edge} panel={panel} tab={tab} ws={ws} update={update} />
+      );
+    }
   }
   if (panel.selectedNodeId) {
     const node = findNode(ws.treeNodes, panel.selectedNodeId);
@@ -475,6 +479,11 @@ export function EdgeInspector(
   const labelInputRef = useRef<HTMLInputElement | null>(null);
   const dataTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
+  useEffect(() => {
+    if (labelInputRef.current) labelInputRef.current.value = edge.label;
+    if (dataTextareaRef.current) dataTextareaRef.current.value = JSON.stringify(edge.data, null, 2);
+  }, []);
+
   const fromNode = findNode(ws.treeNodes, edge.fromId);
   const toNode = findNode(ws.treeNodes, edge.toId);
 
@@ -569,9 +578,7 @@ export function EdgeInspector(
         <textarea
           ref={dataTextareaRef}
           style="background:#0d0d20; border:1px solid #2a2a4a; color:#9090b0; font-size:11px; font-family:monospace; padding:5px; border-radius:3px; resize:vertical; min-height:60px; width:100%;"
-        >
-          {JSON.stringify(edge.data, null, 2)}
-        </textarea>
+        />
       </div>
 
       <SmallBtn label="Save" onClick={saveEdge} />

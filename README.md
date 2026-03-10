@@ -68,5 +68,5 @@ These are various random TODO items not formalised in DESIGN.md.
 * [ ] More indication that a node is an unexpanded subgraph
 * [x] Clicking the canvas background should deselect everything and change mode to select
 * [x] Arrow heads get cluttered
-* [ ] Clicking canvas background should deselect in selection mode too
-* [ ] Re-clicking a selected edge should deselect it
+* [x] Clicking canvas background should deselect in selection mode too
+* [x] Re-clicking a selected edge should deselect it

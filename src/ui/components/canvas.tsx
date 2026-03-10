@@ -497,6 +497,7 @@ function CanvasInspector(
       return (
         <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
           <EdgeInspector
+            key={edge.id}
             edge={edge}
             panel={fakePanel}
             tab={fakeTab}
@@ -647,6 +648,7 @@ interface PanState {
   startY: number;
   origTx: number;
   origTy: number;
+  hasMoved: boolean;
 }
 
 /** All add-edge interaction state bundled for passing into renderLevel. */
@@ -807,11 +809,10 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
     }
     if (panRef.current) {
       const pan = panRef.current;
-      setView((v) => ({
-        ...v,
-        tx: pan.origTx + (e.clientX - pan.startX),
-        ty: pan.origTy + (e.clientY - pan.startY),
-      }));
+      const sdx = e.clientX - pan.startX;
+      const sdy = e.clientY - pan.startY;
+      if (sdx * sdx + sdy * sdy > DRAG_THRESHOLD_SQ) pan.hasMoved = true;
+      setView((v) => ({ ...v, tx: pan.origTx + sdx, ty: pan.origTy + sdy }));
     }
   }
 
@@ -819,6 +820,9 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
     if (dragRef.current) {
       if (!dragRef.current.hasMoved) dragRef.current.onClickFn?.();
       dragRef.current = null;
+    }
+    if (panRef.current && !panRef.current.hasMoved && modeRef.current === "select") {
+      update((s) => ({ ...s, canvasSelectedNodeId: null, canvasSelectedEdgeId: null }));
     }
     panRef.current = null;
     document.removeEventListener("mousemove", onDocMouseMove as EventListener);
@@ -861,6 +865,7 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
       startY: e.clientY,
       origTx: viewRef.current!.tx,
       origTy: viewRef.current!.ty,
+      hasMoved: false,
     };
     document.addEventListener("mousemove", onDocMouseMove as EventListener);
     document.addEventListener("mouseup", onDocMouseUp);
@@ -914,7 +919,11 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
   }
 
   function selectEdge(edgeId: string) {
-    update((s) => ({ ...s, canvasSelectedEdgeId: edgeId, canvasSelectedNodeId: null }));
+    update((s) => ({
+      ...s,
+      canvasSelectedEdgeId: s.canvasSelectedEdgeId === edgeId ? null : edgeId,
+      canvasSelectedNodeId: null,
+    }));
   }
 
   function expandNode(nodeId: string) {
@@ -969,6 +978,7 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
         if (e.key === "Escape") {
           setMode("select");
           setEdgeDraw(null);
+          update((s) => ({ ...s, canvasSelectedNodeId: null, canvasSelectedEdgeId: null }));
         }
       }}
     >
