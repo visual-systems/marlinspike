@@ -30,6 +30,8 @@ Domain specialisation is achieved through **property schemas** and **constraint 
 - **CRDT-first collaboration.** The graph store is conflict-free by default. Constraints are a layer above, not a precondition for merging.
 - **LSP-style extensibility.** Constraint logic, validation, completions, and diagnostics live in plugins over a well-defined protocol. The IDE core has no domain knowledge.
 - **Addressable subgraphs.** Every subgraph has a URI. Subgraphs can be referenced, shared, and composed across projects and teams.
+- **Schemas as a modular type system.** The schema system is a runtime-extensible, distributed type system. Schemas compose as a commutative monoid — order-independent, additive, with a well-defined identity — and apply at any granularity: graph, subgraph, node, edge, port, or even a remote graph reference. The IDE is the type-checker client; schema plugins are the type-checker servers.
+- **Modal construction.** Schema validation has two modes: *speculative* (build freely; violations are live feedback, not blockers) and *enforced* (violations are hard stops at designated commit/save/transition points). The mode is a per-context setting, not a global switch.
 - **Persona-aware views.** The IDE supports multiple viewing personas — architectural overview, focused development, review — without changing the underlying graph.
 - **Pragmatic first, formal later.** Ship a working system. Formalise semantics incrementally as real use cases demand it.
 
@@ -222,9 +224,61 @@ URIs are the unit of sharing, versioning, and referencing. A composite node's `s
 
 ## 5. Constraint System
 
-The constraint system is modelled closely on the **Language Server Protocol (LSP)**. The IDE is the client; constraint plugins are servers. The IDE has no domain knowledge — it only knows how to route events and display responses.
+### 5.1 Schemas as a Modular Type System
 
-### 5.1 Protocol
+The constraint system is best understood as a **modular, networked type system** with the IDE as the type-checker client and schema plugins as the type-checker servers. The analogy to LSP is intentional and deep: just as a language server provides completions, diagnostics, and hover information for a programming language without the editor knowing anything about that language, a schema plugin provides the same services for a graph schema without the IDE knowing anything about that domain.
+
+The key difference from a conventional type system: schemas are **composable, runtime-extensible, and apply at any entity granularity**. There is no fixed schema baked into the IDE. Any combination of schemas may be active on any entity at any time, including schemas loaded from remote sources or applied against graphs referenced by URI.
+
+### 5.2 Schema Composition: Commutative Monoid
+
+The set of active schemas on any entity forms a **commutative monoid**:
+
+| Law | Meaning |
+|---|---|
+| **Identity** | The empty schema set ∅ imposes no constraints. A graph with no schemas active is always valid. |
+| **Associativity** | (A ⊕ B) ⊕ C = A ⊕ (B ⊕ C) — schemas can be applied in any grouping. |
+| **Commutativity** | A ⊕ B = B ⊕ A — order of activation never matters. |
+
+**Compatibility** is a separate concern from composition. Two schemas are *compatible* if their combined effect is consistent — no entity can simultaneously satisfy and violate the same constraint. Incompatible schemas can still both be active; the constraint system surfaces the tension as diagnostics (see §8.3 for topology schema examples). The author decides whether to resolve the tension or leave it open.
+
+Schemas are applied to any entity in the graph:
+
+```
+graph-level    → applies to the whole subgraph
+node           → applies to a specific node (or all nodes of a given kind)
+edge           → applies to a specific edge (or all edges with matching properties)
+port           → applies to a port node's type contract
+remote ref     → applies to a subgraph referenced by URI, validating the interface
+                 of the remote graph as seen from the current graph's perspective
+```
+
+Remote schema application is particularly powerful: a schema can assert that a remote subgraph URI exposes a specific port interface, satisfies a topology constraint, or carries certain property annotations — without reading the remote graph's internals. The constraint plugin resolves the URI and validates the boundary.
+
+### 5.3 Modal Validation
+
+Validation operates in two modes, settable per context (per-graph, per-persona, or at the IDE session level):
+
+| Mode | Description | When to use |
+|---|---|---|
+| **Speculative** | Violations produce live diagnostic feedback but do not block any operation. The graph may be in a violated state at any time. | Active authoring, exploratory design, early-stage graphs |
+| **Enforced** | Violations are hard stops at designated checkpoints: save, commit, publish, compile, or transition to a downstream target. The graph cannot advance past a checkpoint in a violated state. | Production graphs, shared libraries, CI validation, runtime targeting |
+
+The mode applies to a *schema set*, not globally. A graph may have speculative mode for in-progress topology schemas and enforced mode for the base format schema simultaneously. This allows "soft typing" on evolving layers while maintaining hard invariants on stable ones.
+
+Checkpoints where enforced mode blocks are declared by the schema plugin:
+
+```jsonc
+{
+  "schema": "spike.topology.pipeline",
+  "enforcedAt": ["save", "compile"],   // blocks at these checkpoints if violated
+  "speculativeHints": true              // even in speculative mode, surface live hints
+}
+```
+
+### 5.4 Protocol
+
+The constraint system is modelled closely on the **Language Server Protocol (LSP)**. The IDE is the client; constraint plugins are servers. The IDE has no domain knowledge — it only knows how to route events and display responses.
 
 ```
 IDE  ──graph/didChange──────────────────▶  Constraint Plugin
@@ -237,17 +291,17 @@ IDE  ──graph/compile──────────────────�
 IDE  ◀─graph/compileResponse────────────  Constraint Plugin
 ```
 
-Diagnostics carry a severity (error, warning, info), a location (node id, edge id, port node id, or graph-level), and a message. The UI renders them inline on the canvas and in the tree view.
+Diagnostics carry a severity (error, warning, info), a location (node id, edge id, port node id, or graph-level), a message, and a `suggestion` field (required for AI workflow compatibility — see §13). The UI renders them inline on the canvas and in the tree view.
 
-### 5.2 Constraint Evaluation Stages
+### 5.5 Constraint Evaluation Stages
 
 | Stage | Trigger | Mechanism | Examples |
 |---|---|---|---|
-| **Live** | Every graph change | JSON Schema validation | Required fields, port type mismatches |
-| **Server-side** | On demand / on save | Constraint plugin protocol | Cross-node invariants, impl interface compatibility |
+| **Live** | Every graph change | JSON Schema validation + active plugin subscriptions | Required fields, port type mismatches |
+| **Server-side** | On demand / on save | Constraint plugin protocol | Cross-node invariants, impl interface compatibility, remote ref validation |
 | **Compile-time** | On targeting a runtime | Plugin compile hook | K8s resource limits, audio buffer sizes, mock coverage |
 
-### 5.3 Constraint Authoring
+### 5.6 Constraint Authoring
 
 Constraint plugins can be:
 
@@ -255,6 +309,7 @@ Constraint plugins can be:
 - **External** — a running process connected over stdio or HTTP (same pattern as LSP)
 - **Inline** — a small script defined in the graph's properties for project-local rules
 - **Delegated** — a remote service (e.g. an API validating against an OpenAPI spec)
+- **Remote** — a schema plugin running on a different machine, reached over the network; enables shared, organisation-wide constraint servers
 
 ---
 
@@ -573,7 +628,7 @@ A runtime target consumes a **validated, schema-annotated, implementation-resolv
 - [ ] CRDT graph store per subgraph URI (Automerge)
 - [ ] Minimal canvas UI (place nodes, draw edges, enter/exit subgraphs)
 - [ ] Tree view panel (rose-tree navigation, sync with canvas)
-- [ ] JSON Schema-based live validation
+- [ ] JSON Schema-based live validation of the *base format* only (no plugin system yet)
 - [ ] Save/load graph from disk
 
 ### Phase 2 — Ports and Structure
@@ -582,11 +637,17 @@ A runtime target consumes a **validated, schema-annotated, implementation-resolv
 - [ ] Multiple port nodes per composite node
 - [ ] Port interface compatibility checking
 
-### Phase 3 — Extensibility
-- [ ] Constraint plugin protocol (Graph Protocol Layer)
-- [ ] First constraint plugin (typed dataflow schema)
-- [ ] Palette populated from active schemas
+### Phase 3 — Extensibility (Schema Plugin Foundation)
+
+This phase lays the groundwork for the modular type system described in §5. The goal is a working plugin protocol and a first real schema — not a full ecosystem.
+
+- [ ] Constraint plugin protocol (Graph Protocol Layer — §5.4)
+- [ ] Schema activation: `activeSchemas` list on graph and per-entity, runtime-editable
+- [ ] Monoid composition enforced: schemas are order-independent; adding/removing schemas is always valid (never crashes the IDE)
+- [ ] First constraint plugin (typed dataflow topology schema)
+- [ ] Modal validation: speculative mode (live diagnostics, no blocking) implemented first
 - [ ] Diagnostic overlay on canvas and tree view
+- [ ] Palette populated from active schemas
 
 ### Phase 4 — Implementations
 - [ ] Alternative implementation system
@@ -609,14 +670,21 @@ A runtime target consumes a **validated, schema-annotated, implementation-resolv
 ### Phase 7 — Runtimes
 - [ ] Runtime target protocol
 - [ ] First runtime target (simulation or code-gen)
-- [ ] Compile-time constraint evaluation
+- [ ] Compile-time constraint evaluation (enforced validation mode — §5.3 — first used here)
 - [ ] Implementation resolution at compile time
 
-### Phase 8 — Ecosystem
-- [ ] Property schema registry / package format
-- [ ] Schema dependency declarations
-- [ ] Inline constraint scripts
-- [ ] External/remote constraint delegation
+### Phase 8 — Schema Ecosystem
+
+This phase builds out the full modular type system vision from §5. Phase 3 establishes the plugin protocol; Phase 8 makes it networked, composable, and externally distributable.
+
+- [ ] Enforced validation mode: checkpoint declarations, hard stops at save/compile/publish
+- [ ] Entity-level schema application (node, edge, port, not just graph-level)
+- [ ] Remote schema application: validate a referenced subgraph URI's interface from the current graph's perspective
+- [ ] Schema package format: versioned, distributable, with dependency declarations
+- [ ] Schema registry: discovery, resolution, version pinning
+- [ ] Remote constraint plugin servers: shared org-wide validation services over the network
+- [ ] Inline constraint scripts: project-local rules without a full plugin
+- [ ] Cross-URI constraint checking: schemas that span subgraph boundaries
 - [ ] Public subgraph URI registry
 
 ### Phase 9 — AI Interface
@@ -830,7 +898,7 @@ This is a useful design forcing function: if a constraint plugin cannot explain 
 
 ### Architecture
 
-1. **Schema composition semantics** — when two property schemas are simultaneously active, how are their constraints composed? Are conflicts declared statically or detected at runtime?
+1. **Schema composition semantics** — §5.2 declares schemas as a commutative monoid, but the exact mechanism for detecting *incompatibility* (vs mere *tension*) is unresolved. Is incompatibility declared statically in schema metadata ("this schema excludes that one"), detected dynamically by the constraint plugin at validation time, or both? Static declaration is cheaper and enables the IDE to warn before a plugin is even loaded; dynamic detection is more expressive but adds latency.
 
 2. **Port interface versioning** — if a subgraph's port interface changes, how are existing edges to that subgraph's URI invalidated or migrated? Semver-style breaking change detection?
 
