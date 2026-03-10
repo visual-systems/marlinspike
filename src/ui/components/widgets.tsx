@@ -4,7 +4,7 @@
 interface IconBtnProps {
   label: string;
   title: string;
-  onClick: () => void;
+  onClick: (e: MouseEvent) => void;
 }
 
 export function IconBtn({ label, title, onClick }: IconBtnProps) {
