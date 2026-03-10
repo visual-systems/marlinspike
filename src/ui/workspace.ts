@@ -5,12 +5,21 @@
 
 import type { AlgorithmId } from "./lib/algorithms/index.ts";
 
+export const PANEL_TYPES = ["tree", "constraints"] as const;
+export type PanelType = (typeof PANEL_TYPES)[number];
+
+/** Unified selection — a panel or the canvas can select exactly one entity at a time. */
+export type Selection =
+  | { type: "node"; id: string }
+  | { type: "edge"; id: string }
+  | { type: "constraint"; id: string }
+  | null;
+
 export interface Panel {
   id: string;
-  type: "tree";
+  type: PanelType;
   expandedNodes: string[];
-  selectedNodeId: string | null;
-  selectedEdgeId: string | null;
+  selected: Selection;
   inspectorSplit: number; // 0–1, fraction of body height given to inspector
 }
 
@@ -20,11 +29,38 @@ export interface Tab {
   panels: Panel[];
 }
 
+// Describes what kind of entities a constraint is relevant to.
+// Discriminated union — more target types will be added in future (e.g. meta-constraints).
+export type ConstraintTarget = {
+  type: "entity";
+  class: "node" | "edge" | "constraint";
+};
+
+export interface Constraint {
+  id: string;
+  label: string;
+  uri?: string;
+  type: "json-schema";
+  /** Declared applicability — used by the UI to filter which entities can have this constraint. */
+  targets: ConstraintTarget[];
+  data: Record<string, unknown>;
+  version: number;
+}
+
+export interface ConstraintApplication {
+  id: string;
+  constraintId: string;
+  entityId: string;
+  version: number;
+}
+
 export interface WorkspaceState {
   tabs: Tab[];
   activeTabId: string;
   treeNodes: TreeNode[];
   edges: Edge[];
+  constraints: Constraint[];
+  constraintApplications: ConstraintApplication[];
   personas: string[];
   activePersona: string | null;
   workflows: string[];
@@ -32,8 +68,7 @@ export interface WorkspaceState {
   connectedGraphs: ConnectedGraph[];
   canvasExpandedNodes: string[];
   canvasNodePositions: Record<string, { x: number; y: number; pinned?: boolean }>;
-  canvasSelectedNodeId: string | null;
-  canvasSelectedEdgeId: string | null;
+  canvasSelected: Selection;
   canvasAlgorithm: AlgorithmId;
 }
 
@@ -172,8 +207,17 @@ export function defaultPanel(): Panel {
     id: crypto.randomUUID(),
     type: "tree",
     expandedNodes: [],
-    selectedNodeId: null,
-    selectedEdgeId: null,
+    selected: null,
+    inspectorSplit: 0.5,
+  };
+}
+
+export function defaultConstraintsPanel(): Panel {
+  return {
+    id: crypto.randomUUID(),
+    type: "constraints",
+    expandedNodes: [],
+    selected: null,
     inspectorSplit: 0.5,
   };
 }
@@ -185,6 +229,8 @@ export function defaultState(): WorkspaceState {
     activeTabId: tabId,
     treeNodes: defaultTreeNodes(),
     edges: [],
+    constraints: [],
+    constraintApplications: [],
     personas: ["Architect", "Developer", "Reviewer"],
     activePersona: "Architect",
     workflows: ["Explore", "Design", "Build"],
@@ -197,8 +243,7 @@ export function defaultState(): WorkspaceState {
     }],
     canvasExpandedNodes: defaultTreeNodes().map((n) => n.id),
     canvasNodePositions: {},
-    canvasSelectedNodeId: null,
-    canvasSelectedEdgeId: null,
+    canvasSelected: null,
     canvasAlgorithm: "SDF",
   };
 }
@@ -209,14 +254,39 @@ export function defaultState(): WorkspaceState {
 
 export const STATE_KEY = "marlinspike.workspace";
 
-function migrateNode(raw: Record<string, unknown>): TreeNode {
+function parseNode(raw: Record<string, unknown>): TreeNode {
   return {
     id: raw.id as string,
     label: raw.label as string,
     uri: raw.uri as string | undefined,
     kind: (raw.kind as "leaf" | "composite") ?? "leaf",
-    children: ((raw.children as Record<string, unknown>[] | undefined) ?? []).map(migrateNode),
+    children: ((raw.children as Record<string, unknown>[] | undefined) ?? []).map(parseNode),
     data: (raw.data as Record<string, unknown> | undefined) ?? {},
+    version: (raw.version as number | undefined) ?? 1,
+  };
+}
+
+function parsePanelType(raw: unknown): PanelType {
+  return (PANEL_TYPES as readonly string[]).includes(raw as string) ? (raw as PanelType) : "tree";
+}
+
+function parseConstraint(raw: Record<string, unknown>): Constraint {
+  return {
+    id: raw.id as string,
+    label: (raw.label as string | undefined) ?? "Unnamed",
+    uri: raw.uri as string | undefined,
+    type: "json-schema",
+    targets: (raw.targets as ConstraintTarget[] | undefined) ?? [],
+    data: (raw.data as Record<string, unknown> | undefined) ?? {},
+    version: (raw.version as number | undefined) ?? 1,
+  };
+}
+
+function parseConstraintApplication(raw: Record<string, unknown>): ConstraintApplication {
+  return {
+    id: raw.id as string,
+    constraintId: raw.constraintId as string,
+    entityId: raw.entityId as string,
     version: (raw.version as number | undefined) ?? 1,
   };
 }
@@ -233,18 +303,16 @@ export function loadState(): WorkspaceState {
         const panels: Panel[] = rawPanels
           ? rawPanels.map((p) => ({
             id: p.id as string,
-            type: "tree" as const,
+            type: parsePanelType(p.type),
             expandedNodes: (p.expandedNodes as string[] | undefined) ?? [],
-            selectedNodeId: (p.selectedNodeId as string | null | undefined) ?? null,
-            selectedEdgeId: (p.selectedEdgeId as string | null | undefined) ?? null,
+            selected: (p.selected as Selection | undefined) ?? null,
             inspectorSplit: (p.inspectorSplit as number | undefined) ?? 0.5,
           }))
           : [{
             id: crypto.randomUUID(),
             type: "tree" as const,
             expandedNodes: oldExpanded ?? [],
-            selectedNodeId: null,
-            selectedEdgeId: null,
+            selected: null,
             inspectorSplit: 0.5,
           }];
         return { id: t.id as string, name: t.name as string, panels };
@@ -255,8 +323,14 @@ export function loadState(): WorkspaceState {
       return {
         tabs,
         activeTabId: (parsed.activeTabId as string | undefined) ?? tabs[0].id,
-        treeNodes: rawNodes ? rawNodes.map(migrateNode) : defaultTreeNodes(),
+        treeNodes: rawNodes ? rawNodes.map(parseNode) : defaultTreeNodes(),
         edges: (parsed.edges as Edge[] | undefined) ?? [],
+        constraints: ((parsed.constraints as Record<string, unknown>[] | undefined) ?? []).map(
+          parseConstraint,
+        ),
+        constraintApplications: (
+          (parsed.constraintApplications as Record<string, unknown>[] | undefined) ?? []
+        ).map(parseConstraintApplication),
         personas: (parsed.personas as string[] | undefined) ?? ds.personas,
         activePersona: (parsed.activePersona as string | null | undefined) ?? null,
         workflows: (parsed.workflows as string[] | undefined) ?? ds.workflows,
@@ -267,8 +341,7 @@ export function loadState(): WorkspaceState {
         canvasNodePositions: (parsed.canvasNodePositions as
           | Record<string, { x: number; y: number; pinned?: boolean }>
           | undefined) ?? {},
-        canvasSelectedNodeId: null,
-        canvasSelectedEdgeId: null,
+        canvasSelected: null,
         canvasAlgorithm: (parsed.canvasAlgorithm as AlgorithmId | undefined) ?? "SDF",
       };
     }
@@ -318,4 +391,38 @@ export function removeNodeFromTree(nodes: TreeNode[], nodeId: string): TreeNode[
   return nodes
     .filter((n) => n.id !== nodeId)
     .map((n) => ({ ...n, children: removeNodeFromTree(n.children, nodeId) }));
+}
+
+export function withConstraintMutation(
+  ws: WorkspaceState,
+  fn: (constraints: Constraint[]) => Constraint[],
+): WorkspaceState {
+  return { ...ws, constraints: fn(ws.constraints) };
+}
+
+export function withApplicationMutation(
+  ws: WorkspaceState,
+  fn: (apps: ConstraintApplication[]) => ConstraintApplication[],
+): WorkspaceState {
+  return { ...ws, constraintApplications: fn(ws.constraintApplications) };
+}
+
+/** Collect all node and edge IDs that a constraint is applied to via ConstraintApplication. */
+export function getAppliedEntityIds(
+  apps: ConstraintApplication[],
+  constraintId: string,
+): string[] {
+  return apps.filter((a) => a.constraintId === constraintId).map((a) => a.entityId);
+}
+
+/** Collect all constraints applied to a given entity. */
+export function getConstraintsForEntity(
+  apps: ConstraintApplication[],
+  constraints: Constraint[],
+  entityId: string,
+): Constraint[] {
+  const constraintIds = new Set(
+    apps.filter((a) => a.entityId === entityId).map((a) => a.constraintId),
+  );
+  return constraints.filter((c) => constraintIds.has(c.id));
 }

@@ -2,6 +2,11 @@
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useState } from "@hono/hono/jsx/dom";
 import { Canvas } from "../components/canvas.tsx";
+import { validateWorkspace } from "../../graph/validate_workspace.ts";
+import {
+  LABEL_REQUIRED_CONSTRAINT,
+  MAX_GROUP_SIZE_CONSTRAINT,
+} from "../../graph/builtin_constraints.ts";
 import { defaultState, makeNode, type Updater, type WorkspaceState } from "../workspace.ts";
 
 export const meta = { title: "Canvas" };
@@ -41,7 +46,7 @@ export function WithEdgesAndSelection() {
   const toId = "spike://acme/backend/frontend";
   ws.edges = [{ id: "edge-1", fromId, toId, label: "depends on", data: {}, version: 1 }];
   ws.canvasExpandedNodes = ["spike://acme/backend"];
-  ws.tabs[0].panels[0].selectedNodeId = fromId;
+  ws.tabs[0].panels[0].selected = { type: "node", id: fromId };
   return <StoryWrapper initial={ws} />;
 }
 
@@ -138,4 +143,49 @@ export function BigGraph() {
   ];
   ws.canvasExpandedNodes = ["root", "svc-a", "svc-b"];
   return <StoryWrapper initial={ws} />;
+}
+
+export function Diagnostics() {
+  // node-no-label: leaf node with empty label — violates LABEL_REQUIRED → error badge
+  // node-big-group: composite node with 6 children — violates MAX_GROUP_SIZE → warning badge
+  const ws = defaultState();
+  ws.treeNodes = [
+    makeNode("root", "platform", "composite", [
+      makeNode("node-no-label", "", "leaf", []),
+      makeNode("node-big-group", "big-group", "composite", [
+        makeNode("c1", "child-1", "leaf", []),
+        makeNode("c2", "child-2", "leaf", []),
+        makeNode("c3", "child-3", "leaf", []),
+        makeNode("c4", "child-4", "leaf", []),
+        makeNode("c5", "child-5", "leaf", []),
+        makeNode("c6", "child-6", "leaf", []),
+      ]),
+    ]),
+  ];
+  ws.constraints = [LABEL_REQUIRED_CONSTRAINT, MAX_GROUP_SIZE_CONSTRAINT];
+  ws.constraintApplications = [
+    {
+      id: "app-1",
+      constraintId: LABEL_REQUIRED_CONSTRAINT.id,
+      entityId: "node-no-label",
+      version: 1,
+    },
+    {
+      id: "app-2",
+      constraintId: MAX_GROUP_SIZE_CONSTRAINT.id,
+      entityId: "node-big-group",
+      version: 1,
+    },
+  ];
+  ws.canvasExpandedNodes = ["root", "node-big-group"];
+
+  const [state, setState] = useState<WorkspaceState>(ws);
+  const update: Updater = (fn) => setState((prev) => fn(prev));
+  const diagnostics = validateWorkspace(state, state.constraintApplications);
+
+  return (
+    <div style="position:relative; width:900px; height:600px; border:1px solid #2a2a4a;">
+      <Canvas ws={state} update={update} diagnostics={diagnostics} />
+    </div>
+  );
 }

@@ -26,7 +26,7 @@ export function Default() {
 export function WithNodeSelected() {
   const ws = defaultState();
   const nodeId = "spike://acme/backend/auth-service";
-  ws.tabs[0].panels[0].selectedNodeId = nodeId;
+  ws.tabs[0].panels[0].selected = { type: "node", id: nodeId };
   ws.tabs[0].panels[0].expandedNodes = ["spike://acme/backend"];
   return <StoryWrapper initial={ws} />;
 }
@@ -37,7 +37,7 @@ export function WithEdgeSelected() {
   const toId = "spike://acme/backend/frontend";
   const edgeId = "edge-1";
   ws.edges = [{ id: edgeId, fromId, toId, label: "depends on", data: {}, version: 1 }];
-  ws.tabs[0].panels[0].selectedEdgeId = edgeId;
+  ws.tabs[0].panels[0].selected = { type: "edge", id: edgeId };
   ws.tabs[0].panels[0].expandedNodes = ["spike://acme/backend"];
   return <StoryWrapper initial={ws} />;
 }
