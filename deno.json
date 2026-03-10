@@ -6,7 +6,8 @@
     "fmt": "deno fmt",
     "lint": "deno lint --fix",
     "test": "deno test --allow-read",
-    "check": "deno check mod.tsx src/graph/**/*.ts src/ui/App.tsx src/ui/StoriesShell.tsx src/ui/workspace.ts"
+    "check": "deno check mod.tsx src/graph/**/*.ts src/ui/App.tsx src/ui/StoriesShell.tsx src/ui/workspace.ts",
+    "check-ui": "deno check --config deno.client.json src/ui/client.tsx src/ui/stories/main.tsx"
   },
   "compilerOptions": {
     "strict": true,

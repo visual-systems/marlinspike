@@ -20,5 +20,11 @@ jobs:
       - name: Lint
         run: deno lint
 
+      - name: Type check
+        run: deno check mod.tsx src/graph/**/*.ts src/ui/App.tsx src/ui/StoriesShell.tsx src/ui/workspace.ts
+
+      - name: Type check UI
+        run: deno check --config deno.client.json src/ui/client.tsx src/ui/stories/main.tsx
+
       - name: Test
         run: deno test --allow-read

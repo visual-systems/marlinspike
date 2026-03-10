@@ -35,6 +35,10 @@ See the `/branch` command for more information.
 
 See DESIGN.md for most informal architecture information. Formal architecture should be documented in source code files.
 
+## Known Tooling Issues
+
+- The `ExitPlanMode` tool's `plan` parameter appears to be pre-populated from the previous session's plan file rather than the current one. When using `/branch`, always overwrite `/Users/lyndon/.claude/plans/wondrous-drifting-zephyr.md` with the new plan content before calling `ExitPlanMode`, so the displayed plan is correct.
+
 ## Current Focus
 
 If not in a planning branch (see `branch` command), then assume we're doing housekeeping - things like high-level docs, claude administration, tidying up, etc. If it seems like more substantial work then check if we should `branch`.

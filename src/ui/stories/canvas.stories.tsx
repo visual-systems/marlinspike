@@ -82,6 +82,35 @@ export function EdgeConfigurations() {
   return <StoryWrapper initial={ws} />;
 }
 
+export function EdgeAddition() {
+  const ws = defaultState();
+  ws.canvasExpandedNodes = [];
+  ws.edges = [];
+  return <StoryWrapper initial={ws} />;
+}
+
+export function ExpandedEdges() {
+  // group-a must be a child (not root-level) to get a rendered bounding-box rect.
+  // Root-level expanded nodes float freely without a box.
+  const ws = defaultState();
+  ws.treeNodes = [
+    makeNode("root", "platform", "composite", [
+      makeNode("group-a", "frontend", "composite", [
+        makeNode("ui", "UI", "leaf", []),
+        makeNode("data", "Data", "leaf", []),
+      ]),
+      makeNode("svc", "auth-service", "leaf", []),
+    ]),
+  ];
+  ws.edges = [
+    { id: "e1", fromId: "group-a", toId: "svc", label: "calls", data: {}, version: 1 },
+    { id: "e2", fromId: "svc", toId: "group-a", label: "responds", data: {}, version: 1 },
+    { id: "e3", fromId: "group-a", toId: "svc", label: "events", data: {}, version: 1 },
+  ];
+  ws.canvasExpandedNodes = ["root", "group-a"];
+  return <StoryWrapper initial={ws} />;
+}
+
 export function BigGraph() {
   const ws = defaultState();
   ws.treeNodes = [

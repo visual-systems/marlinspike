@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { render, useEffect, useState } from "@hono/hono/jsx/dom";
+import type { JSX } from "@hono/hono/jsx/dom/jsx-runtime";
 import * as AllStories from "./index.ts";
 
 // ---------------------------------------------------------------------------
@@ -34,7 +35,9 @@ const registry = buildRegistry();
 function parseHash(): { group: string; story: string } | null {
   const hash = location.hash.slice(1);
   const [group, story] = hash.split("/");
-  return group && story ? { group, story } : null;
+  return group && story
+    ? { group: decodeURIComponent(group), story: decodeURIComponent(story) }
+    : null;
 }
 
 function toHash(group: string, story: string): string {

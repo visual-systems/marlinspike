@@ -25,6 +25,13 @@ import {
 } from "../lib/algorithms/index.ts";
 
 // ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+/** Extensible canvas interaction mode. Add new modes here as needed. */
+type CanvasMode = "select" | "add-edge";
+
+// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
@@ -45,59 +52,55 @@ const DRAG_THRESHOLD_SQ = 16; // 4px
 
 /** Unit vector of the path's direction of travel at its endpoint (dst).
  *  For straight paths this is the chord direction; for arcs it is the circle tangent. */
+/** Arc tangent at dst, given the actual arc circle center arcC. sweep=1 → CW in screen space. */
 function pathEndTangent(
   src: { x: number; y: number },
   dst: { x: number; y: number },
   needsArc: boolean,
-  r: number,
+  _r: number,
   sweep: number,
+  arcC?: { x: number; y: number },
 ): { x: number; y: number } {
   const dx = dst.x - src.x;
   const dy = dst.y - src.y;
   const d = Math.sqrt(dx * dx + dy * dy);
   if (d < 0.001) return { x: 1, y: 0 };
   if (!needsArc) return { x: dx / d, y: dy / d };
-  // Compute circle center; sweep=1 → center to the right of src→dst (-n̂)
-  const ux = dx / d, uy = dy / d;
-  const nx = -uy, ny = ux; // left normal
-  const h = Math.sqrt(Math.max(0, r * r - (d / 2) * (d / 2)));
-  const sign = sweep === 1 ? -1 : 1;
-  const cx = (src.x + dst.x) / 2 + sign * h * nx;
-  const cy = (src.y + dst.y) / 2 + sign * h * ny;
-  // Radius vector at dst; CW tangent = (rv.y, -rv.x); CCW = (-rv.y, rv.x)
+  const cx = arcC?.x ?? (src.x + dst.x) / 2;
+  const cy = arcC?.y ?? (src.y + dst.y) / 2;
+  // Radius vector at dst. In screen space (Y-down):
+  // CW tangent (sweep=1) = (-rv.y, rv.x); CCW (sweep=0) = (rv.y, -rv.x)
   const rvx = dst.x - cx, rvy = dst.y - cy;
-  const tx = sweep === 1 ? rvy : -rvy;
-  const ty = sweep === 1 ? -rvx : rvx;
+  const tx = sweep === 1 ? -rvy : rvy;
+  const ty = sweep === 1 ? rvx : -rvx;
   const tl = Math.sqrt(tx * tx + ty * ty);
-  return tl < 0.001 ? { x: ux, y: uy } : { x: tx / tl, y: ty / tl };
+  return tl < 0.001 ? { x: dx / d, y: dy / d } : { x: tx / tl, y: ty / tl };
 }
 
-/** Returns the geometric midpoint of a circular arc defined by endpoints and sweep flag. */
+/**
+ * Returns the geometric midpoint of a circular arc given the actual arc circle center.
+ * For a short arc (< 180°), the midpoint is in the direction of normalize(vs + vd) from arcC,
+ * where vs/vd are unit vectors from arcC to src/dst. This is sweep-independent.
+ */
 function arcMidpoint(
   x1: number,
   y1: number,
   x2: number,
   y2: number,
   r: number,
-  sweep: number,
+  _sweep: number,
+  arcC?: { x: number; y: number },
 ): { x: number; y: number } {
-  const mx = (x1 + x2) / 2;
-  const my = (y1 + y2) / 2;
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  const d = Math.sqrt(dx * dx + dy * dy);
-  if (d < 0.001) return { x: mx, y: my };
-  const ux = dx / d;
-  const uy = dy / d;
-  // Left normal of the direction P1→P2
-  const nx = -uy;
-  const ny = ux;
-  const h = Math.sqrt(Math.max(0, r * r - (d / 2) * (d / 2)));
-  // Arc midpoint is offset from chord midpoint by (r - h) in the arc's bulge direction.
-  // sweep=0 → arc bulges in -n̂ direction; sweep=1 → +n̂
-  const sign = sweep === 0 ? -1 : 1;
-  const offset = r - h;
-  return { x: mx + sign * offset * nx, y: my + sign * offset * ny };
+  if (!arcC) {
+    // Fallback: chord midpoint
+    return { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
+  }
+  const vsx = x1 - arcC.x, vsy = y1 - arcC.y;
+  const vdx = x2 - arcC.x, vdy = y2 - arcC.y;
+  const bx = vsx + vdx, by = vsy + vdy;
+  const bl = Math.sqrt(bx * bx + by * by);
+  if (bl < 0.001) return { x: arcC.x, y: arcC.y + r };
+  return { x: arcC.x + r * bx / bl, y: arcC.y + r * by / bl };
 }
 
 /** Returns the point on `from`'s boundary in the direction of `to`, offset outward by `gap` px. */
@@ -117,6 +120,129 @@ function surfacePoint(from: ForceNode, to: ForceNode, gap = 0): { x: number; y: 
   const ty = Math.abs(uy) > 0.001 ? (from.h / 2) / Math.abs(uy) : Infinity;
   const t = Math.min(tx, ty);
   return { x: from.x + ux * (t + gap), y: from.y + uy * (t + gap) };
+}
+
+/**
+ * Returns the point where an arc circle (center arcC, radius r) exits a collapsed node's
+ * bounding circle (radius clipR, centered at nodeCenter). nodeCenter must lie on the arc circle.
+ * otherCenter is the other arc endpoint, used to select the correct intersection.
+ */
+function arcClipPoint(
+  arcC: { x: number; y: number },
+  r: number,
+  nodeCenter: { x: number; y: number },
+  clipR: number,
+  otherCenter: { x: number; y: number },
+): { x: number; y: number } {
+  // |arcC - nodeCenter| = r  (nodeCenter is on the arc circle)
+  const dcx = nodeCenter.x - arcC.x;
+  const dcy = nodeCenter.y - arcC.y;
+  // Standard circle-circle intersection (d = r):
+  const a = (r * r + r * r - clipR * clipR) / (2 * r);
+  const hh = r * r - a * a;
+  if (hh < 0 || r < 0.001) {
+    // Degenerate — fall back to straight surface point
+    const ddx = otherCenter.x - nodeCenter.x;
+    const ddy = otherCenter.y - nodeCenter.y;
+    const dd = Math.sqrt(ddx * ddx + ddy * ddy);
+    if (dd < 0.001) return nodeCenter;
+    return { x: nodeCenter.x + (ddx / dd) * clipR, y: nodeCenter.y + (ddy / dd) * clipR };
+  }
+  const h = Math.sqrt(hh);
+  const mx = arcC.x + a * dcx / r;
+  const my = arcC.y + a * dcy / r;
+  const px = -dcy / r;
+  const py = dcx / r;
+  const p1 = { x: mx + h * px, y: my + h * py };
+  const p2 = { x: mx - h * px, y: my - h * py };
+  const d1sq = (p1.x - otherCenter.x) ** 2 + (p1.y - otherCenter.y) ** 2;
+  const d2sq = (p2.x - otherCenter.x) ** 2 + (p2.y - otherCenter.y) ** 2;
+  return d1sq < d2sq ? p1 : p2;
+}
+
+/**
+ * Returns the point where an arc circle (center arcC, radius r) first exits an AABB rectangle
+ * (center nodeCenter, half-dims halfW × halfH expanded outward by gap) when travelling from
+ * nodeCenter toward otherCenter. Uses angular distance from nodeCenter's angle to pick the
+ * "first" exit point in the arc's travel direction (initialSweep: 1=CW, 0=CCW in screen space).
+ */
+function arcClipRect(
+  arcC: { x: number; y: number },
+  r: number,
+  nodeCenter: { x: number; y: number },
+  halfW: number,
+  halfH: number,
+  gap: number,
+  initialSweep: number,
+  otherCenter: { x: number; y: number },
+): { x: number; y: number } {
+  const left = nodeCenter.x - halfW - gap;
+  const right = nodeCenter.x + halfW + gap;
+  const top = nodeCenter.y - halfH - gap;
+  const bottom = nodeCenter.y + halfH + gap;
+
+  const pts: { x: number; y: number }[] = [];
+  // Vertical edges
+  for (const x of [left, right]) {
+    const disc = r * r - (x - arcC.x) ** 2;
+    if (disc < 0) continue;
+    const sq = Math.sqrt(disc);
+    for (const y of [arcC.y + sq, arcC.y - sq]) {
+      if (y >= top && y <= bottom) pts.push({ x, y });
+    }
+  }
+  // Horizontal edges
+  for (const y of [top, bottom]) {
+    const disc = r * r - (y - arcC.y) ** 2;
+    if (disc < 0) continue;
+    const sq = Math.sqrt(disc);
+    for (const x of [arcC.x + sq, arcC.x - sq]) {
+      if (x >= left && x <= right) pts.push({ x, y });
+    }
+  }
+
+  if (pts.length === 0) {
+    // Fallback: straight surface direction toward otherCenter
+    const ddx = otherCenter.x - nodeCenter.x;
+    const ddy = otherCenter.y - nodeCenter.y;
+    const dd = Math.sqrt(ddx * ddx + ddy * ddy);
+    if (dd < 0.001) return nodeCenter;
+    const tx = Math.abs(ddx) > 0.001 ? halfW / Math.abs(ddx) : Infinity;
+    const ty = Math.abs(ddy) > 0.001 ? halfH / Math.abs(ddy) : Infinity;
+    const t = Math.min(tx, ty);
+    return {
+      x: nodeCenter.x + ddx * t + (ddx / dd) * gap,
+      y: nodeCenter.y + ddy * t + (ddy / dd) * gap,
+    };
+  }
+
+  // Pick the candidate with the smallest positive angular distance from nodeCenter's angle,
+  // travelling in the arc's direction (initialSweep: 1=CW, 0=CCW in screen space).
+  const aFrom = Math.atan2(nodeCenter.y - arcC.y, nodeCenter.x - arcC.x);
+  const cw = initialSweep === 1;
+  function cwDist(from: number, to: number): number {
+    // Angular distance travelling CW (decreasing angle in screen space) from `from` to `to`
+    let d = from - to;
+    if (d < 0) d += 2 * Math.PI;
+    return d;
+  }
+  function ccwDist(from: number, to: number): number {
+    let d = to - from;
+    if (d < 0) d += 2 * Math.PI;
+    return d;
+  }
+  const angDist = cw ? cwDist : ccwDist;
+
+  let best = pts[0];
+  let bestDist = angDist(aFrom, Math.atan2(pts[0].y - arcC.y, pts[0].x - arcC.x));
+  for (const p of pts.slice(1)) {
+    const d = angDist(aFrom, Math.atan2(p.y - arcC.y, p.x - arcC.x));
+    if (d < bestDist) {
+      bestDist = d;
+      best = p;
+    }
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------------------
@@ -371,6 +497,7 @@ function CanvasInspector(
       return (
         <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
           <EdgeInspector
+            key={edge.id}
             edge={edge}
             panel={fakePanel}
             tab={fakeTab}
@@ -412,7 +539,14 @@ function CanvasInspector(
 // Contains canvas-wide controls (layout selector) + breadcrumb navigation.
 // ---------------------------------------------------------------------------
 
-function CanvasTopBar({ ws, update }: { ws: WorkspaceState; update: Updater }) {
+function CanvasTopBar(
+  { ws, update, mode, onSetMode }: {
+    ws: WorkspaceState;
+    update: Updater;
+    mode: CanvasMode;
+    onSetMode: (m: CanvasMode) => void;
+  },
+) {
   function selectNode(id: string) {
     update((s) => ({ ...s, canvasSelectedNodeId: id, canvasSelectedEdgeId: null }));
   }
@@ -432,6 +566,20 @@ function CanvasTopBar({ ws, update }: { ws: WorkspaceState; update: Updater }) {
 
   return (
     <div style="position:absolute; top:8px; right:8px; display:flex; align-items:center; gap:4px; z-index:2; pointer-events:auto;">
+      {/* Mode selector */}
+      <div style={pillStyle}>
+        <span style="color:#404466; user-select:none;">mode</span>
+        <Dropdown
+          items={[
+            { value: "select", label: "Select" },
+            { value: "add-edge", label: "Add Edges" },
+          ]}
+          selectedValue={mode}
+          placeholder="mode"
+          onSelect={(v) => onSetMode(v as CanvasMode)}
+          width={90}
+        />
+      </div>
       {/* Canvas-wide controls */}
       <div style={pillStyle}>
         <span style="color:#404466; user-select:none;">layout</span>
@@ -500,6 +648,18 @@ interface PanState {
   startY: number;
   origTx: number;
   origTy: number;
+  hasMoved: boolean;
+}
+
+/** All add-edge interaction state bundled for passing into renderLevel. */
+interface InteractionState {
+  mode: CanvasMode;
+  edgeDrawFromId: string | null;
+  /** levelId of the currently-selected edge source node, if any. */
+  edgeDrawLevelId: string | null;
+  hoveredNodeId: string | null;
+  onEdgeNodeClick: (id: string, x: number, y: number, levelId: string) => void;
+  onNodeHover: (id: string | null) => void;
 }
 
 export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) {
@@ -518,10 +678,19 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
     )
   );
 
+  const [mode, setMode] = useState<CanvasMode>("select");
+  const [edgeDraw, setEdgeDraw] = useState<
+    { fromId: string; x: number; y: number; levelId: string } | null
+  >(null);
+  const [mouseCanvas, setMouseCanvas] = useState<{ x: number; y: number } | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
   const wsRef = useRef(ws);
   wsRef.current = ws;
   const viewRef = useRef(view);
   viewRef.current = view;
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   // Sync layout when tree, edges, expanded nodes, or algorithm change
   useEffect(() => {
@@ -640,11 +809,10 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
     }
     if (panRef.current) {
       const pan = panRef.current;
-      setView((v) => ({
-        ...v,
-        tx: pan.origTx + (e.clientX - pan.startX),
-        ty: pan.origTy + (e.clientY - pan.startY),
-      }));
+      const sdx = e.clientX - pan.startX;
+      const sdy = e.clientY - pan.startY;
+      if (sdx * sdx + sdy * sdy > DRAG_THRESHOLD_SQ) pan.hasMoved = true;
+      setView((v) => ({ ...v, tx: pan.origTx + sdx, ty: pan.origTy + sdy }));
     }
   }
 
@@ -652,6 +820,9 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
     if (dragRef.current) {
       if (!dragRef.current.hasMoved) dragRef.current.onClickFn?.();
       dragRef.current = null;
+    }
+    if (panRef.current && !panRef.current.hasMoved && modeRef.current === "select") {
+      update((s) => ({ ...s, canvasSelectedNodeId: null, canvasSelectedEdgeId: null }));
     }
     panRef.current = null;
     document.removeEventListener("mousemove", onDocMouseMove as EventListener);
@@ -682,14 +853,61 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
   }
 
   function onSvgMouseDown(e: MouseEvent) {
+    if (modeRef.current === "add-edge") {
+      // Background click: return to select mode and clear everything (same as Escape)
+      setEdgeDraw(null);
+      setMode("select");
+      update((s) => ({ ...s, canvasSelectedNodeId: null, canvasSelectedEdgeId: null }));
+      return;
+    }
     panRef.current = {
       startX: e.clientX,
       startY: e.clientY,
       origTx: viewRef.current!.tx,
       origTy: viewRef.current!.ty,
+      hasMoved: false,
     };
     document.addEventListener("mousemove", onDocMouseMove as EventListener);
     document.addEventListener("mouseup", onDocMouseUp);
+  }
+
+  function onSvgMouseMove(e: MouseEvent) {
+    if (modeRef.current !== "add-edge") return;
+    const el = svgRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const v = viewRef.current!;
+    setMouseCanvas({
+      x: (e.clientX - rect.left - v.tx) / v.scale,
+      y: (e.clientY - rect.top - v.ty) / v.scale,
+    });
+  }
+
+  function addEdge(fromId: string, toId: string) {
+    update((s) => ({
+      ...s,
+      edges: [...s.edges, {
+        id: crypto.randomUUID(),
+        fromId,
+        toId,
+        label: "",
+        data: {},
+        version: 1,
+      }],
+    }));
+  }
+
+  function onEdgeNodeClick(id: string, x: number, y: number, levelId: string) {
+    if (!edgeDraw) {
+      setEdgeDraw({ fromId: id, x, y, levelId });
+    } else if (id === edgeDraw.fromId) {
+      // Re-click source: cancel selection
+      setEdgeDraw(null);
+    } else {
+      addEdge(edgeDraw.fromId, id);
+      setEdgeDraw(null);
+    }
+    setHoveredNodeId(null);
   }
 
   function selectNode(nodeId: string) {
@@ -701,7 +919,11 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
   }
 
   function selectEdge(edgeId: string) {
-    update((s) => ({ ...s, canvasSelectedEdgeId: edgeId, canvasSelectedNodeId: null }));
+    update((s) => ({
+      ...s,
+      canvasSelectedEdgeId: s.canvasSelectedEdgeId === edgeId ? null : edgeId,
+      canvasSelectedNodeId: null,
+    }));
   }
 
   function expandNode(nodeId: string) {
@@ -737,15 +959,36 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
   const selectedEdgeId = ws.canvasSelectedEdgeId;
   const hasSelection = selectedNodeId !== null || selectedEdgeId !== null;
 
+  const interaction: InteractionState = {
+    mode,
+    edgeDrawFromId: edgeDraw?.fromId ?? null,
+    edgeDrawLevelId: edgeDraw?.levelId ?? null,
+    hoveredNodeId,
+    onEdgeNodeClick,
+    onNodeHover: setHoveredNodeId,
+  };
+
   return (
     <div
       ref={containerRef}
-      style="position:absolute; inset:0; overflow:hidden; background:#0d0d1e;"
+      // deno-lint-ignore no-explicit-any
+      tabIndex={0 as any}
+      style="position:absolute; inset:0; overflow:hidden; background:#0d0d1e; outline:none;"
+      onKeyDown={(e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          setMode("select");
+          setEdgeDraw(null);
+          update((s) => ({ ...s, canvasSelectedNodeId: null, canvasSelectedEdgeId: null }));
+        }
+      }}
     >
       <svg
         ref={svgRef}
-        style="width:100%; height:100%; display:block;"
+        style={`width:100%; height:100%; display:block;${
+          mode === "add-edge" ? " cursor:crosshair;" : ""
+        }`}
         onMouseDown={onSvgMouseDown}
+        onMouseMove={onSvgMouseMove}
       >
         <g transform={`translate(${view.tx}, ${view.ty}) scale(${view.scale})`}>
           {renderLevel(
@@ -761,12 +1004,36 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
             expandNode,
             collapseNode,
             startDrag,
+            interaction,
+            { x: 0, y: 0 },
           )}
+          {/* Ghost edge line while drawing */}
+          {mode === "add-edge" && edgeDraw && mouseCanvas && (() => {
+            const gdx = mouseCanvas.x - edgeDraw.x;
+            const gdy = mouseCanvas.y - edgeDraw.y;
+            const gd = Math.sqrt(gdx * gdx + gdy * gdy);
+            const gp = gd < 0.001 ? { x: edgeDraw.x, y: edgeDraw.y } : {
+              x: edgeDraw.x + gdx / gd * (LEAF_R + 5),
+              y: edgeDraw.y + gdy / gd * (LEAF_R + 5),
+            };
+            return (
+              <line
+                x1={gp.x}
+                y1={gp.y}
+                x2={mouseCanvas.x}
+                y2={mouseCanvas.y}
+                stroke="#5070c0"
+                stroke-width={1.5}
+                stroke-dasharray="6 4"
+                style="pointer-events:none;"
+              />
+            );
+          })()}
         </g>
       </svg>
 
       {/* Top-right bar: canvas-wide controls + breadcrumb */}
-      <CanvasTopBar ws={ws} update={update} />
+      <CanvasTopBar ws={ws} update={update} mode={mode} onSetMode={setMode} />
 
       {/* Inspector overlay — bottom-right */}
       {hasSelection && (
@@ -812,6 +1079,8 @@ function renderLevel(
   onExpand: (id: string) => void,
   onCollapse: (id: string) => void,
   startDrag: StartDragFn,
+  interaction: InteractionState,
+  worldOffset: { x: number; y: number },
 ): unknown {
   const level = layout.get(levelId);
   if (!level) return null;
@@ -851,6 +1120,8 @@ function renderLevel(
                   onExpand,
                   onCollapse,
                   startDrag,
+                  interaction,
+                  { x: worldOffset.x + pos.x, y: worldOffset.y + pos.y },
                 )}
               </g>
             );
@@ -878,8 +1149,19 @@ function renderLevel(
                 rx={8}
                 ry={8}
                 style="cursor:pointer;"
-                onMouseDown={(e: MouseEvent) =>
-                  startDrag(e, node.id, levelId, pos.x, pos.y, () => onSelectNode(node.id))}
+                onMouseDown={(e: MouseEvent) => {
+                  if (interaction.mode === "add-edge" && nodes.length > 1) {
+                    e.stopPropagation();
+                    interaction.onEdgeNodeClick(
+                      node.id,
+                      worldOffset.x + pos.x,
+                      worldOffset.y + pos.y,
+                      levelId,
+                    );
+                    return;
+                  }
+                  startDrag(e, node.id, levelId, pos.x, pos.y, () => onSelectNode(node.id));
+                }}
                 onDblClick={(e: MouseEvent) => {
                   e.stopPropagation();
                   onCollapse(node.id);
@@ -907,6 +1189,8 @@ function renderLevel(
                 onExpand,
                 onCollapse,
                 startDrag,
+                interaction,
+                { x: worldOffset.x + pos.x, y: worldOffset.y + pos.y },
               )}
             </g>
           );
@@ -916,16 +1200,65 @@ function renderLevel(
         const isComposite = node.kind === "composite";
         const r = LEAF_R;
         const hasChildren = isComposite && node.children.length > 0;
-        const fill = isSelected ? "#1e2a4a" : isComposite ? "#141430" : "#111125";
-        const stroke = isSelected ? "#5070c0" : isComposite ? "#303060" : "#252545";
+
+        // Edge-draw visual state
+        const isEdgeSource = node.id === interaction.edgeDrawFromId;
+        const hasSourceSelected = interaction.edgeDrawFromId !== null;
+        const sameLevel = interaction.edgeDrawLevelId === levelId;
+        // Candidate: can be clicked as from/to; requires sibling(s) and, once source is chosen,
+        // must be at the same level as the source.
+        const isCandidate = interaction.mode === "add-edge" && nodes.length > 1 &&
+          !isEdgeSource && (!hasSourceSelected || sameLevel);
+        // Inactive: source is selected but this node cannot be a target.
+        const isInactive = interaction.mode === "add-edge" && hasSourceSelected &&
+          !isEdgeSource && !isCandidate;
+        const isHovered = interaction.hoveredNodeId === node.id && isCandidate;
+
+        const fill = isEdgeSource || isHovered || isSelected
+          ? "#1e2a4a"
+          : isComposite
+          ? "#141430"
+          : "#111125";
+        const stroke = isEdgeSource || isSelected
+          ? "#5070c0"
+          : isHovered
+          ? "#6080e0"
+          : isCandidate
+          ? "#3050a0"
+          : isComposite
+          ? "#303060"
+          : "#252545";
+        const strokeWidth = isEdgeSource || isSelected || isHovered ? 2 : isCandidate ? 1.5 : 1;
+        const nodeCursor = interaction.mode === "add-edge"
+          ? (isCandidate || isEdgeSource ? "crosshair" : "default")
+          : "pointer";
 
         return (
           <g
             key={node.id}
             transform={`translate(${pos.x}, ${pos.y})`}
-            style="cursor:pointer;"
-            onMouseDown={(e: MouseEvent) =>
-              startDrag(e, node.id, levelId, pos.x, pos.y, () => onSelectNode(node.id))}
+            style={`cursor:${nodeCursor};${isInactive ? " opacity:0.3;" : ""}`}
+            onMouseDown={(e: MouseEvent) => {
+              if (interaction.mode === "add-edge" && (isCandidate || isEdgeSource)) {
+                e.stopPropagation();
+                interaction.onEdgeNodeClick(
+                  node.id,
+                  worldOffset.x + pos.x,
+                  worldOffset.y + pos.y,
+                  levelId,
+                );
+                return;
+              }
+              if (interaction.mode === "select") {
+                startDrag(e, node.id, levelId, pos.x, pos.y, () => onSelectNode(node.id));
+              }
+            }}
+            onMouseEnter={() => {
+              if (isCandidate) interaction.onNodeHover(node.id);
+            }}
+            onMouseLeave={() => {
+              if (isCandidate) interaction.onNodeHover(null);
+            }}
             onDblClick={(e: MouseEvent) => {
               e.stopPropagation();
               if (isComposite) onExpand(node.id);
@@ -937,7 +1270,7 @@ function renderLevel(
               r={r}
               fill={fill}
               stroke={stroke}
-              stroke-width={isSelected ? 2 : 1}
+              stroke-width={strokeWidth}
             />
             <text
               x={0}
@@ -983,14 +1316,13 @@ function renderLevel(
         // pass 2 — all labels on top.
         type EdgeRenderData = {
           edge: (typeof levelEdges)[0];
-          pa: ForceNode;
-          pb: ForceNode;
           src: { x: number; y: number };
           dst: { x: number; y: number };
           d: string;
           needsArc: boolean;
           r: number;
           sweep: number;
+          arcC?: { x: number; y: number };
           isSelected: boolean;
         };
         const renderData: EdgeRenderData[] = [];
@@ -998,10 +1330,6 @@ function renderLevel(
           const pa = posMap.get(edge.fromId);
           const pb = posMap.get(edge.toId);
           if (!pa || !pb) continue;
-          const src = surfacePoint(pa, pb, 5);
-          // Destination: pull back by arrowhead length so stroke ends at arrowhead base,
-          // not tip — prevents the line from visually extending through the arrowhead.
-          const dst = surfacePoint(pb, pa, 5 + 10);
           const dx = pb.x - pa.x;
           const dy = pb.y - pa.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
@@ -1009,21 +1337,59 @@ function renderLevel(
           const needsArc = (groupCount.get(key) ?? 1) > 1;
           const idx = groupIndex.get(edge.id) ?? 0;
           const baseSweep = edge.fromId < edge.toId ? 0 : 1;
-          const sweep = idx % 2 === 0 ? baseSweep : 1 - baseSweep;
-          const r = dist * 0.6;
+          let sweep = idx % 2 === 0 ? baseSweep : 1 - baseSweep;
+          // Wider radius per additional pair so bundles of 3+ edges separate visually.
+          const r = dist * (0.55 + Math.floor(idx / 2) * 0.45);
+
+          // For arcs, compute the arc-circle center so each arc exits the node boundary at
+          // a different point (instead of all sharing the same straight surfacePoint).
+          let src: { x: number; y: number };
+          let dst: { x: number; y: number };
+          let edgeArcC: { x: number; y: number } | undefined;
+          if (needsArc) {
+            const ux = dx / dist, uy = dy / dist;
+            const nx = -uy, ny = ux;
+            const hh = Math.max(0, r * r - (dist / 2) * (dist / 2));
+            const hv = Math.sqrt(hh);
+            const sign = sweep === 1 ? -1 : 1;
+            const arcSweep = sweep; // initial sweep used to derive arcC
+            edgeArcC = {
+              x: (pa.x + pb.x) / 2 + sign * hv * nx,
+              y: (pa.y + pb.y) / 2 + sign * hv * ny,
+            };
+            const isSrcCircle = pa.w === LEAF_W && pa.h === LEAF_H;
+            const isDstCircle = pb.w === LEAF_W && pb.h === LEAF_H;
+            src = isSrcCircle
+              ? arcClipPoint(edgeArcC, r, pa, LEAF_R + 5, pb)
+              : arcClipRect(edgeArcC, r, pa, pa.w / 2, pa.h / 2, 5, arcSweep, pb);
+            // Destination: pull back by arrowhead length (10px) past the boundary.
+            dst = isDstCircle
+              ? arcClipPoint(edgeArcC, r, pb, LEAF_R + 5 + 10, pa)
+              // For the destination we want the entry point — travel backward (1-arcSweep) from pb.
+              : arcClipRect(edgeArcC, r, pb, pb.w / 2, pb.h / 2, 5 + 10, 1 - arcSweep, pa);
+            // arcC was computed from pa→pb, but src/dst are clipped points on that same circle.
+            // The SVG sweep flag for src→dst must be derived from arcC directly (cross product).
+            // In SVG screen coords (Y-down): positive crossZ → CW rotation → sweep=1.
+            const crossZ = (src.x - edgeArcC.x) * (dst.y - edgeArcC.y) -
+              (src.y - edgeArcC.y) * (dst.x - edgeArcC.x);
+            sweep = crossZ > 0 ? 1 : 0;
+          } else {
+            src = surfacePoint(pa, pb, 5);
+            dst = surfacePoint(pb, pa, 5 + 10);
+          }
+
           const d = needsArc
             ? `M${src.x},${src.y} A${r},${r} 0 0,${sweep} ${dst.x},${dst.y}`
             : `M${src.x},${src.y} L${dst.x},${dst.y}`;
           renderData.push({
             edge,
-            pa,
-            pb,
             src,
             dst,
             d,
             needsArc,
             r,
             sweep,
+            arcC: edgeArcC,
             isSelected: selectedEdgeId === edge.id,
           });
         }
@@ -1031,9 +1397,9 @@ function renderLevel(
         return (
           <>
             {/* Pass 1: all edge paths */}
-            {renderData.map(({ edge, d, src, dst, needsArc, r, sweep, isSelected }) => {
+            {renderData.map(({ edge, d, src, dst, needsArc, r, sweep, arcC, isSelected }) => {
               const stroke = isSelected ? "#5070c0" : "#2a2a50";
-              const tangent = pathEndTangent(src, dst, needsArc, r, sweep);
+              const tangent = pathEndTangent(src, dst, needsArc, r, sweep, arcC);
               const perp = { x: -tangent.y, y: tangent.x };
               const tip = { x: dst.x + tangent.x * 10, y: dst.y + tangent.y * 10 };
               const arrowPoints = `${tip.x},${tip.y} ${dst.x + perp.x * 3.5},${
@@ -1071,11 +1437,11 @@ function renderLevel(
               );
             })}
             {/* Pass 2: all labels on top of all paths */}
-            {renderData.map(({ edge, pa, pb, src, dst, needsArc, r, sweep }) => {
+            {renderData.map(({ edge, src, dst, needsArc, r, sweep, arcC }) => {
               if (!edge.label) return null;
               const lp = needsArc
-                ? arcMidpoint(src.x, src.y, dst.x, dst.y, r, sweep)
-                : { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+                ? arcMidpoint(src.x, src.y, dst.x, dst.y, r, sweep, arcC)
+                : { x: (src.x + dst.x) / 2, y: (src.y + dst.y) / 2 };
               return (
                 <text
                   key={`${edge.id}-label`}
