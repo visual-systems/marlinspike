@@ -69,13 +69,21 @@ Forward-compatible union — future modes extend it.
 - [x] `Canvas/EdgeAddition` — interactive edge drawing test
 - [x] `Canvas/ExpandedEdges` — arc geometry between expanded group and leaf node
 
+### TreePanel stories fix + type coverage
+
+- [x] `parseHash()` in `stories/main.tsx` uses `decodeURIComponent()` — spaces in story group titles (e.g. "Tree Panel") were being URL-encoded to `%20`, breaking registry lookup
+- [x] `IconBtnProps.onClick` widened to `(e: MouseEvent) => void` — fixes TS2322 mismatch with tree-panel event handlers
+- [x] `deno.client.json` added with `jsxImportSource: "@hono/hono/jsx/dom"` for client-side type checking
+- [x] `deno task check-ui` added — covers `client.tsx` and `stories/main.tsx`, catching component interface errors without server-config JSX noise (Deno ignores per-file `/** @jsxImportSource */` for type checking; separate config is the workaround)
+- [x] `JSX` type imported from `@hono/hono/jsx/dom/jsx-runtime` in `main.tsx` to satisfy ambient namespace reference
+
 ## Open Questions
 
 None.
 
 ## Verification
 
-- [x] `NO_COLOR=1 deno task fmt && deno task lint && deno task check && deno task test` all pass
+- [x] `NO_COLOR=1 deno task fmt && deno task lint && deno task check && deno task check-ui && deno task test` all pass
 - [x] "Add Edge" button appears in canvas toolbar; toggles active state visually
 - [x] Clicking a node in `add-edge` mode highlights it as source; ghost dashed line follows mouse
 - [x] Clicking a second node creates an edge; canvas updates immediately
@@ -90,3 +98,5 @@ None.
 - [x] Labels sit on arc visual midpoint
 - [x] Expanded-group nodes clip arcs correctly at rect boundary
 - [x] Edge label populates correctly in inspector when clicking an edge with a label
+- [x] TreePanel stories render correctly (`Tree Panel` group name with space now works via hash URL decode)
+- [x] `deno task check-ui` passes clean with no errors
