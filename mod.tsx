@@ -7,13 +7,16 @@ import { StoriesShell } from "./src/ui/StoriesShell.tsx";
 const args = parseArgs(Deno.args);
 const PORT = Number(args.port) || 8000;
 
+const isDev = args.dev === true;
+
 async function loadJs(distUrl: URL, srcUrl: URL, importMapURL: URL): Promise<string> {
-  try {
-    return await Deno.readTextFile(distUrl);
-  } catch {
-    const { code } = await bundle(srcUrl, { importMap: importMapURL });
-    return code;
+  if (!isDev) {
+    try {
+      return await Deno.readTextFile(distUrl);
+    } catch { /* fall through to bundle */ }
   }
+  const { code } = await bundle(srcUrl, { importMap: importMapURL });
+  return code;
 }
 
 const importMapURL = new URL("./deno.json", import.meta.url);
