@@ -23,6 +23,6 @@ export const MAX_GROUP_SIZE_CONSTRAINT: Constraint = {
   uri: "spike://builtin/constraints/max-group-size",
   type: "max-children",
   targets: [{ type: "entity", class: "node" }],
-  data: { max: 5 },
+  data: { limit: 5 },
   version: 1,
 };

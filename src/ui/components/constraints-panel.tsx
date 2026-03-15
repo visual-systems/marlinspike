@@ -17,7 +17,11 @@ import {
   type WorkspaceState,
 } from "../workspace.ts";
 import type { DiagnosticMap } from "../../graph/diagnostics.ts";
-import { registeredConstraintTypes } from "../../graph/validate_workspace.ts";
+import {
+  type DataPropertySchema,
+  getConstraintDataSchema,
+  registeredConstraintTypes,
+} from "../../graph/validate_workspace.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { IconBtn, PropLabel, SmallBtn } from "./widgets.tsx";
 import { InspectorShell } from "./inspector.tsx";
@@ -495,33 +499,100 @@ function ConstraintInspector(
         )}
       </div>
 
-      {/* Config — type-specific */}
-      {constraint.type === "max-children" && (
-        <div style="display:flex; flex-direction:column; gap:3px;">
-          <PropLabel text="Max Children" />
-          <input
-            type="number"
-            min={1}
-            value={String(typeof constraint.data.max === "number" ? constraint.data.max : 5)}
-            style="background:#0f0f22; border:1px solid #2a2a4a; color:#c0c0e0; font-size:12px; padding:3px 6px; border-radius:3px; width:80px;"
-            onChange={(e: Event) => {
-              const max = parseInt((e.target as HTMLInputElement).value);
-              if (Number.isFinite(max) && max > 0) {
-                update((s) =>
-                  withConstraintMutation(
-                    s,
-                    (cs) =>
-                      cs.map((c) =>
-                        c.id === constraint.id ? { ...c, data: { max }, version: c.version + 1 } : c
-                      ),
-                  )
-                );
-              }
-            }}
-          />
-        </div>
-      )}
+      {/* Data — schema-driven fields */}
+      <ConstraintDataFields constraint={constraint} update={update} />
     </InspectorShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ConstraintDataFields — schema-driven editor for constraint.data
+// ---------------------------------------------------------------------------
+
+function ConstraintDataFields(
+  { constraint, update }: { constraint: Constraint; update: Updater },
+) {
+  const schema = getConstraintDataSchema(constraint.type);
+  const props = schema?.properties ?? {};
+  const entries = Object.entries(props);
+  if (entries.length === 0) return null;
+
+  function setField(key: string, value: unknown) {
+    update((s) =>
+      withConstraintMutation(
+        s,
+        (cs) =>
+          cs.map((c) =>
+            c.id === constraint.id
+              ? { ...c, data: { ...c.data, [key]: value }, version: c.version + 1 }
+              : c
+          ),
+      )
+    );
+  }
+
+  return (
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <PropLabel text="Data" />
+      {entries.map(([key, prop]) => (
+        <DataField
+          key={key}
+          fieldKey={key}
+          schema={prop}
+          value={constraint.data[key]}
+          onChange={(v) => setField(key, v)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function DataField(
+  { fieldKey, schema, value, onChange }: {
+    fieldKey: string;
+    schema: DataPropertySchema;
+    value: unknown;
+    onChange: (v: unknown) => void;
+  },
+) {
+  const inputStyle =
+    "background:#0f0f22; border:1px solid #2a2a4a; color:#c0c0e0; font-size:12px; padding:3px 6px; border-radius:3px;";
+  return (
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span style="font-size:11px; color:#555; min-width:60px; flex-shrink:0;">{fieldKey}</span>
+      {(schema.type === "integer" || schema.type === "number") && (
+        <input
+          type="number"
+          min={schema.minimum}
+          value={String(typeof value === "number" ? value : (schema.default ?? 0))}
+          style={inputStyle + " width:80px;"}
+          onChange={(e: Event) => {
+            const v = schema.type === "integer"
+              ? parseInt((e.target as HTMLInputElement).value)
+              : parseFloat((e.target as HTMLInputElement).value);
+            if (
+              Number.isFinite(v) &&
+              (schema.minimum === undefined || v >= schema.minimum)
+            ) onChange(v);
+          }}
+        />
+      )}
+      {schema.type === "string" && (
+        <input
+          type="text"
+          value={String(typeof value === "string" ? value : (schema.default ?? ""))}
+          style={inputStyle + " flex:1;"}
+          onChange={(e: Event) => onChange((e.target as HTMLInputElement).value)}
+        />
+      )}
+      {schema.type === "boolean" && (
+        <input
+          type="checkbox"
+          checked={typeof value === "boolean" ? value : (schema.default ?? false)}
+          onChange={(e: Event) => onChange((e.target as HTMLInputElement).checked)}
+        />
+      )}
+    </div>
   );
 }
 
