@@ -231,7 +231,7 @@ function ConstraintRow(
     >
       <span
         style={`flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; ${
-          isSelected ? "color:#b0c4ff;" : ""
+          isSelected ? "color:#b0c4ff;" : diagnosticCount > 0 ? "color:#c04040;" : ""
         }`}
         onClick={onSelect}
       >
@@ -239,7 +239,7 @@ function ConstraintRow(
       </span>
       {diagnosticCount > 0 && (
         <span
-          style="font-size:10px; color:#c04040; margin-right:4px; flex-shrink:0;"
+          style="font-size:10px; color:#c04040; margin-right:4px; flex-shrink:0; opacity:0.7;"
           title={`${diagnosticCount} violation${diagnosticCount !== 1 ? "s" : ""}`}
         >
           {diagnosticCount}
@@ -458,16 +458,19 @@ function ConstraintInspector(
           const entity = findNode(ws.treeNodes, app.entityId) ??
             ws.edges.find((e) => e.id === app.entityId);
           const label = entity ? ("label" in entity ? entity.label : app.entityId) : app.entityId;
-          const hasDiags = (diagnostics[app.entityId]?.length ?? 0) > 0;
+          const hasDiags = (diagnostics[app.entityId] ?? []).some((d) => d.code === constraint.id);
           return (
             <div
               key={app.id}
-              style="display:flex; align-items:center; gap:6px; padding:4px 6px; background:#13132a; border-radius:3px; font-size:12px;"
+              style={`display:flex; align-items:center; gap:6px; padding:4px 6px; border-radius:3px; font-size:12px; ${
+                hasDiags ? "background:#2a1010;" : "background:#13132a;"
+              }`}
             >
-              {hasDiags && (
-                <span style="width:6px; height:6px; border-radius:50%; background:#c04040; flex-shrink:0;" />
-              )}
-              <span style="flex:1; color:#7070a0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+              <span
+                style={`flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; ${
+                  hasDiags ? "color:#c04040;" : "color:#7070a0;"
+                }`}
+              >
                 {label}
               </span>
               <IconBtn
