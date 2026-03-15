@@ -66,12 +66,12 @@ Dropdown open:
 
 ## Verification
 
-- [ ] With no focus set: canvas and tree panels behave identically to before
-- [ ] Set focus to "auth-service": canvas shows token-validator and ingress as root nodes; auth-service box is absent; tree panel root is token-validator + ingress
-- [ ] Focus dropdown shows correct ancestors above and path-to-selection below when a node is selected
-- [ ] Clicking an ancestor in dropdown navigates up correctly
-- [ ] Clicking a node in the "path to selection" section drills down to that node
-- [ ] Inline expand/collapse still works within focused subtree
-- [ ] Edges outside the focus subtree are not rendered
+- [x] With no focus set: canvas and tree panels behave identically to before
+- [x] Set focus to "auth-service": canvas shows token-validator and ingress as root nodes; auth-service box is absent; tree panel root is token-validator + ingress
+- [x] Focus dropdown shows correct ancestors above and path-to-selection below when a node is selected
+- [x] Clicking an ancestor in dropdown navigates up correctly
+- [x] Clicking a node in the "path to selection" section drills down to that node
+- [x] Inline expand/collapse still works within focused subtree
+- [x] Edges outside the focus subtree are not rendered
 - [x] `NO_COLOR=1 deno task check` passes
 - [x] `NO_COLOR=1 deno task test` passes (26/26)
