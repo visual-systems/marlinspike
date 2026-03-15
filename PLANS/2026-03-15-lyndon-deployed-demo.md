@@ -26,7 +26,7 @@ A stable public URL (Deno Deploy) serving the Marlinspike storybook, deployed vi
 - [x] Add `dist/` to `.gitignore`; add `dist/` to `deploy.include` in `deno.json`
 - [x] Add manual GitHub Actions workflow (`.github/workflows/deploy.yml`) — runs build then `deployctl deploy`; uses `DENO_DEPLOY_TOKEN` secret
 - [x] Add live demo links to README
-- [ ] Trigger workflow and confirm `/stories` loads correctly with no 502s
+- [x] Trigger workflow and confirm `/stories` loads correctly with no 502s
 
 ## Open Questions
 
@@ -36,6 +36,6 @@ A stable public URL (Deno Deploy) serving the Marlinspike storybook, deployed vi
 
 - [x] `NO_COLOR=1 deno task check` passes
 - [x] `NO_COLOR=1 deno task smoke` starts cleanly locally
-- [ ] GitHub Actions deploy workflow completes successfully
-- [ ] Deployed URL serves `/stories` without errors
-- [ ] `client.js` and `stories.js` return 200 with correct content-type on the deployed URL
+- [x] GitHub Actions deploy workflow completes successfully
+- [x] Deployed URL serves `/stories` without errors
+- [x] `client.js` and `stories.js` return 200 with correct content-type on the deployed URL
