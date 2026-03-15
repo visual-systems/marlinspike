@@ -492,8 +492,8 @@ function CanvasInspector(
     });
   };
 
-  // Inspect a constraint from within the canvas entity inspector.
-  // Uses outer `update` (not canvasUpdate) so canvasSelected is not overridden.
+  // These two functions use outer `update` (not canvasUpdate) so canvasSelected
+  // is not overridden by the fake-panel mechanism.
   function canvasInspectConstraint(constraintId: string) {
     update((s) => ({
       ...s,
@@ -507,6 +507,11 @@ function CanvasInspector(
         ),
       })),
     }));
+  }
+
+  function canvasInspectEntity(entityId: string) {
+    const type = findNode(ws.treeNodes, entityId) ? "node" as const : "edge" as const;
+    update((s) => ({ ...s, canvasSelected: { type, id: entityId } }));
   }
 
   if (ws.canvasSelected?.type === "edge") {
@@ -557,10 +562,6 @@ function CanvasInspector(
     const sel = ws.canvasSelected;
     const constraint = ws.constraints.find((c) => c.id === sel.id);
     if (constraint) {
-      function canvasInspectEntity(entityId: string) {
-        const type = findNode(ws.treeNodes, entityId) ? "node" as const : "edge" as const;
-        update((s) => ({ ...s, canvasSelected: { type, id: entityId } }));
-      }
       return (
         <ConstraintInspector
           key={constraint.id}

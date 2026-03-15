@@ -361,7 +361,12 @@ export function NodeInspector(
       />
 
       {/* Constraints */}
-      <ConstraintsAttachedSection entityId={node.id} ws={ws} update={update} onInspectConstraint={onInspectConstraint} />
+      <ConstraintsAttachedSection
+        entityId={node.id}
+        ws={ws}
+        update={update}
+        onInspectConstraint={onInspectConstraint}
+      />
 
       {/* Data */}
       <div style="display:flex; flex-direction:column; gap:4px;">
@@ -586,7 +591,12 @@ export function EdgeInspector(
       </div>
 
       {/* Constraints */}
-      <ConstraintsAttachedSection entityId={edge.id} ws={ws} update={update} onInspectConstraint={onInspectConstraint} />
+      <ConstraintsAttachedSection
+        entityId={edge.id}
+        ws={ws}
+        update={update}
+        onInspectConstraint={onInspectConstraint}
+      />
 
       {/* Data */}
       <div style="display:flex; flex-direction:column; gap:4px;">

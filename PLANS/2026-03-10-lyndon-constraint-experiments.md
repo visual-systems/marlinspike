@@ -17,92 +17,111 @@ exists to apply them manually; stories demonstrate the full flow.
 * [x] Constraint interface should also have a "applies-to" or "relevance" (you think of a name) field that is an array of objects like {type: "entity-class", "class": "node"} - to inform the UI, etc. of what constraints are applicable - in future, we may use meta-constraints, etc. to have this be very specific - i.e. only apply shampoo-preference constraint to entities with hairy constraint. But let's keep it simple for now.
 * [x] canvasSelectedNodeId: null, canvasSelectedEdgeId: null, canvasSelectedConstraintId: null, - should not be independent like this - there should just be a 'selected' field - that way it's impossible to accidentially introduce a multiselection bug
 * [ ] Should consider having selection actually keep a reference to the selected object instead of just its id. This seems like it would save a lot of loopup operations in workspace state
-* [ ] Let's look for a "JSR-compatible JSON Schema validator" rather than write our own as we will leverage more advanced schemas later. If there's nothing obvious to use, let's define some native constraints instead of using JSON-Schema ones at this point. We could also put a JSON-Schema validator on the backend and invoke it via API, but let's put a pin in that for now.
+* [ ] JSON Schema validator: native constraints used for now (open-set registry). Revisit when backend validation API is available.
 
 ### To incorporate back into design document
 
 * Consider using surrealdb for graph backend - Investigate other options too, including building it myself
 * Consider if there's a way to have templating/interface/inheritance type capabilities without having to build them explicitly - Perhaps we can achieve this with meta application of constraints - e.g. Apply a constraint to a whole subgraph that all nodes need to have a particular constraint applied, and prompting to auto-adopt since it's a constructive constraint... something? Just thinking out loud here.
 * How do "libraries" avoid breaking the sibling rule? Maybe a notion of a "reference"? Don't want to get bogged down in pointer logic, but maybe something like this could be useful for various purposes like "editing a template", "including a sibling reference to a non-sibling node", etc.
+* Ad-hoc fix: selecting a node with no label in the inspector doesn't have a place to click the node label to change it.
 
 ## Goal
 
-- `Constraint` as a workspace entity with id, label, uri, type, data, version, appliedTo
+- `Constraint` as a workspace entity with id, label, uri, type, data, version, targets
+- `ConstraintApplication` as a separate join record (CRDT-friendly)
 - Constraints View panel (flat list + inspector), beside Tree View
-- Constraint inspector with Applied To section and JSON data field
-- Entity inspectors (Node, Edge) get a "Constraints" section (attach/detach)
+- Constraint inspector with Applied To section and schema-driven data fields
+- Entity inspectors (Node, Edge) get a "Constraints" section (attach/detach + clickable navigation)
 - Canvas highlights entities belonging to the selected constraint
-- Live validation: JSON Schema constraints applied to attached entities produce canvas + inspector diagnostics
+- Live validation: native constraint registry produces canvas + inspector diagnostics
+- Bidirectional navigation: entity inspector ↔ constraint inspector in canvas sidebar
 
 ## Approach
 
 ### Step 1 — Data model (`src/ui/workspace.ts`)
 
-- [ ] Add `Constraint { id, label, uri?, type: "json-schema", data: Record<string, unknown>, version, appliedTo: string[] }` interface
-- [ ] Add `constraints: Constraint[]` to `WorkspaceState`
-- [ ] Extend `Panel.type` to `"tree" | "constraints"`
-- [ ] Add `selectedConstraintId: string | null` to `Panel`
-- [ ] Add `canvasSelectedConstraintId: string | null` to `WorkspaceState`
-- [ ] Add `defaultConstraintsPanel()` helper
-- [ ] Add `withConstraintMutation` helper
+- [x] Add `Constraint { id, label, uri?, type: string, data, version, targets }` interface
+- [x] Add `ConstraintApplication { id, constraintId, entityId, version }` interface
+- [x] Add `constraints: Constraint[]` and `constraintApplications: ConstraintApplication[]` to `WorkspaceState`
+- [x] Extend `Panel.type` to `"tree" | "constraints"`
+- [x] Unify canvas selection as `canvasSelected: { type, id } | null` (replaces three separate fields)
+- [x] Add `defaultConstraintsPanel()` helper
+- [x] Add `withConstraintMutation` / `withApplicationMutation` helpers
+- [x] Extend `subgraphJson` to include constraints and constraintApplications filtered to subtree
 
 ### Step 2 — Diagnostic types (`src/graph/diagnostics.ts`)
 
-- [ ] `Diagnostic { code, severity: "error"|"warning"|"info", message, entityId }`
-- [ ] `DiagnosticMap = Record<string, Diagnostic[]>`
+- [x] `Diagnostic { code, severity: "error"|"warning"|"info", message, entityId }`
+- [x] `DiagnosticMap = Record<string, Diagnostic[]>`
 
 ### Step 3 — Constraint evaluation (`src/graph/validate_workspace.ts`)
 
-- [ ] `evaluateConstraint(constraint, entity): Diagnostic[]` — for `type: "json-schema"`, runs `@cfworker/json-schema` against entity properties
-- [ ] `validateWorkspace(ws): DiagnosticMap` — iterates constraints with `appliedTo`, runs evaluator, merges by entityId
-- [ ] `findEntity(ws, entityId)` — looks up node or edge
+- [x] Open-set native constraint registry (`Record<string, ConstraintTypeDefinition>`)
+- [x] Built-in evaluators: `label-required`, `max-children`
+- [x] `DataPropertySchema` / `ConstraintDataSchema` for schema-driven form UI
+- [x] `validateWorkspace(ws, apps): DiagnosticMap`
+- [x] `registeredConstraintTypes()` and `getConstraintDataSchema(type)` for UI
 
 ### Step 4 — Built-in test constraints (`src/graph/builtin_constraints.ts`)
 
-- [ ] `LABEL_REQUIRED_CONSTRAINT` — JSON Schema requiring `label` is non-empty string
-- [ ] `MAX_GROUP_SIZE_CONSTRAINT` — JSON Schema limiting children count
-- [ ] Not attached to anything; available for stories and manual use
+- [x] `LABEL_REQUIRED_CONSTRAINT` — checks entity label is non-empty
+- [x] `MAX_GROUP_SIZE_CONSTRAINT` — checks children.length ≤ limit
+- [x] Not attached by default; available for stories and manual use
 
 ### Step 5 — Constraints View panel (`src/ui/components/constraints-panel.tsx`)
 
-- [ ] `ConstraintsPanel` — header with "+" add + "×" close, flat list with "−" per item
-- [ ] Selecting item sets `panel.selectedConstraintId` + `ws.canvasSelectedConstraintId`
-- [ ] `ConstraintInspector` — label, type dropdown, uri, version, hash
-- [ ] "Applied To" section — entity list + dropdown to add + "−" to remove
-- [ ] "Data" section — JSON textarea
-- [ ] Delete button in inspector
+- [x] `ConstraintsPanel` — header with "+" add + "×" close, flat list with diagnostic count badge
+- [x] Selecting item sets `panel.selected` + `ws.canvasSelected`
+- [x] `ConstraintInspector` — label (editable), type dropdown, uri, version
+- [x] "Applied To" section — entity list (clickable for navigation) + dropdown to add + "×" to remove; error highlighting
+- [x] Schema-driven "Data" section via `ConstraintDataFields`
+- [x] Delete button removes constraint and all its applications
+- [x] `ConstraintsAttachedSection` shared widget (used in entity inspectors)
 
 ### Step 6 — Wire up `client.tsx`
 
-- [ ] `diagnostics = useMemo(() => validateWorkspace(ws), [ws.constraints, ws.treeNodes, ws.edges])`
-- [ ] "+ Constraints View" button in WorkspaceControls
-- [ ] Dispatch `<ConstraintsPanel>` in WorkspaceArea for `panel.type === "constraints"`
-- [ ] Pass `diagnostics` and `highlightEntityIds` to `<Canvas>`
+- [x] `diagnostics = useMemo(() => validateWorkspace(ws, ws.constraintApplications), [...])`
+- [x] `highlightEntityIds` derived from `canvasSelected` constraint applications
+- [x] "+ Constraints View" button in WorkspaceControls
+- [x] Dispatch `<ConstraintsPanel>` in WorkspaceArea for `panel.type === "constraints"`
+- [x] Pass `diagnostics` and `highlightEntityIds` to `<Canvas>`
 
 ### Step 7 — Canvas indicators (`src/ui/components/canvas.tsx`)
 
-- [ ] `diagnostics?: DiagnosticMap` + `highlightEntityIds?: Set<string>` props
-- [ ] Error: stroke `#c04040`, fill `#2a1a1a`; warning: stroke `#c08020`; highlight: stroke `#50c070`
-- [ ] Small badge (r=5) top-right when error or warning
+- [x] `diagnostics?: DiagnosticMap` + `highlightEntityIds?: Set<string>` props
+- [x] Error/warning fill and stroke on collapsed circles (error persists even when selected)
+- [x] Error/warning fill, stroke, and badge on expanded group rects
+- [x] Highlight stroke (`#50c070`) for entities belonging to selected constraint
+- [x] `CanvasInspector` renders `ConstraintInspector` inline when `canvasSelected.type === "constraint"`
+- [x] Bidirectional navigation: `onInspectConstraint` / `onInspectEntity` callbacks bypass `canvasUpdate`
 
 ### Step 8 — Entity inspector "Constraints" section (`src/ui/components/inspector.tsx`)
 
-- [ ] `ConstraintsAttachedSection` shared widget
-- [ ] Add to `NodeInspector` (below edges) and `EdgeInspector` (below data)
+- [x] `ConstraintsAttachedSection` in `NodeInspector` (below edges) and `EdgeInspector` (below data)
+- [x] Constraint labels clickable — navigates to constraint inspector
+- [x] Export button includes constraints and constraintApplications
 
-### Step 9 — Story
+### Step 9 — Stories
 
-- [ ] `Canvas/Diagnostics` story with pre-attached constraints demonstrating error + warning badges
+- [x] `Canvas/Diagnostics` — error badge (label-required) + warning badge (max-group-size)
+- [x] `Canvas/ConstraintInspection` — pre-selected node; tests constraint ↔ entity navigation
+- [x] `ConstraintsPanel/Default`, `LabelRequiredViolation`, `MaxChildrenViolation`, `MultipleConstraints`
 
 ## Open Questions
 
-None at this stage.
+- JSON Schema validator: deferred. Native constraint registry used for now. Backend validation API is a future option.
+- Selection by reference (not just id): deferred to a future refactor.
 
 ## Verification
 
 - [ ] `NO_COLOR=1 deno task fmt && deno task lint && deno task check && deno task check-ui && deno task test` all pass
-- [ ] "+ Constraints View" opens a panel; can add/delete constraints
-- [ ] Constraint inspector fields edit correctly
-- [ ] "Applied To" attach/detach works from both constraint inspector and entity inspector
-- [ ] Selecting a constraint highlights its entities on canvas
-- [ ] `Canvas/Diagnostics` story shows error and warning indicators
+- [x] "+ Constraints View" opens a panel; can add/delete constraints
+- [x] Constraint inspector fields edit correctly
+- [x] "Applied To" attach/detach works from both constraint inspector and entity inspector
+- [x] Clicking constraint label in entity inspector navigates to constraint inspector in canvas sidebar
+- [x] Clicking entity in constraint inspector "Applied To" navigates back to entity inspector
+- [x] Selecting a constraint highlights its entities on canvas
+- [x] Failed constraint entities show red stroke/fill even when selected
+- [x] `Canvas/Diagnostics` story shows error and warning indicators
+- [x] Export (copy as JSON) includes constraints and constraintApplications

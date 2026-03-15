@@ -181,9 +181,15 @@ export function ConstraintInspection() {
       <div style="font-size:11px; color:#555; max-width:180px; line-height:1.5;">
         <strong style="color:#666;">Steps:</strong>
         <ol style="padding-left:14px; margin:6px 0;">
-          <li>Click <em>auth-service</em> node to open entity inspector</li>
-          <li>Click the <em>Label Required</em> constraint label in the inspector</li>
-          <li>Canvas inspector should close; constraints panel (right) should open the constraint</li>
+          <li>
+            Click <em>auth-service</em> node to open entity inspector
+          </li>
+          <li>
+            Click the <em>Label Required</em> constraint label in the inspector
+          </li>
+          <li>
+            Canvas inspector should close; constraints panel (right) should open the constraint
+          </li>
         </ol>
       </div>
     </div>
