@@ -17,6 +17,7 @@ exists to apply them manually; stories demonstrate the full flow.
 * [x] Constraint interface should also have a "applies-to" or "relevance" (you think of a name) field that is an array of objects like {type: "entity-class", "class": "node"} - to inform the UI, etc. of what constraints are applicable - in future, we may use meta-constraints, etc. to have this be very specific - i.e. only apply shampoo-preference constraint to entities with hairy constraint. But let's keep it simple for now.
 * [x] canvasSelectedNodeId: null, canvasSelectedEdgeId: null, canvasSelectedConstraintId: null, - should not be independent like this - there should just be a 'selected' field - that way it's impossible to accidentially introduce a multiselection bug
 * [ ] Should consider having selection actually keep a reference to the selected object instead of just its id. This seems like it would save a lot of loopup operations in workspace state
+* [ ] Let's look for a "JSR-compatible JSON Schema validator" rather than write our own as we will leverage more advanced schemas later. If there's nothing obvious to use, let's define some native constraints instead of using JSON-Schema ones at this point. We could also put a JSON-Schema validator on the backend and invoke it via API, but let's put a pin in that for now.
 
 ### To incorporate back into design document
 

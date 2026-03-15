@@ -17,6 +17,7 @@ import {
   type WorkspaceState,
 } from "../workspace.ts";
 import type { DiagnosticMap } from "../../graph/diagnostics.ts";
+import { registeredConstraintTypes } from "../../graph/validate_workspace.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { IconBtn, PropLabel, SmallBtn } from "./widgets.tsx";
 import { InspectorShell } from "./inspector.tsx";
@@ -62,7 +63,7 @@ export function ConstraintsPanel(
       id,
       label: "New Constraint",
       uri,
-      type: "json-schema",
+      type: "label-required",
       targets: [{ type: "entity", class: "node" }],
       data: {},
       version: 1,
@@ -274,7 +275,6 @@ function ConstraintInspector(
 ) {
   const [editingLabel, setEditingLabel] = useState(false);
   const labelInputRef = useRef<HTMLInputElement | null>(null);
-  const dataTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (editingLabel) {
@@ -282,12 +282,6 @@ function ConstraintInspector(
       labelInputRef.current?.select();
     }
   }, [editingLabel]);
-
-  useEffect(() => {
-    if (dataTextareaRef.current) {
-      dataTextareaRef.current.value = JSON.stringify(constraint.data, null, 2);
-    }
-  }, [constraint.id]);
 
   function closeInspector() {
     update((s) => ({
@@ -321,19 +315,16 @@ function ConstraintInspector(
     setEditingLabel(false);
   }
 
-  function saveData() {
-    try {
-      const data = JSON.parse(dataTextareaRef.current?.value ?? "{}") as Record<string, unknown>;
-      update((s) =>
-        withConstraintMutation(
-          s,
-          (cs) =>
-            cs.map((c) => c.id === constraint.id ? { ...c, data, version: c.version + 1 } : c),
-        )
-      );
-    } catch {
-      alert("Invalid JSON — changes not saved.");
-    }
+  function changeType(newType: string) {
+    update((s) =>
+      withConstraintMutation(
+        s,
+        (cs) =>
+          cs.map((c) =>
+            c.id === constraint.id ? { ...c, type: newType, data: {}, version: c.version + 1 } : c
+          ),
+      )
+    );
   }
 
   function deleteConstraint() {
@@ -438,7 +429,13 @@ function ConstraintInspector(
       {/* Type */}
       <div style="display:flex; flex-direction:column; gap:3px;">
         <PropLabel text="Type" />
-        <div style="font-size:12px; color:#7070a0;">JSON Schema</div>
+        <Dropdown
+          items={registeredConstraintTypes().map((t) => ({ value: t, label: t }))}
+          selectedValue={constraint.type}
+          placeholder="Select type…"
+          onSelect={changeType}
+          width="fill"
+        />
       </div>
 
       {/* Targets */}
@@ -495,15 +492,32 @@ function ConstraintInspector(
         )}
       </div>
 
-      {/* Data */}
-      <div style="display:flex; flex-direction:column; gap:4px;">
-        <PropLabel text="Data (JSON Schema)" />
-        <textarea
-          ref={dataTextareaRef}
-          style="background:#0d0d20; border:1px solid #2a2a4a; color:#9090b0; font-size:11px; font-family:monospace; padding:5px; border-radius:3px; resize:vertical; min-height:80px; width:100%;"
-        />
-        <SmallBtn label="Save data" onClick={saveData} />
-      </div>
+      {/* Config — type-specific */}
+      {constraint.type === "max-children" && (
+        <div style="display:flex; flex-direction:column; gap:3px;">
+          <PropLabel text="Max Children" />
+          <input
+            type="number"
+            min={1}
+            value={String(typeof constraint.data.max === "number" ? constraint.data.max : 5)}
+            style="background:#0f0f22; border:1px solid #2a2a4a; color:#c0c0e0; font-size:12px; padding:3px 6px; border-radius:3px; width:80px;"
+            onChange={(e: Event) => {
+              const max = parseInt((e.target as HTMLInputElement).value);
+              if (Number.isFinite(max) && max > 0) {
+                update((s) =>
+                  withConstraintMutation(
+                    s,
+                    (cs) =>
+                      cs.map((c) =>
+                        c.id === constraint.id ? { ...c, data: { max }, version: c.version + 1 } : c
+                      ),
+                  )
+                );
+              }
+            }}
+          />
+        </div>
+      )}
     </InspectorShell>
   );
 }

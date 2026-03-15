@@ -40,7 +40,7 @@ export interface Constraint {
   id: string;
   label: string;
   uri?: string;
-  type: "json-schema";
+  type: string;
   /** Declared applicability — used by the UI to filter which entities can have this constraint. */
   targets: ConstraintTarget[];
   data: Record<string, unknown>;
@@ -275,7 +275,7 @@ function parseConstraint(raw: Record<string, unknown>): Constraint {
     id: raw.id as string,
     label: (raw.label as string | undefined) ?? "Unnamed",
     uri: raw.uri as string | undefined,
-    type: "json-schema",
+    type: (raw.type as string | undefined) ?? "label-required",
     targets: (raw.targets as ConstraintTarget[] | undefined) ?? [],
     data: (raw.data as Record<string, unknown> | undefined) ?? {},
     version: (raw.version as number | undefined) ?? 1,
