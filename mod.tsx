@@ -7,9 +7,9 @@ import { StoriesShell } from "./src/ui/StoriesShell.tsx";
 const args = parseArgs(Deno.args);
 const PORT = Number(args.port) || 8000;
 
-async function loadJs(distPath: string, srcUrl: URL, importMapURL: URL): Promise<string> {
+async function loadJs(distUrl: URL, srcUrl: URL, importMapURL: URL): Promise<string> {
   try {
-    return await Deno.readTextFile(distPath);
+    return await Deno.readTextFile(distUrl);
   } catch {
     const { code } = await bundle(srcUrl, { importMap: importMapURL });
     return code;
@@ -19,8 +19,16 @@ async function loadJs(distPath: string, srcUrl: URL, importMapURL: URL): Promise
 const importMapURL = new URL("./deno.json", import.meta.url);
 
 const [clientJs, storiesJs] = await Promise.all([
-  loadJs("dist/client.js", new URL("./src/ui/client.tsx", import.meta.url), importMapURL),
-  loadJs("dist/stories.js", new URL("./src/ui/stories/main.tsx", import.meta.url), importMapURL),
+  loadJs(
+    new URL("./dist/client.js", import.meta.url),
+    new URL("./src/ui/client.tsx", import.meta.url),
+    importMapURL,
+  ),
+  loadJs(
+    new URL("./dist/stories.js", import.meta.url),
+    new URL("./src/ui/stories/main.tsx", import.meta.url),
+    importMapURL,
+  ),
 ]);
 
 const app = new Hono();
