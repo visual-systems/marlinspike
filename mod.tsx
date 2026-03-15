@@ -8,31 +8,19 @@ const args = parseArgs(Deno.args);
 const PORT = Number(args.port) || 8000;
 
 const isDev = args.dev === true;
-
-async function loadJs(distUrl: URL, srcUrl: URL, importMapURL: URL): Promise<string> {
-  if (!isDev) {
-    try {
-      return await Deno.readTextFile(distUrl);
-    } catch { /* fall through to bundle */ }
-  }
-  const { code } = await bundle(srcUrl, { importMap: importMapURL });
-  return code;
-}
-
 const importMapURL = new URL("./deno.json", import.meta.url);
 
-const [clientJs, storiesJs] = await Promise.all([
-  loadJs(
-    new URL("./dist/client.js", import.meta.url),
-    new URL("./src/ui/client.tsx", import.meta.url),
-    importMapURL,
-  ),
-  loadJs(
-    new URL("./dist/stories.js", import.meta.url),
-    new URL("./src/ui/stories/main.tsx", import.meta.url),
-    importMapURL,
-  ),
-]);
+function jsResponse(code: string) {
+  return new Response(code, { headers: { "content-type": "application/javascript" } });
+}
+
+// Production: pre-load bundles at startup for instant request serving.
+const clientJs = isDev
+  ? null
+  : await Deno.readTextFile(new URL("./dist/client.js", import.meta.url));
+const storiesJs = isDev
+  ? null
+  : await Deno.readTextFile(new URL("./dist/stories.js", import.meta.url));
 
 const app = new Hono();
 
@@ -40,8 +28,20 @@ app.get("/", (c) => c.html(<App />));
 app.get("/stories", (c) => c.html(<StoriesShell />));
 app.get("/health", (c) => c.json({ name: "marlinspike", status: "ok" }));
 
-app.get("/client.js", (c) => c.body(clientJs, 200, { "content-type": "application/javascript" }));
-app.get("/stories.js", (c) => c.body(storiesJs, 200, { "content-type": "application/javascript" }));
+app.get("/client.js", async (c) => {
+  if (clientJs) return c.body(clientJs, 200, { "content-type": "application/javascript" });
+  const { code } = await bundle(new URL("./src/ui/client.tsx", import.meta.url), {
+    importMap: importMapURL,
+  });
+  return jsResponse(code);
+});
+app.get("/stories.js", async (c) => {
+  if (storiesJs) return c.body(storiesJs, 200, { "content-type": "application/javascript" });
+  const { code } = await bundle(new URL("./src/ui/stories/main.tsx", import.meta.url), {
+    importMap: importMapURL,
+  });
+  return jsResponse(code);
+});
 
 const server = Deno.serve({ port: PORT }, app.fetch);
 
