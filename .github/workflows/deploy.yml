@@ -1,0 +1,23 @@
+name: Deploy to Deno Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install deployctl
+        run: deno install -gArf jsr:@deno/deployctl
+
+      - name: Build client bundles
+        run: deno task build
+
+      - name: Deploy
+        run: deployctl deploy --prod --project=marlinspike --entrypoint=mod.tsx --token=${{ secrets.DENO_DEPLOY_TOKEN }}
