@@ -376,6 +376,22 @@ Crucially, **forces only act between siblings** — matching the communication m
 
 The user can lock node positions after stabilisation and resume force simulation at any time. Layout mode (auto / locked / partial) is stored per subgraph.
 
+#### Known issue: layout invalidation on structural changes
+
+When nodes are added to or removed from a level, the layout for that level and all ancestor levels should be re-run so that siblings respond to the new occupant. The current implementation (`syncLayout` + `stepLayout` in canvas.tsx) handles this partially — it rebuilds all expanded levels with `settled: false` when `treeNodes` changes — but in practice siblings do not visibly re-settle after a node is added.
+
+The underlying problem is that the layout state (`LayoutMap`) is managed imperatively inside a component, interleaved with rendering, drag handling, and animation frame stepping. Invalidation logic is spread across `syncLayout`, `stepLayout`, `invalidateAncestors`, and the RAF loop, making it hard to reason about when and whether a given level will actually re-run.
+
+**Planned refactor:** Extract layout state into a self-contained module (or reducer) with a clean, explicit API:
+
+```
+invalidateLevel(levelId)          — mark a level as needing a re-run
+invalidateAncestors(levelId)      — propagate invalidation up the tree
+step()                            — advance all unsettled levels by one tick
+```
+
+Mutations (add node, remove node, drag) call `invalidateLevel` on the affected level and `invalidateAncestors` above it. The RAF loop only calls `step`. This separation makes it straightforward to add correct invalidation for any future structural operation without having to trace through the combined sync/step logic.
+
 ### 6.4 Persona Views
 
 Different users need different views of the same graph. Personas are named, shareable filters that control:
