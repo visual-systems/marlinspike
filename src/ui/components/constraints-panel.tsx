@@ -461,7 +461,9 @@ function ConstraintInspector(
         {appliedApps.map((app) => {
           const entity = findNode(ws.treeNodes, app.entityId) ??
             ws.edges.find((e) => e.id === app.entityId);
-          const label = entity ? ("label" in entity ? entity.label : app.entityId) : app.entityId;
+          const label = entity
+            ? ("label" in entity ? entity.label || `<${entity.id}>` : app.entityId)
+            : app.entityId;
           const hasDiags = (diagnostics[app.entityId] ?? []).some((d) => d.code === constraint.id);
           return (
             <div
