@@ -456,7 +456,33 @@ Clicking a leaf node in Add Nodes mode promotes it to a composite (subgraph) nod
 - **Delete** — Backspace/Delete key removes the selected node or edge (with confirmation if the node has children or connected edges)
 - **Drag-to-group** — drag one node onto another to make it a child; drag out to promote to sibling
 
-### 6.8 Collaboration
+### 6.8 Deployment (Revisit Needed)
+
+The server is currently deployed manually to Deno Deploy via `deployctl` CLI. The deployment process has several rough edges that need a proper design pass before it can be considered reliable.
+
+#### Current approach (branch `lyndon/deployed-demo`)
+
+The server bundles `client.tsx` and `stories/main.tsx` using `@deno/emit` and serves the output from memory. This works locally but fails on Deno Deploy in multiple ways.
+
+#### Approaches tried and their outcomes
+
+| Approach | Commit | Outcome |
+|---|---|---|
+| Bundle per-request (original) | — | Fails on Deploy: bundler can't read source files at request time |
+| Bundle at startup, cache in memory | `8652f9f` | Fails on Deploy: `@deno/emit` calls `Deno.permissions.querySync` which doesn't exist in Deploy's sandbox |
+| Pre-bundle to `dist/` in CI; read from disk at startup | `593565d` | Fails: `dist/` listed in `deploy.include` only uploaded those 2 files, omitting `mod.tsx` |
+| Remove `include` restriction | `c21fa89` | Fails: `dist/` was in `.gitignore`, deployctl respects `.gitignore` and excluded the built files |
+| Remove `dist/` from `.gitignore`; use `import.meta.url` paths | `ae53bde` | Partially working — one-off deploy URL serves correctly; main domain (`marlinspike.deno.dev`) not yet confirmed |
+| Add `--prod` flag to deployctl | `b5e7a1a` | Not yet tested against main domain |
+
+#### What needs a proper design
+
+- The `@deno/emit` dependency is only needed for local dev (when `dist/` is absent). In production it is dead weight and a source of Deploy-incompatible behaviour. Consider removing it from `mod.tsx` entirely and making the build step mandatory for all deployments.
+- The distinction between "one-off URL" and "production URL" in Deno Deploy (`--prod` flag) was not understood at the start and caused confusion.
+- A `deno task deploy` convenience task (wrapping build + deployctl) would make the process less error-prone.
+- CI should verify the `/health` endpoint responds after deploying.
+
+### 6.9 Collaboration
 
 Collaboration is real-time, CRDT-backed, per-subgraph-URI. Multiple users edit simultaneously. Presence (who is in which subgraph) is shown in both the tree view and the canvas. Merge diagnostics from concurrent edits appear inline as constraint diagnostics — non-blocking.
 
