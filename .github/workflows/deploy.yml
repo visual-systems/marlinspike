@@ -16,5 +16,8 @@ jobs:
       - name: Install deployctl
         run: deno install -gArf jsr:@deno/deployctl
 
+      - name: Build client bundles
+        run: deno task build
+
       - name: Deploy
         run: deployctl deploy --project=marlinspike --entrypoint=mod.tsx --token=${{ secrets.DENO_DEPLOY_TOKEN }}
