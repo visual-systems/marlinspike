@@ -16,7 +16,7 @@ import {
 } from "../ui/workspace.ts";
 
 type Entity = TreeNode | Edge;
-type Evaluator = (constraint: Constraint, entity: Entity) => Diagnostic[];
+type Evaluator = (constraint: Constraint, entity: Entity, ws: WorkspaceState) => Diagnostic[];
 
 /** A JSON Schema object describing valid property types for constraint.data fields. */
 export type DataPropertySchema =
@@ -52,6 +52,85 @@ const registry: Record<string, ConstraintTypeDefinition> = {
           severity: "error",
           message: `"${entity.id}" must have a non-empty label.`,
           entityId: entity.id,
+        },
+      ];
+    },
+  },
+
+  "js-script": {
+    dataSchema: {
+      properties: {
+        requireInputs: { type: "boolean", default: false },
+        requireOutputs: { type: "boolean", default: false },
+      },
+    },
+    evaluate(constraint, entity) {
+      const diags: Diagnostic[] = [];
+      const name = entity.label || entity.id;
+      const d = "data" in entity ? entity.data : {};
+
+      if (typeof d.script !== "string" || d.script.trim().length === 0) {
+        diags.push({
+          code: constraint.id,
+          severity: "error",
+          message: `"${name}" must have a non-empty script.`,
+          entityId: entity.id,
+        });
+      }
+      if (constraint.data.requireInputs === true) {
+        if (!Array.isArray(d.inputs) || (d.inputs as unknown[]).length === 0) {
+          diags.push({
+            code: constraint.id,
+            severity: "warning",
+            message: `"${name}" must declare at least one input.`,
+            entityId: entity.id,
+          });
+        }
+      }
+      if (constraint.data.requireOutputs === true) {
+        if (!Array.isArray(d.outputs) || (d.outputs as unknown[]).length === 0) {
+          diags.push({
+            code: constraint.id,
+            severity: "warning",
+            message: `"${name}" must declare at least one output.`,
+            entityId: entity.id,
+          });
+        }
+      }
+      return diags;
+    },
+  },
+
+  "edge-output-type": {
+    dataSchema: { properties: {} },
+    evaluate(constraint, entity, ws) {
+      if (!("fromId" in entity)) return [];
+      const edge = entity as Edge;
+      const name = edge.label || edge.id;
+      const edgeType = edge.data.type;
+      if (typeof edgeType !== "string" || edgeType.trim().length === 0) {
+        return [
+          {
+            code: constraint.id,
+            severity: "error",
+            message: `Edge "${name}" must declare a type.`,
+            entityId: edge.id,
+          },
+        ];
+      }
+      const source = findNode(ws.treeNodes, edge.fromId);
+      if (!source) return [];
+      const outputs = source.data.outputs;
+      if (!Array.isArray(outputs)) return [];
+      if ((outputs as unknown[]).includes(edgeType)) return [];
+      return [
+        {
+          code: constraint.id,
+          severity: "error",
+          message: `Edge "${name}" type "${edgeType}" is not in source node "${
+            source.label || source.id
+          }" outputs [${(outputs as string[]).join(", ")}].`,
+          entityId: edge.id,
         },
       ];
     },
@@ -115,7 +194,7 @@ export function validateWorkspace(
     if (!entity) continue;
     const def = registry[constraint.type];
     if (!def) continue;
-    const diags = def.evaluate(constraint, entity);
+    const diags = def.evaluate(constraint, entity, ws);
     if (diags.length > 0) {
       map[app.entityId] = [...(map[app.entityId] ?? []), ...diags];
     }
