@@ -1,7 +1,14 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useEffect, useState } from "@hono/hono/jsx/dom";
-import { collectSubtreeIds, findNode, findPath, type TreeNode, type Updater, type WorkspaceState } from "../workspace.ts";
+import {
+  collectSubtreeIds,
+  findNode,
+  findPath,
+  type TreeNode,
+  type Updater,
+  type WorkspaceState,
+} from "../workspace.ts";
 
 export function FocusDropdown({ ws, update }: { ws: WorkspaceState; update: Updater }) {
   const [open, setOpen] = useState(false);
@@ -15,7 +22,9 @@ export function FocusDropdown({ ws, update }: { ws: WorkspaceState; update: Upda
 
   // Path from root to current focus (all nodes, inclusive)
   const focusPath: TreeNode[] = ws.focusId ? findPath(ws.treeNodes, ws.focusId) : [];
-  const focusNode: TreeNode | null = ws.focusId ? (findNode(ws.treeNodes, ws.focusId) ?? null) : null;
+  const focusNode: TreeNode | null = ws.focusId
+    ? (findNode(ws.treeNodes, ws.focusId) ?? null)
+    : null;
   const label = focusNode ? focusNode.label : "(root)";
 
   // Path from focus down to selected canvas node (composites only, excluding focus itself)

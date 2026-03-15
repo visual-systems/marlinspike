@@ -826,8 +826,7 @@ export function Canvas(
           }
         }
         if (allSettled) return prev;
-        const { treeNodes, canvasExpandedNodes, edges, canvasAlgorithm, focusId } =
-          wsRef.current!;
+        const { treeNodes, canvasExpandedNodes, edges, canvasAlgorithm, focusId } = wsRef.current!;
         const rootNodes = getFocusedRootNodes(wsRef.current!);
         const filteredEdges = focusId
           ? (() => {
