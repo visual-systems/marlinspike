@@ -285,7 +285,10 @@ export function NodeInspector(
         <SmallBtn
           label="Export"
           title="copy graph as json"
-          onClick={() => navigator.clipboard.writeText(subgraphJson(node, ws.edges))}
+          onClick={() =>
+            navigator.clipboard.writeText(
+              subgraphJson(node, ws.edges, ws.constraints, ws.constraintApplications),
+            )}
         />
         <SmallBtn label="Delete" onClick={deleteNode} />
         {extraActions}

@@ -161,10 +161,27 @@ export function collectSubtreeIds(node: TreeNode): Set<string> {
   return ids;
 }
 
-export function subgraphJson(node: TreeNode, edges: Edge[]): string {
+export function subgraphJson(
+  node: TreeNode,
+  edges: Edge[],
+  constraints: Constraint[] = [],
+  constraintApplications: ConstraintApplication[] = [],
+): string {
   const ids = collectSubtreeIds(node);
   const internalEdges = edges.filter((e) => ids.has(e.fromId) && ids.has(e.toId));
-  return JSON.stringify({ root: node, edges: internalEdges }, null, 2);
+  const apps = constraintApplications.filter((a) => ids.has(a.entityId));
+  const usedConstraintIds = new Set(apps.map((a) => a.constraintId));
+  const internalConstraints = constraints.filter((c) => usedConstraintIds.has(c.id));
+  return JSON.stringify(
+    {
+      root: node,
+      edges: internalEdges,
+      constraints: internalConstraints,
+      constraintApplications: apps,
+    },
+    null,
+    2,
+  );
 }
 
 export function getActiveTab(ws: WorkspaceState): Tab {

@@ -653,6 +653,21 @@ export function ConstraintsAttachedSection(
     update((s) => withApplicationMutation(s, (apps) => [...apps, newApp]));
   }
 
+  function inspectConstraint(constraintId: string) {
+    update((s) => ({
+      ...s,
+      canvasSelected: { type: "constraint", id: constraintId },
+      tabs: s.tabs.map((t) => ({
+        ...t,
+        panels: t.panels.map((p) =>
+          p.type === "constraints"
+            ? { ...p, selected: { type: "constraint" as const, id: constraintId } }
+            : p
+        ),
+      })),
+    }));
+  }
+
   return (
     <div style="display:flex; flex-direction:column; gap:4px;">
       <PropLabel text="Constraints" />
@@ -664,7 +679,11 @@ export function ConstraintsAttachedSection(
           key={c.id}
           style="display:flex; align-items:center; gap:6px; padding:4px 6px; background:#13132a; border-radius:3px; font-size:12px;"
         >
-          <span style="flex:1; color:#7070a0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+          <span
+            style="flex:1; color:#7070a0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;"
+            title="Inspect constraint"
+            onClick={() => inspectConstraint(c.id)}
+          >
             {c.label}
           </span>
           <IconBtn

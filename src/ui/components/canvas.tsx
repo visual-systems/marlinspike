@@ -1152,6 +1152,26 @@ function renderLevel(
           const rw = bb ? bb.w : pos.w;
           const rh = bb ? bb.h + LABEL_H : pos.h;
 
+          // Constraint visual state for expanded group rect
+          const groupDiags = diagnostics[node.id] ?? [];
+          const groupHasError = groupDiags.some((d) => d.severity === "error");
+          const groupHasWarning = !groupHasError &&
+            groupDiags.some((d) => d.severity === "warning");
+          const groupIsHighlighted = highlightEntityIds.has(node.id);
+          const groupStroke = groupHasError
+            ? "#c04040"
+            : groupHasWarning
+            ? "#c08020"
+            : isSelected
+            ? "#4060b0"
+            : groupIsHighlighted
+            ? "#50c070"
+            : "#1e1e44";
+          const groupStrokeWidth = isSelected || groupHasError || groupHasWarning ||
+              groupIsHighlighted
+            ? 2
+            : 1;
+
           return (
             <g key={node.id} transform={`translate(${pos.x}, ${pos.y})`}>
               <rect
@@ -1159,9 +1179,9 @@ function renderLevel(
                 y={ry}
                 width={rw}
                 height={rh}
-                fill="#0f0f28"
-                stroke={isSelected ? "#4060b0" : "#1e1e44"}
-                stroke-width={isSelected ? 2 : 1}
+                fill={groupHasError ? "#1a0f0f" : "#0f0f28"}
+                stroke={groupStroke}
+                stroke-width={groupStrokeWidth}
                 rx={8}
                 ry={8}
                 style="cursor:pointer;"
@@ -1186,12 +1206,23 @@ function renderLevel(
               <text
                 x={rx + 10}
                 y={ry + LABEL_H - 6}
-                fill={isSelected ? "#8090c0" : "#444466"}
+                fill={isSelected ? "#8090c0" : groupHasError ? "#c07070" : "#444466"}
                 font-size="11"
                 style="user-select:none; pointer-events:none;"
               >
                 {node.label}
               </text>
+              {(groupHasError || groupHasWarning) && (
+                <circle
+                  cx={rx + rw - 8}
+                  cy={ry + 8}
+                  r={5}
+                  fill={groupHasError ? "#c04040" : "#c08020"}
+                  stroke="#0d0d1e"
+                  stroke-width={1}
+                  style="pointer-events:none;"
+                />
+              )}
               {renderLevel(
                 node.children,
                 node.id,
@@ -1231,29 +1262,33 @@ function renderLevel(
           !isEdgeSource && !isCandidate;
         const isHovered = interaction.hoveredNodeId === node.id && isCandidate;
 
-        // Constraint visual state (lowest priority — overridden by interaction states)
+        // Constraint visual state — fill persists even when selected (stroke shows selection)
         const nodeDiags = diagnostics[node.id] ?? [];
         const hasError = nodeDiags.some((d) => d.severity === "error");
         const hasWarning = !hasError && nodeDiags.some((d) => d.severity === "warning");
         const isHighlighted = highlightEntityIds.has(node.id);
 
-        const fill = isEdgeSource || isHovered || isSelected
+        const fill = isEdgeSource || isHovered
           ? "#1e2a4a"
           : hasError
           ? "#2a1a1a"
+          : isSelected
+          ? "#1e2a4a"
           : isComposite
           ? "#141430"
           : "#111125";
-        const stroke = isEdgeSource || isSelected
+        const stroke = isEdgeSource
           ? "#5070c0"
           : isHovered
           ? "#6080e0"
-          : isCandidate
-          ? "#3050a0"
           : hasError
           ? "#c04040"
           : hasWarning
           ? "#c08020"
+          : isSelected
+          ? "#5070c0"
+          : isCandidate
+          ? "#3050a0"
           : isHighlighted
           ? "#50c070"
           : isComposite
