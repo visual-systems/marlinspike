@@ -45,7 +45,7 @@
     "exclude": [
       "**/node_modules"
     ],
-    "include": ["dist/"],
+    "include": [],
     "entrypoint": "mod.tsx"
   }
 }
