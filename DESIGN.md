@@ -361,7 +361,7 @@ The canvas is a **hybrid canvas** — spatially flexible but structurally aware.
 - Diagnostic overlays (errors/warnings on the relevant node/edge/port)
 - The current persona filter (affecting what is visible and at what detail)
 
-The canvas always shows **one level of the rose-tree at a time** — the siblings within the currently focused subgraph. Port nodes appear on the boundary of their parent composite node.
+The canvas shows the siblings within the currently focused subgraph. Port nodes appear on the boundary of their parent composite node.
 
 ### 6.3 Force Layout
 

@@ -2,9 +2,12 @@
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
 import {
+  collectSubtreeIds,
   type Edge,
   findNode,
   findParentOf,
+  findPath,
+  getFocusedRootNodes,
   type Panel,
   type Tab,
   type TreeNode,
@@ -441,21 +444,6 @@ function makeCanvasAlgorithm(id: WorkspaceState["canvasAlgorithm"]): LayoutAlgor
 }
 
 // ---------------------------------------------------------------------------
-// findPath — returns path from root to targetId inclusive
-// ---------------------------------------------------------------------------
-
-function findPath(nodes: TreeNode[], targetId: string): TreeNode[] {
-  for (const node of nodes) {
-    if (node.id === targetId) return [node];
-    if (node.kind === "composite") {
-      const child = findPath(node.children, targetId);
-      if (child.length > 0) return [node, ...child];
-    }
-  }
-  return [];
-}
-
-// ---------------------------------------------------------------------------
 // Canvas inspector — uses synthetic panel to reuse existing inspector components
 // ---------------------------------------------------------------------------
 
@@ -601,11 +589,14 @@ function CanvasTopBar(
   const selectedNodeId = ws.canvasSelected?.type === "node" ? ws.canvasSelected.id : null;
   const items: { node: TreeNode; dimmed: boolean }[] = [];
 
+  const focusNode = ws.focusId ? (findNode(ws.treeNodes, ws.focusId) ?? null) : null;
+  const focusedRoots = getFocusedRootNodes(ws);
   if (selectedNodeId) {
-    const path = findPath(ws.treeNodes, selectedNodeId);
+    const path = findPath(focusedRoots, selectedNodeId);
+    if (focusNode) items.push({ node: focusNode, dimmed: true });
     for (const node of path) items.push({ node, dimmed: node.id !== selectedNodeId });
-  } else {
-    for (const node of ws.treeNodes) items.push({ node, dimmed: true });
+  } else if (focusNode) {
+    items.push({ node: focusNode, dimmed: false });
   }
 
   const pillStyle =
@@ -729,13 +720,21 @@ export function Canvas(
   const svgRef = useRef<SVGSVGElement | null>(null);
   const inspectorRef = useRef<HTMLDivElement | null>(null);
   const [view, setView] = useState<View>({ scale: 1, tx: 400, ty: 300 });
+  const focusedRootNodes = getFocusedRootNodes(ws);
+  const focusedEdges = ws.focusId
+    ? (() => {
+      const ids = collectSubtreeIds(findNode(ws.treeNodes, ws.focusId)!);
+      return ws.edges.filter((e) => ids.has(e.fromId) && ids.has(e.toId));
+    })()
+    : ws.edges;
+
   const [layout, setLayout] = useState<LayoutMap>(() =>
     syncLayout(
       new Map(),
-      ws.treeNodes,
+      focusedRootNodes,
       ws.canvasExpandedNodes,
       ws.canvasNodePositions,
-      ws.edges,
+      focusedEdges,
       makeCanvasAlgorithm(ws.canvasAlgorithm),
     )
   );
@@ -754,19 +753,26 @@ export function Canvas(
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
-  // Sync layout when tree, edges, expanded nodes, or algorithm change
+  // Sync layout when tree, edges, expanded nodes, algorithm, or focus change
   useEffect(() => {
+    const rootNodes = getFocusedRootNodes(ws);
+    const edges = ws.focusId
+      ? (() => {
+        const ids = collectSubtreeIds(findNode(ws.treeNodes, ws.focusId)!);
+        return ws.edges.filter((e) => ids.has(e.fromId) && ids.has(e.toId));
+      })()
+      : ws.edges;
     setLayout((prev) =>
       syncLayout(
         prev,
-        ws.treeNodes,
+        rootNodes,
         ws.canvasExpandedNodes,
         ws.canvasNodePositions,
-        ws.edges,
+        edges,
         makeCanvasAlgorithm(ws.canvasAlgorithm),
       )
     );
-  }, [ws.treeNodes, ws.canvasExpandedNodes, ws.edges, ws.canvasAlgorithm]);
+  }, [ws.treeNodes, ws.canvasExpandedNodes, ws.edges, ws.canvasAlgorithm, ws.focusId]);
 
   // ResizeObserver — initialise view centre on first size observation
   const viewInitRef = useRef(false);
@@ -820,12 +826,20 @@ export function Canvas(
           }
         }
         if (allSettled) return prev;
-        const { treeNodes, canvasExpandedNodes, edges, canvasAlgorithm } = wsRef.current!;
+        const { treeNodes, canvasExpandedNodes, edges, canvasAlgorithm, focusId } =
+          wsRef.current!;
+        const rootNodes = getFocusedRootNodes(wsRef.current!);
+        const filteredEdges = focusId
+          ? (() => {
+            const ids = collectSubtreeIds(findNode(treeNodes, focusId)!);
+            return edges.filter((e) => ids.has(e.fromId) && ids.has(e.toId));
+          })()
+          : edges;
         return stepLayout(
           prev,
-          treeNodes,
+          rootNodes,
           canvasExpandedNodes,
-          edges,
+          filteredEdges,
           makeCanvasAlgorithm(canvasAlgorithm),
         );
       });
@@ -925,7 +939,9 @@ export function Canvas(
   function addNode(parentId: string | null, localX: number, localY: number) {
     const id = crypto.randomUUID();
     const newNode: TreeNode = { id, label: "", kind: "leaf", children: [], data: {}, version: 1 };
-    if (parentId === null) {
+    // When focused, "root canvas level" maps to inside the focused node
+    const effectiveParentId = parentId ?? ws.focusId ?? null;
+    if (effectiveParentId === null) {
       update((s) => ({
         ...s,
         treeNodes: [...s.treeNodes, newNode],
@@ -939,7 +955,7 @@ export function Canvas(
       update((s) => {
         function addChild(nodes: TreeNode[]): TreeNode[] {
           return nodes.map((n) =>
-            n.id === parentId
+            n.id === effectiveParentId
               ? { ...n, kind: "composite", children: [...n.children, newNode] }
               : { ...n, children: addChild(n.children) }
           );
@@ -952,9 +968,9 @@ export function Canvas(
             [id]: { x: localX, y: localY, pinned: true },
           },
           canvasSelected: { type: "node", id },
-          canvasExpandedNodes: s.canvasExpandedNodes.includes(parentId)
+          canvasExpandedNodes: s.canvasExpandedNodes.includes(effectiveParentId)
             ? s.canvasExpandedNodes
-            : [...s.canvasExpandedNodes, parentId],
+            : [...s.canvasExpandedNodes, effectiveParentId],
         };
       });
     }
@@ -1112,7 +1128,7 @@ export function Canvas(
       >
         <g transform={`translate(${view.tx}, ${view.ty}) scale(${view.scale})`}>
           {renderLevel(
-            ws.treeNodes,
+            focusedRootNodes,
             "",
             layout,
             expandedSet,
