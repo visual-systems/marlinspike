@@ -4,6 +4,8 @@ import { useState } from "@hono/hono/jsx/dom";
 import { Canvas } from "../components/canvas.tsx";
 import { validateWorkspace } from "../../graph/validate_workspace.ts";
 import {
+  EDGE_OUTPUT_TYPE_CONSTRAINT,
+  JS_SCRIPT_CONSTRAINT,
   LABEL_REQUIRED_CONSTRAINT,
   MAX_GROUP_SIZE_CONSTRAINT,
 } from "../../graph/builtin_constraints.ts";
@@ -22,13 +24,31 @@ function node(
   return { id, label, kind, children, data, version: 1 };
 }
 
-function StoryWrapper({ initial }: { initial: WorkspaceState }) {
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+function StoryWrapper(
+  {
+    initial,
+    makeExecute,
+  }: {
+    initial: WorkspaceState;
+    makeExecute?: (setHighlight: (ids: Set<string>) => void) => () => void;
+  },
+) {
   const [ws, setWs] = useState<WorkspaceState>(initial);
+  const [highlighted, setHighlighted] = useState<Set<string>>(new Set());
   const update: Updater = (fn) => setWs((prev) => fn(prev));
   const diagnostics = validateWorkspace(ws, ws.constraintApplications);
+  const onExecute = makeExecute?.(setHighlighted);
   return (
     <div style="position:relative; width:900px; height:600px; border:1px solid #2a2a4a;">
-      <Canvas ws={ws} update={update} diagnostics={diagnostics} />
+      <Canvas
+        ws={ws}
+        update={update}
+        diagnostics={diagnostics}
+        onExecute={onExecute}
+        highlightEntityIds={highlighted}
+      />
     </div>
   );
 }
@@ -38,32 +58,118 @@ function StoryWrapper({ initial }: { initial: WorkspaceState }) {
 // ---------------------------------------------------------------------------
 
 /** A simple linear pipeline: ingest → process → publish.
- *  Shows the most basic graph pattern — a directed chain with node metadata. */
+ *  Each node carries a JS script that operates on USGS earthquake data.
+ *  A js-script constraint is applied to all three nodes; all pass. */
 export function Pipeline() {
   const ws = defaultState();
   ws.treeNodes = [
     node("ingest", "Ingest", "leaf", [], {
       owner: "data-team",
       version: "2.1.0",
-      description: "Reads raw events from Kafka",
+      outputs: ["features"],
+      script: `\
+async function ingest() {
+  console.log("[ingest] fetching earthquake data...");
+  const res = await fetch(
+    "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson"
+  );
+  const json = await res.json();
+  console.log(\`[ingest] received \${json.features.length} features\`);
+  return json.features;
+}`,
     }),
     node("process", "Process", "leaf", [], {
       owner: "data-team",
       version: "2.1.0",
-      description: "Normalises and deduplicates events",
+      inputs: ["features"],
+      outputs: ["events"],
+      script: `\
+function process(features) {
+  console.log(\`[process] processing \${features.length} features...\`);
+  const result = features.map((f) => {
+    const { mag, place, time } = f.properties;
+    const t = new Date(time).toUTCString();
+    return \`M\${mag.toFixed(1)} — \${place} (\${t})\`;
+  });
+  console.log(\`[process] produced \${result.length} events\`);
+  return result;
+}`,
     }),
     node("publish", "Publish", "leaf", [], {
       owner: "platform-team",
       version: "1.4.2",
-      description: "Writes processed events to the data warehouse",
+      inputs: ["events"],
+      script: `\
+function publish(events) {
+  events.forEach((e) => console.log(e));
+}`,
     }),
   ];
   ws.edges = [
-    { id: "e1", fromId: "ingest", toId: "process", label: "raw events", data: {}, version: 1 },
-    { id: "e2", fromId: "process", toId: "publish", label: "clean events", data: {}, version: 1 },
+    {
+      id: "e1",
+      fromId: "ingest",
+      toId: "process",
+      label: "raw features",
+      data: { type: "features" },
+      version: 1,
+    },
+    {
+      id: "e2",
+      fromId: "process",
+      toId: "publish",
+      label: "formatted events",
+      data: { type: "events" },
+      version: 1,
+    },
   ];
   ws.canvasExpandedNodes = [];
-  return <StoryWrapper initial={ws} />;
+
+  const jsConstraint = { ...JS_SCRIPT_CONSTRAINT };
+  const edgeTypeConstraint = { ...EDGE_OUTPUT_TYPE_CONSTRAINT };
+  ws.constraints = [jsConstraint, edgeTypeConstraint];
+  ws.constraintApplications = [
+    { id: "a1", constraintId: jsConstraint.id, entityId: "ingest", version: 1 },
+    { id: "a2", constraintId: jsConstraint.id, entityId: "process", version: 1 },
+    { id: "a3", constraintId: jsConstraint.id, entityId: "publish", version: 1 },
+    { id: "a4", constraintId: edgeTypeConstraint.id, entityId: "e1", version: 1 },
+    { id: "a5", constraintId: edgeTypeConstraint.id, entityId: "e2", version: 1 },
+  ];
+
+  function makeExecute(setHighlight: (ids: Set<string>) => void) {
+    return async () => {
+      setHighlight(new Set());
+
+      const ingestFn = new Function(`return (${ws.treeNodes[0].data.script})`)() as () => Promise<
+        unknown[]
+      >;
+      const processFn = new Function(`return (${ws.treeNodes[1].data.script})`)() as (
+        x: unknown[],
+      ) => string[];
+      const publishFn = new Function(`return (${ws.treeNodes[2].data.script})`)() as (
+        x: string[],
+      ) => void;
+
+      const features = await ingestFn();
+      setHighlight(new Set(["ingest"]));
+      await sleep(400);
+
+      setHighlight(new Set(["ingest", "e1"]));
+      await sleep(300);
+
+      const events = processFn(features);
+      setHighlight(new Set(["ingest", "e1", "process"]));
+      await sleep(400);
+
+      setHighlight(new Set(["ingest", "e1", "process", "e2"]));
+      await sleep(300);
+
+      publishFn(events);
+      setHighlight(new Set(["ingest", "e1", "process", "e2", "publish"]));
+    };
+  }
+
+  return <StoryWrapper initial={ws} makeExecute={makeExecute} />;
 }
 
 // ---------------------------------------------------------------------------

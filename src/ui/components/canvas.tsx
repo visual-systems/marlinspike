@@ -586,11 +586,12 @@ function CanvasInspector(
 // ---------------------------------------------------------------------------
 
 function CanvasTopBar(
-  { ws, update, mode, onSetMode }: {
+  { ws, update, mode, onSetMode, onExecute }: {
     ws: WorkspaceState;
     update: Updater;
     mode: CanvasMode;
     onSetMode: (m: CanvasMode) => void;
+    onExecute?: () => void;
   },
 ) {
   function selectNode(id: string) {
@@ -612,6 +613,12 @@ function CanvasTopBar(
 
   return (
     <div style="position:absolute; top:8px; right:8px; display:flex; align-items:center; gap:4px; z-index:2; pointer-events:auto;">
+      {/* Execute button */}
+      {onExecute && (
+        <div style={pillStyle}>
+          <SmallBtn label="Execute" onClick={onExecute} />
+        </div>
+      )}
       {/* Mode selector */}
       <div style={pillStyle}>
         <span style="color:#404466; user-select:none;">mode</span>
@@ -709,11 +716,12 @@ interface InteractionState {
 }
 
 export function Canvas(
-  { ws, update, diagnostics = {}, highlightEntityIds }: {
+  { ws, update, diagnostics = {}, highlightEntityIds, onExecute }: {
     ws: WorkspaceState;
     update: Updater;
     diagnostics?: DiagnosticMap;
     highlightEntityIds?: Set<string>;
+    onExecute?: () => void;
   },
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1092,7 +1100,7 @@ export function Canvas(
       </svg>
 
       {/* Top-right bar: canvas-wide controls + breadcrumb */}
-      <CanvasTopBar ws={ws} update={update} mode={mode} onSetMode={setMode} />
+      <CanvasTopBar ws={ws} update={update} mode={mode} onSetMode={setMode} onExecute={onExecute} />
 
       {/* Inspector overlay — bottom-right */}
       {hasSelection && (
@@ -1453,6 +1461,7 @@ function renderLevel(
           sweep: number;
           arcC?: { x: number; y: number };
           isSelected: boolean;
+          isHighlighted: boolean;
         };
         const renderData: EdgeRenderData[] = [];
         for (const edge of levelEdges) {
@@ -1520,51 +1529,54 @@ function renderLevel(
             sweep,
             arcC: edgeArcC,
             isSelected: selectedId === edge.id,
+            isHighlighted: highlightEntityIds.has(edge.id),
           });
         }
 
         return (
           <>
             {/* Pass 1: all edge paths */}
-            {renderData.map(({ edge, d, src, dst, needsArc, r, sweep, arcC, isSelected }) => {
-              const stroke = isSelected ? "#5070c0" : "#2a2a50";
-              const tangent = pathEndTangent(src, dst, needsArc, r, sweep, arcC);
-              const perp = { x: -tangent.y, y: tangent.x };
-              const tip = { x: dst.x + tangent.x * 10, y: dst.y + tangent.y * 10 };
-              const arrowPoints = `${tip.x},${tip.y} ${dst.x + perp.x * 3.5},${
-                dst.y + perp.y * 3.5
-              } ${dst.x - perp.x * 3.5},${dst.y - perp.y * 3.5}`;
-              return (
-                <g key={edge.id}>
-                  {/* Wide transparent hit-area */}
-                  <path
-                    d={d}
-                    stroke="transparent"
-                    stroke-width={8}
-                    fill="none"
-                    style="cursor:pointer;"
-                    onClick={(e: MouseEvent) => {
-                      e.stopPropagation();
-                      onSelectEdge(edge.id);
-                    }}
-                  />
-                  {/* Visible path */}
-                  <path
-                    d={d}
-                    stroke={stroke}
-                    stroke-width={isSelected ? 2 : 1}
-                    fill="none"
-                    style="pointer-events:none;"
-                  />
-                  {/* Arrowhead polygon */}
-                  <polygon
-                    points={arrowPoints}
-                    fill={stroke}
-                    style="pointer-events:none;"
-                  />
-                </g>
-              );
-            })}
+            {renderData.map(
+              ({ edge, d, src, dst, needsArc, r, sweep, arcC, isSelected, isHighlighted }) => {
+                const stroke = isSelected ? "#5070c0" : isHighlighted ? "#50c070" : "#2a2a50";
+                const tangent = pathEndTangent(src, dst, needsArc, r, sweep, arcC);
+                const perp = { x: -tangent.y, y: tangent.x };
+                const tip = { x: dst.x + tangent.x * 10, y: dst.y + tangent.y * 10 };
+                const arrowPoints = `${tip.x},${tip.y} ${dst.x + perp.x * 3.5},${
+                  dst.y + perp.y * 3.5
+                } ${dst.x - perp.x * 3.5},${dst.y - perp.y * 3.5}`;
+                return (
+                  <g key={edge.id}>
+                    {/* Wide transparent hit-area */}
+                    <path
+                      d={d}
+                      stroke="transparent"
+                      stroke-width={8}
+                      fill="none"
+                      style="cursor:pointer;"
+                      onClick={(e: MouseEvent) => {
+                        e.stopPropagation();
+                        onSelectEdge(edge.id);
+                      }}
+                    />
+                    {/* Visible path */}
+                    <path
+                      d={d}
+                      stroke={stroke}
+                      stroke-width={isSelected ? 2 : 1}
+                      fill="none"
+                      style="pointer-events:none;"
+                    />
+                    {/* Arrowhead polygon */}
+                    <polygon
+                      points={arrowPoints}
+                      fill={stroke}
+                      style="pointer-events:none;"
+                    />
+                  </g>
+                );
+              },
+            )}
             {/* Pass 2: all labels on top of all paths */}
             {renderData.map(({ edge, src, dst, needsArc, r, sweep, arcC }) => {
               if (!edge.label) return null;

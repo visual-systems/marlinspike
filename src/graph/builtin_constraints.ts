@@ -17,6 +17,26 @@ export const LABEL_REQUIRED_CONSTRAINT: Constraint = {
   version: 1,
 };
 
+export const EDGE_OUTPUT_TYPE_CONSTRAINT: Constraint = {
+  id: "builtin/edge-output-type",
+  label: "Edge Output Type",
+  uri: "spike://builtin/constraints/edge-output-type",
+  type: "edge-output-type",
+  targets: [{ type: "entity", class: "edge" }],
+  data: {},
+  version: 1,
+};
+
+export const JS_SCRIPT_CONSTRAINT: Constraint = {
+  id: "builtin/js-script",
+  label: "JS Script",
+  uri: "spike://builtin/constraints/js-script",
+  type: "js-script",
+  targets: [{ type: "entity", class: "node" }],
+  data: { requireInputs: false, requireOutputs: false },
+  version: 1,
+};
+
 export const MAX_GROUP_SIZE_CONSTRAINT: Constraint = {
   id: "builtin/max-group-size",
   label: "Max Group Size (5)",

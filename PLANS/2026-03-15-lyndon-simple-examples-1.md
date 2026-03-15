@@ -19,12 +19,12 @@ A new storybook section — **"Examples"** — with 3–4 stories showing realis
 
 ## Approach
 
-- [ ] Create `src/ui/stories/examples.stories.tsx`
-- [ ] Add export to `src/ui/stories/index.ts`
-- [ ] Story 1 — **Pipeline**: linear producer → transform → consumer (simplest possible graph; shows the core idea)
-- [ ] Story 2 — **Request Lifecycle**: HTTP request path through a small service mesh (Client → Gateway → Auth → Service → DB); edges labelled with protocol; nodes have owner/version data; one constraint applied
-- [ ] Story 3 — **Microservice Mesh**: a small cluster of 3–4 services with bidirectional dependencies, some expanded to show internals, mix of passing/failing constraints
-- [ ] Story 4 — **Data Pipeline**: batch ETL style; Source → Validate → Transform → Load → Report; group nodes contain sub-steps; constraint on unlabelled edges
+- [x] Create `src/ui/stories/examples.stories.tsx`
+- [x] Add export to `src/ui/stories/index.ts`
+- [x] Story 1 — **Pipeline**: linear producer → transform → consumer (simplest possible graph; shows the core idea)
+- [x] Story 2 — **Request Lifecycle**: HTTP request path through a small service mesh (Client → Gateway → Auth → Service → DB); edges labelled with protocol; nodes have owner/version data; one constraint applied
+- [x] Story 3 — **Microservice Mesh**: a small cluster of 3–4 services with bidirectional dependencies, some expanded to show internals, mix of passing/failing constraints
+- [x] Story 4 — **Data Pipeline**: batch ETL style; Source → Validate → Transform → Load → Report; group nodes contain sub-steps; constraint on unlabelled edges
 
 Each story uses a `StoryWrapper` component (same pattern as canvas.stories.tsx) that holds state, runs `validateWorkspace`, and renders `<Canvas>`.
 
@@ -40,7 +40,7 @@ Each story uses a `StoryWrapper` component (same pattern as canvas.stories.tsx) 
 
 ## Verification
 
-- [ ] `NO_COLOR=1 deno task fmt && deno task lint && deno task check-ui` all pass
+- [x] `NO_COLOR=1 deno task fmt && deno task lint && deno task check-ui` all pass
 - [ ] All 4 stories appear in the storybook sidebar under "Examples"
 - [ ] Each story renders without errors or blank canvas
 - [ ] Diagnostics (error/warning badges) are visible in the stories that have constraints
