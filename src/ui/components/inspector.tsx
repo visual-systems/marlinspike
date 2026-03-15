@@ -272,11 +272,13 @@ export function NodeInspector(
         )
         : (
           <div
-            style="font-size:14px; font-weight:600; color:#c0c0e0; cursor:text; word-break:break-all;"
+            style={`font-size:14px; font-weight:600; cursor:text; word-break:break-all;${
+              node.label ? " color:#c0c0e0;" : " color:#404466; font-style:italic;"
+            }`}
             title="Click to rename"
             onClick={() => setEditingLabel(true)}
           >
-            {node.label}
+            {node.label || "unnamed"}
           </div>
         )}
 
@@ -558,7 +560,7 @@ export function EdgeInspector(
           title="Inspect node"
           onClick={() => navigateToNode(edge.fromId)}
         >
-          {fromNode?.label ?? edge.fromId}
+          {fromNode ? (fromNode.label || "unnamed") : edge.fromId}
         </span>
         <span style="color:#444;">→</span>
         <span
@@ -566,7 +568,7 @@ export function EdgeInspector(
           title="Inspect node"
           onClick={() => navigateToNode(edge.toId)}
         >
-          {toNode?.label ?? edge.toId}
+          {toNode ? (toNode.label || "unnamed") : edge.toId}
         </span>
       </div>
 

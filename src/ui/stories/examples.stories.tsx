@@ -380,3 +380,14 @@ export function DataPipeline() {
   ws.canvasExpandedNodes = ["extract", "transform", "load"];
   return <StoryWrapper initial={ws} />;
 }
+
+// ---------------------------------------------------------------------------
+// SingleNode — minimal canvas for debugging add-node behaviour
+// ---------------------------------------------------------------------------
+
+/** A single leaf node on an empty canvas. Use this to debug add-node mode. */
+export function SingleNode() {
+  const ws = defaultState();
+  ws.treeNodes = [node("alpha", "Alpha", "leaf", [])];
+  return <StoryWrapper initial={ws} />;
+}

@@ -412,7 +412,35 @@ The lossless round-trip guarantee of Spike-Lisp (§13.2) is therefore a **first-
 - **Jump** — click any node in the tree view to jump directly to it
 - **Share** — copy the URI of the currently focused subgraph, optionally with active persona appended
 
-### 6.7 Collaboration
+### 6.7 Graph Authoring Interactions
+
+The canvas supports three interaction modes, selectable from the toolbar:
+
+- **Select** — default; click to select nodes/edges, drag to pan, drag node to reposition
+- **Add Nodes** — click to create nodes; the target of the click determines placement:
+  - Empty canvas → new root-level leaf node at click position
+  - Background of an expanded subgraph → new child of that subgraph at click position
+  - A collapsed composite node → expand it one level and add new child inside it
+  - A leaf node → coerce it to a composite, expand it, add new child inside it
+- **Add Edges** — click source node, click target node to wire them; Escape cancels
+
+All newly created nodes are blank (no label, no data). The inspector opens immediately so the user can name and configure the node without switching modes.
+
+#### Leaf-to-subgraph promotion
+
+Clicking a leaf node in Add Nodes mode promotes it to a composite (subgraph) node and adds a child. This is intentional: any leaf can become a subgraph at any time, because the rose-tree structure has no leaf-only constraint. Schema enforcement (if active) will validate the resulting structure non-blockingly. Mistakes are cheap to undo.
+
+#### Future authoring ideas
+
+- **Node palette / templates** — a side-drawer of pre-configured node types (defined by active schemas) that can be dragged onto the canvas or clicked to place at center
+- **Edge type inference** — when wiring two nodes that declare typed ports, automatically populate `data.type` on the new edge from the source node's declared outputs
+- **Duplicate node** — copy a node and all its data onto the canvas as a sibling
+- **Bulk operations** — marquee-select multiple nodes; move, delete, or group them
+- **Undo/redo** — a linear history of workspace state snapshots; Cmd+Z / Cmd+Shift+Z
+- **Delete** — Backspace/Delete key removes the selected node or edge (with confirmation if the node has children or connected edges)
+- **Drag-to-group** — drag one node onto another to make it a child; drag out to promote to sibling
+
+### 6.8 Collaboration
 
 Collaboration is real-time, CRDT-backed, per-subgraph-URI. Multiple users edit simultaneously. Presence (who is in which subgraph) is shown in both the tree view and the canvas. Merge diagnostics from concurrent edits appear inline as constraint diagnostics — non-blocking.
 

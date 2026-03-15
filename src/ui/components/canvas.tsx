@@ -31,7 +31,7 @@ import {
 // ---------------------------------------------------------------------------
 
 /** Extensible canvas interaction mode. Add new modes here as needed. */
-type CanvasMode = "select" | "add-edge";
+type CanvasMode = "select" | "add-node" | "add-edge";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -610,45 +610,42 @@ function CanvasTopBar(
 
   const pillStyle =
     "display:flex; align-items:center; gap:6px; background:rgba(13,13,30,0.85); border:1px solid #2a2a4a; border-radius:4px; padding:4px 10px; font-size:11px;";
+  const dividerStyle = "width:1px; height:14px; background:#2a2a4a; flex-shrink:0;";
 
   return (
-    <div style="position:absolute; top:8px; right:8px; display:flex; align-items:center; gap:4px; z-index:2; pointer-events:auto;">
-      {/* Execute button */}
+    <div style="position:absolute; top:8px; right:8px; display:flex; align-items:center; gap:6px; font-size:11px; z-index:2; pointer-events:auto;">
       {onExecute && (
-        <div style={pillStyle}>
+        <>
           <SmallBtn label="Execute" onClick={onExecute} />
-        </div>
+          <div style={dividerStyle} />
+        </>
       )}
-      {/* Mode selector */}
-      <div style={pillStyle}>
-        <span style="color:#404466; user-select:none;">mode</span>
-        <Dropdown
-          items={[
-            { value: "select", label: "Select" },
-            { value: "add-edge", label: "Add Edges" },
-          ]}
-          selectedValue={mode}
-          placeholder="mode"
-          onSelect={(v) => onSetMode(v as CanvasMode)}
-          width={90}
-        />
-      </div>
-      {/* Canvas-wide controls */}
-      <div style={pillStyle}>
-        <span style="color:#404466; user-select:none;">layout</span>
-        <Dropdown
-          items={[
-            { value: "JANK", label: "JANK" },
-            { value: "TOPOGRID", label: "TOPOGRID" },
-            { value: "SDF", label: "SDF" },
-          ]}
-          selectedValue={ws.canvasAlgorithm}
-          placeholder="layout"
-          onSelect={(id) =>
-            update((s) => ({ ...s, canvasAlgorithm: id as WorkspaceState["canvasAlgorithm"] }))}
-          width={90}
-        />
-      </div>
+      <span style="color:#404466; user-select:none;">mode</span>
+      <Dropdown
+        items={[
+          { value: "select", label: "Select" },
+          { value: "add-node", label: "Add Nodes" },
+          { value: "add-edge", label: "Add Edges" },
+        ]}
+        selectedValue={mode}
+        placeholder="mode"
+        onSelect={(v) => onSetMode(v as CanvasMode)}
+        width={100}
+      />
+      <div style={dividerStyle} />
+      <span style="color:#404466; user-select:none;">layout</span>
+      <Dropdown
+        items={[
+          { value: "JANK", label: "JANK" },
+          { value: "TOPOGRID", label: "TOPOGRID" },
+          { value: "SDF", label: "SDF" },
+        ]}
+        selectedValue={ws.canvasAlgorithm}
+        placeholder="layout"
+        onSelect={(id) =>
+          update((s) => ({ ...s, canvasAlgorithm: id as WorkspaceState["canvasAlgorithm"] }))}
+        width={90}
+      />
 
       {/* Breadcrumb */}
       {items.length > 0 && (
@@ -713,6 +710,10 @@ interface InteractionState {
   hoveredNodeId: string | null;
   onEdgeNodeClick: (id: string, x: number, y: number, levelId: string) => void;
   onNodeHover: (id: string | null) => void;
+  /** Convert a client-space mouse position to canvas (SVG world) coordinates. */
+  clientToCanvas: (clientX: number, clientY: number) => { x: number; y: number };
+  /** Create a new leaf node. parentId=null → root level; otherwise child of that composite. */
+  onAddNode: (parentId: string | null, localX: number, localY: number) => void;
 }
 
 export function Canvas(
@@ -913,12 +914,63 @@ export function Canvas(
     document.addEventListener("mouseup", onDocMouseUp);
   }
 
+  function clientToCanvas(clientX: number, clientY: number): { x: number; y: number } {
+    const el = svgRef.current;
+    if (!el) return { x: 0, y: 0 };
+    const rect = el.getBoundingClientRect();
+    const v = viewRef.current!;
+    return { x: (clientX - rect.left - v.tx) / v.scale, y: (clientY - rect.top - v.ty) / v.scale };
+  }
+
+  function addNode(parentId: string | null, localX: number, localY: number) {
+    const id = crypto.randomUUID();
+    const newNode: TreeNode = { id, label: "", kind: "leaf", children: [], data: {}, version: 1 };
+    if (parentId === null) {
+      update((s) => ({
+        ...s,
+        treeNodes: [...s.treeNodes, newNode],
+        canvasNodePositions: {
+          ...s.canvasNodePositions,
+          [id]: { x: localX, y: localY, pinned: true },
+        },
+        canvasSelected: { type: "node", id },
+      }));
+    } else {
+      update((s) => {
+        function addChild(nodes: TreeNode[]): TreeNode[] {
+          return nodes.map((n) =>
+            n.id === parentId
+              ? { ...n, kind: "composite", children: [...n.children, newNode] }
+              : { ...n, children: addChild(n.children) }
+          );
+        }
+        return {
+          ...s,
+          treeNodes: addChild(s.treeNodes),
+          canvasNodePositions: {
+            ...s.canvasNodePositions,
+            [id]: { x: localX, y: localY, pinned: true },
+          },
+          canvasSelected: { type: "node", id },
+          canvasExpandedNodes: s.canvasExpandedNodes.includes(parentId)
+            ? s.canvasExpandedNodes
+            : [...s.canvasExpandedNodes, parentId],
+        };
+      });
+    }
+  }
+
   function onSvgMouseDown(e: MouseEvent) {
     if (modeRef.current === "add-edge") {
       // Background click: return to select mode and clear everything (same as Escape)
       setEdgeDraw(null);
       setMode("select");
       update((s) => ({ ...s, canvasSelected: null }));
+      return;
+    }
+    if (modeRef.current === "add-node") {
+      const { x, y } = clientToCanvas(e.clientX, e.clientY);
+      addNode(null, x, y);
       return;
     }
     panRef.current = {
@@ -1032,6 +1084,8 @@ export function Canvas(
     hoveredNodeId,
     onEdgeNodeClick,
     onNodeHover: setHoveredNodeId,
+    clientToCanvas,
+    onAddNode: addNode,
   };
 
   return (
@@ -1051,7 +1105,7 @@ export function Canvas(
       <svg
         ref={svgRef}
         style={`width:100%; height:100%; display:block;${
-          mode === "add-edge" ? " cursor:crosshair;" : ""
+          mode === "add-edge" || mode === "add-node" ? " cursor:crosshair;" : ""
         }`}
         onMouseDown={onSvgMouseDown}
         onMouseMove={onSvgMouseMove}
@@ -1154,7 +1208,6 @@ function renderLevel(
   const level = layout.get(levelId);
   if (!level) return null;
 
-  const isRootLevel = levelId === "";
   const posMap = new Map(level.nodes.map((n) => [n.id, n]));
   const nodeIds = nodes.map((n) => n.id);
   const levelEdgeKeys = getEdgesAtLevel(ws.edges, nodeIds);
@@ -1172,32 +1225,7 @@ function renderLevel(
         const isExpanded = expandedSet.has(node.id) && node.kind === "composite";
 
         if (isExpanded) {
-          // Root-level expanded: no bounding box rect — children float freely
-          if (isRootLevel) {
-            return (
-              <g key={node.id} transform={`translate(${pos.x}, ${pos.y})`}>
-                {renderLevel(
-                  node.children,
-                  node.id,
-                  layout,
-                  expandedSet,
-                  ws,
-                  selectedId,
-                  onSelectNode,
-                  onSelectEdge,
-                  onExpand,
-                  onCollapse,
-                  startDrag,
-                  interaction,
-                  { x: worldOffset.x + pos.x, y: worldOffset.y + pos.y },
-                  diagnostics,
-                  highlightEntityIds,
-                )}
-              </g>
-            );
-          }
-
-          // Nested expanded: draw tight bounding box around children
+          // Expanded: draw tight bounding box around children
           const childLevel = layout.get(node.id);
           const bb = childLevel?.bbox;
           // Rect coordinates in local space (relative to pos.x, pos.y)
@@ -1247,6 +1275,16 @@ function renderLevel(
                       worldOffset.x + pos.x,
                       worldOffset.y + pos.y,
                       levelId,
+                    );
+                    return;
+                  }
+                  if (interaction.mode === "add-node") {
+                    e.stopPropagation();
+                    const cp = interaction.clientToCanvas(e.clientX, e.clientY);
+                    interaction.onAddNode(
+                      node.id,
+                      cp.x - (worldOffset.x + pos.x),
+                      cp.y - (worldOffset.y + pos.y),
                     );
                     return;
                   }
@@ -1372,6 +1410,16 @@ function renderLevel(
                   worldOffset.x + pos.x,
                   worldOffset.y + pos.y,
                   levelId,
+                );
+                return;
+              }
+              if (interaction.mode === "add-node") {
+                e.stopPropagation();
+                const cp = interaction.clientToCanvas(e.clientX, e.clientY);
+                interaction.onAddNode(
+                  node.id,
+                  cp.x - (worldOffset.x + pos.x),
+                  cp.y - (worldOffset.y + pos.y),
                 );
                 return;
               }
