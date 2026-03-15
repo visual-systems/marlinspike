@@ -11,6 +11,11 @@ Marlinspike sits in a gap between three worlds that currently don't talk to each
 
 See [`DESIGN.md`](DESIGN.md) for a detailed overview of the architecture, goals, and roadmap.
 
+## Live Demo
+
+**[marlinspike.deno.dev](https://marlinspike.deno.dev)** — main app
+**[marlinspike.deno.dev/stories](https://marlinspike.deno.dev/stories)** — UI story explorer with example graphs
+
 ## Development
 
 Marlinspike is implemented in [Deno](https://deno.com). Install Deno v2 before getting started.

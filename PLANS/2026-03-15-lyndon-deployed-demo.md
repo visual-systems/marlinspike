@@ -16,8 +16,8 @@ A stable public URL (Deno Deploy) serving the Marlinspike storybook, with the st
 ## Approach
 
 - [x] Move `bundle()` calls from per-request handlers to server startup (eager, cached in memory)
-- [ ] Verify locally that `deno task dev` still works with the new startup bundling
-- [ ] Commit the `mod.tsx` change
+- [x] Verify locally that `deno task dev` still works with the new startup bundling
+- [x] Commit the `mod.tsx` change
 - [ ] Deploy via `deployctl` and confirm `/stories` loads correctly with no 502 on `client.js` or `stories.js`
 
 ## Open Questions
