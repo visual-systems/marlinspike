@@ -2,6 +2,7 @@
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
 import {
+  getFocusedRootNodes,
   type Panel,
   removeNodeFromTree,
   type Selection,
@@ -58,7 +59,7 @@ export function TreePanel(
       }
       return ids;
     };
-    const ids = collect(ws.treeNodes);
+    const ids = collect(getFocusedRootNodes(ws));
     update((s) => withPanel(s, tab.id, panel.id, (p) => ({ ...p, expandedNodes: ids })));
   }
 
@@ -117,7 +118,7 @@ export function TreePanel(
           ref={treeContentRef}
           style={`flex:${treeFlex}; overflow-y:auto; padding:4px 0; min-height:0;`}
         >
-          {ws.treeNodes.map((node) => (
+          {getFocusedRootNodes(ws).map((node) => (
             <TreeNodeRow
               key={node.id}
               node={node}

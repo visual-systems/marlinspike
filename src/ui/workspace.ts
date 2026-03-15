@@ -66,6 +66,7 @@ export interface WorkspaceState {
   workflows: string[];
   activeWorkflow: string | null;
   connectedGraphs: ConnectedGraph[];
+  focusId: string | null;
   canvasExpandedNodes: string[];
   canvasNodePositions: Record<string, { x: number; y: number; pinned?: boolean }>;
   canvasSelected: Selection;
@@ -184,6 +185,22 @@ export function subgraphJson(
   );
 }
 
+/** Returns the path from root to targetId inclusive, or [] if not found. */
+export function findPath(nodes: TreeNode[], targetId: string): TreeNode[] {
+  for (const n of nodes) {
+    if (n.id === targetId) return [n];
+    const child = findPath(n.children, targetId);
+    if (child.length > 0) return [n, ...child];
+  }
+  return [];
+}
+
+/** Returns the root nodes for the current focus level. If focusId is null, returns top-level treeNodes. */
+export function getFocusedRootNodes(ws: WorkspaceState): TreeNode[] {
+  if (ws.focusId == null) return ws.treeNodes;
+  return findNode(ws.treeNodes, ws.focusId)?.children ?? [];
+}
+
 export function getActiveTab(ws: WorkspaceState): Tab {
   return ws.tabs.find((t) => t.id === ws.activeTabId) ?? ws.tabs[0];
 }
@@ -258,6 +275,7 @@ export function defaultState(): WorkspaceState {
       connected: true,
       required: true,
     }],
+    focusId: null,
     canvasExpandedNodes: defaultTreeNodes().map((n) => n.id),
     canvasNodePositions: {},
     canvasSelected: null,
@@ -354,6 +372,7 @@ export function loadState(): WorkspaceState {
         activeWorkflow: (parsed.activeWorkflow as string | null | undefined) ?? null,
         connectedGraphs: (parsed.connectedGraphs as ConnectedGraph[] | undefined) ??
           ds.connectedGraphs,
+        focusId: (parsed.focusId as string | null | undefined) ?? null,
         canvasExpandedNodes: (parsed.canvasExpandedNodes as string[] | undefined) ?? [],
         canvasNodePositions: (parsed.canvasNodePositions as
           | Record<string, { x: number; y: number; pinned?: boolean }>

@@ -2,6 +2,7 @@
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { render, useEffect, useMemo, useRef, useState } from "@hono/hono/jsx/dom";
 import { Dropdown, DROPDOWN_WIDTH } from "./components/index.ts";
+import { FocusDropdown } from "./components/focus-dropdown.tsx";
 import { SmallBtn } from "./components/widgets.tsx";
 import { TreePanel } from "./components/tree-panel.tsx";
 import { ConstraintsPanel } from "./components/constraints-panel.tsx";
@@ -372,8 +373,9 @@ function WorkspaceControls(
         </button>
       </div>
 
-      {/* Connected graphs */}
-      <div style="display:flex; align-items:center; margin-left:auto; flex-shrink:0;">
+      {/* Right-side controls */}
+      <div style="display:flex; align-items:stretch; margin-left:auto; flex-shrink:0;">
+        <FocusDropdown ws={ws} update={update} />
         <ConnectedGraphsBtn ws={ws} update={update} />
       </div>
     </div>
