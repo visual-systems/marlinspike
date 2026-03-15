@@ -41,6 +41,6 @@ Each story uses a `StoryWrapper` component (same pattern as canvas.stories.tsx) 
 ## Verification
 
 - [x] `NO_COLOR=1 deno task fmt && deno task lint && deno task check-ui` all pass
-- [ ] All 4 stories appear in the storybook sidebar under "Examples"
-- [ ] Each story renders without errors or blank canvas
-- [ ] Diagnostics (error/warning badges) are visible in the stories that have constraints
+- [x] All 4 stories appear in the storybook sidebar under "Examples"
+- [x] Each story renders without errors or blank canvas
+- [x] Diagnostics (error/warning badges) are visible in the stories that have constraints
