@@ -1,11 +1,14 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
-import { render, useEffect, useRef, useState } from "@hono/hono/jsx/dom";
+import { render, useEffect, useMemo, useRef, useState } from "@hono/hono/jsx/dom";
 import { Dropdown, DROPDOWN_WIDTH } from "./components/index.ts";
 import { SmallBtn } from "./components/widgets.tsx";
 import { TreePanel } from "./components/tree-panel.tsx";
+import { ConstraintsPanel } from "./components/constraints-panel.tsx";
 import { Canvas } from "./components/canvas.tsx";
+import { validateWorkspace } from "../graph/validate_workspace.ts";
 import {
+  defaultConstraintsPanel,
   defaultPanel,
   getActiveTab,
   type ListEditorConfig,
@@ -324,6 +327,16 @@ function WorkspaceControls(
     }));
   }
 
+  function addConstraintsPanel() {
+    const tab = getActiveTab(ws);
+    update((s) => ({
+      ...s,
+      tabs: s.tabs.map((t) =>
+        t.id === tab.id ? { ...t, panels: [...t.panels, defaultConstraintsPanel()] } : t
+      ),
+    }));
+  }
+
   return (
     <div id="workspace-controls">
       {/* Workflow dropdown */}
@@ -348,6 +361,14 @@ function WorkspaceControls(
           onClick={addPanel}
         >
           + Tree View
+        </button>
+        <button
+          type="button"
+          title="Add a Constraints View panel to this tab"
+          style="background:none; border:1px solid #2a2a4a; color:#555; font-size:11px; cursor:pointer; padding:2px 8px; border-radius:3px; letter-spacing:0.04em;"
+          onClick={addConstraintsPanel}
+        >
+          + Constraints View
         </button>
       </div>
 
@@ -444,22 +465,54 @@ function ConnectedGraphsBtn({ ws, update }: { ws: WorkspaceState; update: Update
 function WorkspaceArea({ ws, update }: { ws: WorkspaceState; update: Updater }) {
   const tab = getActiveTab(ws);
 
+  const diagnostics = useMemo(
+    () => validateWorkspace(ws, ws.constraintApplications),
+    [ws.constraints, ws.constraintApplications, ws.treeNodes, ws.edges],
+  );
+
+  const highlightEntityIds = useMemo<Set<string>>(() => {
+    const sel = ws.canvasSelected;
+    if (sel?.type !== "constraint") return new Set();
+    return new Set(
+      ws.constraintApplications
+        .filter((a) => a.constraintId === sel.id)
+        .map((a) => a.entityId),
+    );
+  }, [ws.canvasSelected, ws.constraintApplications]);
+
   return (
     <div id="workspace-area" style="position:relative; overflow:hidden;">
       {/* Canvas — always visible as the background layer */}
-      <Canvas ws={ws} update={update} />
+      <Canvas
+        ws={ws}
+        update={update}
+        diagnostics={diagnostics}
+        highlightEntityIds={highlightEntityIds}
+      />
 
-      {/* Tree panels — overlaid on top of the canvas, left-aligned */}
+      {/* Panels — overlaid on top of the canvas, left-aligned */}
       {tab.panels.length > 0 && (
         <div style="position:absolute; top:0; left:0; bottom:0; display:flex; z-index:1; pointer-events:none;">
           {tab.panels.map((panel) => (
             <div key={panel.id} style="pointer-events:auto; height:100%; display:flex;">
-              <TreePanel
-                panel={panel}
-                tab={tab}
-                ws={ws}
-                update={update}
-              />
+              {panel.type === "constraints"
+                ? (
+                  <ConstraintsPanel
+                    panel={panel}
+                    tab={tab}
+                    ws={ws}
+                    update={update}
+                    diagnostics={diagnostics}
+                  />
+                )
+                : (
+                  <TreePanel
+                    panel={panel}
+                    tab={tab}
+                    ws={ws}
+                    update={update}
+                  />
+                )}
             </div>
           ))}
         </div>

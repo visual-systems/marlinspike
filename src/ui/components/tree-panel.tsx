@@ -2,9 +2,9 @@
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
 import {
-  findNode,
   type Panel,
   removeNodeFromTree,
+  type Selection,
   type Tab,
   type TreeNode,
   updateNodeInTree,
@@ -29,15 +29,14 @@ export function TreePanel(
   const bodyRef = useRef<HTMLDivElement | null>(null);
 
   const expanded = new Set(panel.expandedNodes);
-  const selectedNode = panel.selectedNodeId ? findNode(ws.treeNodes, panel.selectedNodeId) : null;
-  const selectedEdge = panel.selectedEdgeId
-    ? ws.edges.find((e) => e.id === panel.selectedEdgeId)
-    : null;
-  const hasInspector = selectedNode != null || selectedEdge != null;
+  const hasInspector = panel.selected != null;
 
-  const highlightedNodeIds: Set<string> = selectedEdge
-    ? new Set([selectedEdge.fromId, selectedEdge.toId])
-    : new Set();
+  let highlightedNodeIds: Set<string> = new Set();
+  if (panel.selected?.type === "edge") {
+    const sel = panel.selected;
+    const selectedEdge = ws.edges.find((e) => e.id === sel.id);
+    if (selectedEdge) highlightedNodeIds = new Set([selectedEdge.fromId, selectedEdge.toId]);
+  }
 
   function closePanel() {
     update((s) => ({
@@ -125,7 +124,7 @@ export function TreePanel(
               expanded={expanded}
               panelId={panel.id}
               tabId={tab.id}
-              selectedNodeId={panel.selectedNodeId}
+              selected={panel.selected}
               highlightedNodeIds={highlightedNodeIds}
               depth={0}
               ws={ws}
@@ -158,12 +157,12 @@ export function TreePanel(
 // ---------------------------------------------------------------------------
 
 export function TreeNodeRow(
-  { node, expanded, panelId, tabId, selectedNodeId, highlightedNodeIds, depth, ws, update }: {
+  { node, expanded, panelId, tabId, selected, highlightedNodeIds, depth, ws, update }: {
     node: TreeNode;
     expanded: Set<string>;
     panelId: string;
     tabId: string;
-    selectedNodeId: string | null;
+    selected: Selection | null;
     highlightedNodeIds: Set<string>;
     depth: number;
     ws: WorkspaceState;
@@ -182,7 +181,7 @@ export function TreeNodeRow(
   }, [renaming]);
 
   const isExpanded = expanded.has(node.id);
-  const isSelected = node.id === selectedNodeId;
+  const isSelected = selected?.id === node.id;
   const isHighlighted = !isSelected && highlightedNodeIds.has(node.id);
   const hasChildren = node.kind === "composite" && node.children.length > 0;
 
@@ -202,8 +201,7 @@ export function TreeNodeRow(
     update((s) =>
       withPanel(s, tabId, panelId, (p) => ({
         ...p,
-        selectedNodeId: p.selectedNodeId === node.id ? null : node.id,
-        selectedEdgeId: null,
+        selected: p.selected?.id === node.id ? null : { type: "node" as const, id: node.id },
       }))
     );
   }
@@ -277,13 +275,14 @@ export function TreeNodeRow(
         edges: newEdges,
         tabs: s.tabs.map((t) => ({
           ...t,
-          panels: t.panels.map((p) => ({
-            ...p,
-            selectedNodeId: p.selectedNodeId === node.id ? null : p.selectedNodeId,
-            selectedEdgeId: p.selectedEdgeId && !newEdges.some((e) => e.id === p.selectedEdgeId)
-              ? null
-              : p.selectedEdgeId,
-          })),
+          panels: t.panels.map((p) => {
+            const sel = p.selected;
+            // IDs are globally unique — safe to compare without checking type
+            if (!sel) return p;
+            if (sel.id === node.id) return { ...p, selected: null };
+            if (!newEdges.some((e) => e.id === sel.id)) return { ...p, selected: null };
+            return p;
+          }),
         })),
       };
     });
@@ -359,7 +358,7 @@ export function TreeNodeRow(
           expanded={expanded}
           panelId={panelId}
           tabId={tabId}
-          selectedNodeId={selectedNodeId}
+          selected={selected}
           highlightedNodeIds={highlightedNodeIds}
           depth={depth + 1}
           ws={ws}

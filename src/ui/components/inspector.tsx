@@ -22,6 +22,7 @@ import {
 } from "../workspace.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { IconBtn, PropLabel, SmallBtn } from "./widgets.tsx";
+import { ConstraintsAttachedSection } from "./constraints-panel.tsx";
 
 // ---------------------------------------------------------------------------
 // Inspector (dispatch)
@@ -30,16 +31,18 @@ import { IconBtn, PropLabel, SmallBtn } from "./widgets.tsx";
 export function Inspector(
   { panel, tab, ws, update }: { panel: Panel; tab: Tab; ws: WorkspaceState; update: Updater },
 ) {
-  if (panel.selectedEdgeId) {
-    const edge = ws.edges.find((e) => e.id === panel.selectedEdgeId);
+  if (panel.selected?.type === "edge") {
+    const sel = panel.selected;
+    const edge = ws.edges.find((e) => e.id === sel.id);
     if (edge) {
       return (
         <EdgeInspector key={edge.id} edge={edge} panel={panel} tab={tab} ws={ws} update={update} />
       );
     }
   }
-  if (panel.selectedNodeId) {
-    const node = findNode(ws.treeNodes, panel.selectedNodeId);
+  if (panel.selected?.type === "node") {
+    const sel = panel.selected;
+    const node = findNode(ws.treeNodes, sel.id);
     if (node) return <NodeInspector node={node} panel={panel} tab={tab} ws={ws} update={update} />;
   }
   return <div />;
@@ -92,13 +95,14 @@ function CopyField({ title, value }: { title: string; value: string }) {
 // ---------------------------------------------------------------------------
 
 export function NodeInspector(
-  { node, panel, tab, ws, update, extraActions }: {
+  { node, panel, tab, ws, update, extraActions, onInspectConstraint }: {
     node: TreeNode;
     panel: Panel;
     tab: Tab;
     ws: WorkspaceState;
     update: Updater;
     extraActions?: unknown;
+    onInspectConstraint?: (constraintId: string) => void;
   },
 ) {
   const [editingLabel, setEditingLabel] = useState(false);
@@ -113,9 +117,7 @@ export function NodeInspector(
   }, [editingLabel]);
 
   function closeInspector() {
-    update((s) =>
-      withPanel(s, tab.id, panel.id, (p) => ({ ...p, selectedNodeId: null, selectedEdgeId: null }))
-    );
+    update((s) => withPanel(s, tab.id, panel.id, (p) => ({ ...p, selected: null })));
   }
 
   function finishLabelEdit() {
@@ -186,7 +188,7 @@ export function NodeInspector(
         s,
         tab.id,
         panel.id,
-        (p) => ({ ...p, selectedNodeId: nodeId, selectedEdgeId: null }),
+        (p) => ({ ...p, selected: { type: "node" as const, id: nodeId } }),
       )
     );
   }
@@ -201,20 +203,28 @@ export function NodeInspector(
         edges: newEdges,
         tabs: s.tabs.map((t) => ({
           ...t,
-          panels: t.panels.map((p) => ({
-            ...p,
-            selectedNodeId: p.selectedNodeId === node.id ? null : p.selectedNodeId,
-            selectedEdgeId: p.selectedEdgeId && !newEdges.some((e) => e.id === p.selectedEdgeId)
-              ? null
-              : p.selectedEdgeId,
-          })),
+          panels: t.panels.map((p) => {
+            const sel = p.selected;
+            // IDs are globally unique — safe to compare without checking type
+            if (!sel) return p;
+            if (sel.id === node.id) return { ...p, selected: null };
+            if (!newEdges.some((e) => e.id === sel.id)) return { ...p, selected: null };
+            return p;
+          }),
         })),
       };
     });
   }
 
   function selectEdge(edgeId: string) {
-    update((s) => withPanel(s, tab.id, panel.id, (p) => ({ ...p, selectedEdgeId: edgeId })));
+    update((s) =>
+      withPanel(
+        s,
+        tab.id,
+        panel.id,
+        (p) => ({ ...p, selected: { type: "edge" as const, id: edgeId } }),
+      )
+    );
   }
 
   function addEdge(fromId: string, toId: string) {
@@ -237,10 +247,8 @@ export function NodeInspector(
       edges: s.edges.filter((e) => e.id !== edgeId),
       tabs: s.tabs.map((t) => ({
         ...t,
-        panels: t.panels.map((p) => ({
-          ...p,
-          selectedEdgeId: p.selectedEdgeId === edgeId ? null : p.selectedEdgeId,
-        })),
+        // IDs are globally unique — safe to compare without checking type
+        panels: t.panels.map((p) => p.selected?.id === edgeId ? { ...p, selected: null } : p),
       })),
     }));
   }
@@ -278,7 +286,10 @@ export function NodeInspector(
         <SmallBtn
           label="Export"
           title="copy graph as json"
-          onClick={() => navigator.clipboard.writeText(subgraphJson(node, ws.edges))}
+          onClick={() =>
+            navigator.clipboard.writeText(
+              subgraphJson(node, ws.edges, ws.constraints, ws.constraintApplications),
+            )}
         />
         <SmallBtn label="Delete" onClick={deleteNode} />
         {extraActions}
@@ -349,6 +360,14 @@ export function NodeInspector(
         onDeleteEdge={deleteEdge}
       />
 
+      {/* Constraints */}
+      <ConstraintsAttachedSection
+        entityId={node.id}
+        ws={ws}
+        update={update}
+        onInspectConstraint={onInspectConstraint}
+      />
+
       {/* Data */}
       <div style="display:flex; flex-direction:column; gap:4px;">
         <PropLabel text="Data" />
@@ -400,7 +419,7 @@ export function EdgesSection(
             edge={edge}
             peerLabel={peerLabel}
             dir={dir}
-            isSelected={panel.selectedEdgeId === edge.id}
+            isSelected={panel.selected?.id === edge.id}
             onSelect={() => onSelectEdge(edge.id)}
             onDelete={() => onDeleteEdge(edge.id)}
           />
@@ -468,12 +487,13 @@ export function EdgeRow(
 // ---------------------------------------------------------------------------
 
 export function EdgeInspector(
-  { edge, panel, tab, ws, update }: {
+  { edge, panel, tab, ws, update, onInspectConstraint }: {
     edge: Edge;
     panel: Panel;
     tab: Tab;
     ws: WorkspaceState;
     update: Updater;
+    onInspectConstraint?: (constraintId: string) => void;
   },
 ) {
   const labelInputRef = useRef<HTMLInputElement | null>(null);
@@ -488,7 +508,7 @@ export function EdgeInspector(
   const toNode = findNode(ws.treeNodes, edge.toId);
 
   function closeEdgeView() {
-    update((s) => withPanel(s, tab.id, panel.id, (p) => ({ ...p, selectedEdgeId: null })));
+    update((s) => withPanel(s, tab.id, panel.id, (p) => ({ ...p, selected: null })));
   }
 
   function navigateToNode(nodeId: string) {
@@ -497,7 +517,7 @@ export function EdgeInspector(
         s,
         tab.id,
         panel.id,
-        (p) => ({ ...p, selectedNodeId: nodeId, selectedEdgeId: null }),
+        (p) => ({ ...p, selected: { type: "node" as const, id: nodeId } }),
       )
     );
   }
@@ -508,10 +528,8 @@ export function EdgeInspector(
       edges: s.edges.filter((e) => e.id !== edge.id),
       tabs: s.tabs.map((t) => ({
         ...t,
-        panels: t.panels.map((p) => ({
-          ...p,
-          selectedEdgeId: p.selectedEdgeId === edge.id ? null : p.selectedEdgeId,
-        })),
+        // IDs are globally unique — safe to compare without checking type
+        panels: t.panels.map((p) => p.selected?.id === edge.id ? { ...p, selected: null } : p),
       })),
     }));
   }
@@ -571,6 +589,14 @@ export function EdgeInspector(
           style="background:#0a0a18; border:1px solid #2a2a4a; color:#c0c0e0; font-size:12px; padding:3px 6px; border-radius:3px; width:100%;"
         />
       </div>
+
+      {/* Constraints */}
+      <ConstraintsAttachedSection
+        entityId={edge.id}
+        ws={ws}
+        update={update}
+        onInspectConstraint={onInspectConstraint}
+      />
 
       {/* Data */}
       <div style="display:flex; flex-direction:column; gap:4px;">

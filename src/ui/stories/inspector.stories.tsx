@@ -52,7 +52,7 @@ export function NodeComposite() {
 
   const ws0 = defaultState();
   ws0.treeNodes = [node];
-  ws0.tabs[0].panels[0].selectedNodeId = node.id;
+  ws0.tabs[0].panels[0].selected = { type: "node", id: node.id };
 
   const { tab, panel, initial } = makeStory(ws0);
   const [ws, setWs] = useState<WorkspaceState>(initial);
@@ -77,7 +77,7 @@ export function NodeWithEdges() {
   ws0.edges = [
     { id: "e1", fromId: node.id, toId: sibling.id, label: "calls", data: {}, version: 1 },
   ];
-  ws0.tabs[0].panels[0].selectedNodeId = node.id;
+  ws0.tabs[0].panels[0].selected = { type: "node", id: node.id };
   ws0.tabs[0].panels[0].expandedNodes = [parent.id];
 
   const { tab, initial } = makeStory(ws0);
@@ -115,7 +115,7 @@ function makeEdgeStory() {
   const ws0 = defaultState();
   ws0.treeNodes = [parent];
   ws0.edges = [edge];
-  ws0.tabs[0].panels[0].selectedEdgeId = edge.id;
+  ws0.tabs[0].panels[0].selected = { type: "edge", id: edge.id };
 
   return { ws0, edge };
 }
@@ -147,7 +147,7 @@ export function EdgeUnlabelled() {
   const ws0 = defaultState();
   ws0.treeNodes = [parent];
   ws0.edges = [edge];
-  ws0.tabs[0].panels[0].selectedEdgeId = edge.id;
+  ws0.tabs[0].panels[0].selected = { type: "edge", id: edge.id };
 
   const tab: Tab = ws0.tabs[0];
   const panel: Panel = ws0.tabs[0].panels[0];

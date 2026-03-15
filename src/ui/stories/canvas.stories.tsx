@@ -2,7 +2,18 @@
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useState } from "@hono/hono/jsx/dom";
 import { Canvas } from "../components/canvas.tsx";
-import { defaultState, makeNode, type Updater, type WorkspaceState } from "../workspace.ts";
+import { validateWorkspace } from "../../graph/validate_workspace.ts";
+import {
+  LABEL_REQUIRED_CONSTRAINT,
+  MAX_GROUP_SIZE_CONSTRAINT,
+} from "../../graph/builtin_constraints.ts";
+import {
+  defaultConstraintsPanel,
+  defaultState,
+  makeNode,
+  type Updater,
+  type WorkspaceState,
+} from "../workspace.ts";
 
 export const meta = { title: "Canvas" };
 
@@ -41,7 +52,7 @@ export function WithEdgesAndSelection() {
   const toId = "spike://acme/backend/frontend";
   ws.edges = [{ id: "edge-1", fromId, toId, label: "depends on", data: {}, version: 1 }];
   ws.canvasExpandedNodes = ["spike://acme/backend"];
-  ws.tabs[0].panels[0].selectedNodeId = fromId;
+  ws.tabs[0].panels[0].selected = { type: "node", id: fromId };
   return <StoryWrapper initial={ws} />;
 }
 
@@ -138,4 +149,94 @@ export function BigGraph() {
   ];
   ws.canvasExpandedNodes = ["root", "svc-a", "svc-b"];
   return <StoryWrapper initial={ws} />;
+}
+
+/** Node pre-selected with a failing constraint attached — tests clicking the constraint
+ *  label in the canvas inspector to navigate to the constraint inspector. */
+export function ConstraintInspection() {
+  const ws = defaultState();
+  ws.treeNodes = [
+    makeNode("node-a", "auth-service", "leaf", []),
+    makeNode("node-b", "", "leaf", []),
+  ];
+  ws.constraints = [{ ...LABEL_REQUIRED_CONSTRAINT }];
+  ws.constraintApplications = [
+    { id: "app-1", constraintId: LABEL_REQUIRED_CONSTRAINT.id, entityId: "node-a", version: 1 },
+    { id: "app-2", constraintId: LABEL_REQUIRED_CONSTRAINT.id, entityId: "node-b", version: 1 },
+  ];
+  // Pre-select node-a so the entity inspector is already open
+  ws.canvasSelected = { type: "node", id: "node-a" };
+  // Add a constraints panel so navigating to the constraint inspector has somewhere to land
+  ws.tabs[0].panels.push(defaultConstraintsPanel());
+
+  const [state, setState] = useState<WorkspaceState>(ws);
+  const update: Updater = (fn) => setState((prev) => fn(prev));
+  const diagnostics = validateWorkspace(state, state.constraintApplications);
+
+  return (
+    <div style="display:flex; gap:8px;">
+      <div style="position:relative; width:700px; height:600px; border:1px solid #2a2a4a;">
+        <Canvas ws={state} update={update} diagnostics={diagnostics} />
+      </div>
+      <div style="font-size:11px; color:#555; max-width:180px; line-height:1.5;">
+        <strong style="color:#666;">Steps:</strong>
+        <ol style="padding-left:14px; margin:6px 0;">
+          <li>
+            Click <em>auth-service</em> node to open entity inspector
+          </li>
+          <li>
+            Click the <em>Label Required</em> constraint label in the inspector
+          </li>
+          <li>
+            Canvas inspector should close; constraints panel (right) should open the constraint
+          </li>
+        </ol>
+      </div>
+    </div>
+  );
+}
+
+export function Diagnostics() {
+  // node-no-label: leaf node with empty label — violates LABEL_REQUIRED → error badge
+  // node-big-group: composite node with 6 children — violates MAX_GROUP_SIZE → warning badge
+  const ws = defaultState();
+  ws.treeNodes = [
+    makeNode("root", "platform", "composite", [
+      makeNode("node-no-label", "", "leaf", []),
+      makeNode("node-big-group", "big-group", "composite", [
+        makeNode("c1", "child-1", "leaf", []),
+        makeNode("c2", "child-2", "leaf", []),
+        makeNode("c3", "child-3", "leaf", []),
+        makeNode("c4", "child-4", "leaf", []),
+        makeNode("c5", "child-5", "leaf", []),
+        makeNode("c6", "child-6", "leaf", []),
+      ]),
+    ]),
+  ];
+  ws.constraints = [LABEL_REQUIRED_CONSTRAINT, MAX_GROUP_SIZE_CONSTRAINT];
+  ws.constraintApplications = [
+    {
+      id: "app-1",
+      constraintId: LABEL_REQUIRED_CONSTRAINT.id,
+      entityId: "node-no-label",
+      version: 1,
+    },
+    {
+      id: "app-2",
+      constraintId: MAX_GROUP_SIZE_CONSTRAINT.id,
+      entityId: "node-big-group",
+      version: 1,
+    },
+  ];
+  ws.canvasExpandedNodes = ["root", "node-big-group"];
+
+  const [state, setState] = useState<WorkspaceState>(ws);
+  const update: Updater = (fn) => setState((prev) => fn(prev));
+  const diagnostics = validateWorkspace(state, state.constraintApplications);
+
+  return (
+    <div style="position:relative; width:900px; height:600px; border:1px solid #2a2a4a;">
+      <Canvas ws={state} update={update} diagnostics={diagnostics} />
+    </div>
+  );
 }

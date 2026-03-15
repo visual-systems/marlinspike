@@ -12,6 +12,8 @@ import {
   type WorkspaceState,
 } from "../workspace.ts";
 import { EdgeInspector, NodeInspector } from "./inspector.tsx";
+import { ConstraintInspector } from "./constraints-panel.tsx";
+import type { DiagnosticMap } from "../../graph/diagnostics.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { SmallBtn } from "./widgets.tsx";
 import { type BBox, boundingBox, centerNodes, type ForceNode } from "../lib/force.ts";
@@ -458,19 +460,19 @@ function findPath(nodes: TreeNode[], targetId: string): TreeNode[] {
 // ---------------------------------------------------------------------------
 
 function CanvasInspector(
-  { ws, update, onExpand, onCollapse }: {
+  { ws, update, onExpand, onCollapse, diagnostics }: {
     ws: WorkspaceState;
     update: Updater;
     onExpand: (id: string) => void;
     onCollapse: (id: string) => void;
+    diagnostics: DiagnosticMap;
   },
 ) {
   const fakePanel: Panel = {
     id: "__canvas__",
     type: "tree",
     expandedNodes: [],
-    selectedNodeId: ws.canvasSelectedNodeId,
-    selectedEdgeId: ws.canvasSelectedEdgeId,
+    selected: ws.canvasSelected,
     inspectorSplit: 0.5,
   };
   const fakeTab: Tab = { id: "__canvas_tab__", name: "Canvas", panels: [fakePanel] };
@@ -485,14 +487,36 @@ function CanvasInspector(
       return {
         ...result,
         tabs: result.tabs.filter((t) => t.id !== "__canvas_tab__"),
-        canvasSelectedNodeId: resultPanel?.selectedNodeId ?? null,
-        canvasSelectedEdgeId: resultPanel?.selectedEdgeId ?? null,
+        canvasSelected: resultPanel?.selected ?? null,
       };
     });
   };
 
-  if (ws.canvasSelectedEdgeId) {
-    const edge = ws.edges.find((e) => e.id === ws.canvasSelectedEdgeId);
+  // These two functions use outer `update` (not canvasUpdate) so canvasSelected
+  // is not overridden by the fake-panel mechanism.
+  function canvasInspectConstraint(constraintId: string) {
+    update((s) => ({
+      ...s,
+      canvasSelected: { type: "constraint" as const, id: constraintId },
+      tabs: s.tabs.map((t) => ({
+        ...t,
+        panels: t.panels.map((p) =>
+          p.type === "constraints"
+            ? { ...p, selected: { type: "constraint" as const, id: constraintId } }
+            : p
+        ),
+      })),
+    }));
+  }
+
+  function canvasInspectEntity(entityId: string) {
+    const type = findNode(ws.treeNodes, entityId) ? "node" as const : "edge" as const;
+    update((s) => ({ ...s, canvasSelected: { type, id: entityId } }));
+  }
+
+  if (ws.canvasSelected?.type === "edge") {
+    const sel = ws.canvasSelected;
+    const edge = ws.edges.find((e) => e.id === sel.id);
     if (edge) {
       return (
         <div style="display:flex; flex-direction:column; height:100%; overflow:hidden;">
@@ -503,14 +527,16 @@ function CanvasInspector(
             tab={fakeTab}
             ws={ws}
             update={canvasUpdate}
+            onInspectConstraint={canvasInspectConstraint}
           />
         </div>
       );
     }
   }
 
-  if (ws.canvasSelectedNodeId) {
-    const node = findNode(ws.treeNodes, ws.canvasSelectedNodeId);
+  if (ws.canvasSelected?.type === "node") {
+    const sel = ws.canvasSelected;
+    const node = findNode(ws.treeNodes, sel.id);
     if (node) {
       const isExpanded = ws.canvasExpandedNodes.includes(node.id);
       const expandAction = node.kind === "composite"
@@ -526,6 +552,26 @@ function CanvasInspector(
           ws={ws}
           update={canvasUpdate}
           extraActions={expandAction}
+          onInspectConstraint={canvasInspectConstraint}
+        />
+      );
+    }
+  }
+
+  if (ws.canvasSelected?.type === "constraint") {
+    const sel = ws.canvasSelected;
+    const constraint = ws.constraints.find((c) => c.id === sel.id);
+    if (constraint) {
+      return (
+        <ConstraintInspector
+          key={constraint.id}
+          constraint={constraint}
+          panel={fakePanel}
+          tab={fakeTab}
+          ws={ws}
+          update={canvasUpdate}
+          diagnostics={diagnostics}
+          onInspectEntity={canvasInspectEntity}
         />
       );
     }
@@ -548,15 +594,15 @@ function CanvasTopBar(
   },
 ) {
   function selectNode(id: string) {
-    update((s) => ({ ...s, canvasSelectedNodeId: id, canvasSelectedEdgeId: null }));
+    update((s) => ({ ...s, canvasSelected: { type: "node" as const, id } }));
   }
 
-  const selected = ws.canvasSelectedNodeId;
+  const selectedNodeId = ws.canvasSelected?.type === "node" ? ws.canvasSelected.id : null;
   const items: { node: TreeNode; dimmed: boolean }[] = [];
 
-  if (selected) {
-    const path = findPath(ws.treeNodes, selected);
-    for (const node of path) items.push({ node, dimmed: node.id !== selected });
+  if (selectedNodeId) {
+    const path = findPath(ws.treeNodes, selectedNodeId);
+    for (const node of path) items.push({ node, dimmed: node.id !== selectedNodeId });
   } else {
     for (const node of ws.treeNodes) items.push({ node, dimmed: true });
   }
@@ -662,7 +708,14 @@ interface InteractionState {
   onNodeHover: (id: string | null) => void;
 }
 
-export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) {
+export function Canvas(
+  { ws, update, diagnostics = {}, highlightEntityIds }: {
+    ws: WorkspaceState;
+    update: Updater;
+    diagnostics?: DiagnosticMap;
+    highlightEntityIds?: Set<string>;
+  },
+) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const inspectorRef = useRef<HTMLDivElement | null>(null);
@@ -822,7 +875,7 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
       dragRef.current = null;
     }
     if (panRef.current && !panRef.current.hasMoved && modeRef.current === "select") {
-      update((s) => ({ ...s, canvasSelectedNodeId: null, canvasSelectedEdgeId: null }));
+      update((s) => ({ ...s, canvasSelected: null }));
     }
     panRef.current = null;
     document.removeEventListener("mousemove", onDocMouseMove as EventListener);
@@ -857,7 +910,7 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
       // Background click: return to select mode and clear everything (same as Escape)
       setEdgeDraw(null);
       setMode("select");
-      update((s) => ({ ...s, canvasSelectedNodeId: null, canvasSelectedEdgeId: null }));
+      update((s) => ({ ...s, canvasSelected: null }));
       return;
     }
     panRef.current = {
@@ -911,18 +964,22 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
   }
 
   function selectNode(nodeId: string) {
+    // IDs are globally unique — safe to compare without checking type
     update((s) => ({
       ...s,
-      canvasSelectedNodeId: s.canvasSelectedNodeId === nodeId ? null : nodeId,
-      canvasSelectedEdgeId: null,
+      canvasSelected: s.canvasSelected?.id === nodeId
+        ? null
+        : { type: "node" as const, id: nodeId },
     }));
   }
 
   function selectEdge(edgeId: string) {
+    // IDs are globally unique — safe to compare without checking type
     update((s) => ({
       ...s,
-      canvasSelectedEdgeId: s.canvasSelectedEdgeId === edgeId ? null : edgeId,
-      canvasSelectedNodeId: null,
+      canvasSelected: s.canvasSelected?.id === edgeId
+        ? null
+        : { type: "edge" as const, id: edgeId },
     }));
   }
 
@@ -947,17 +1004,18 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
       return {
         ...s,
         canvasExpandedNodes: s.canvasExpandedNodes.filter((id) => !toRemove.has(id)),
-        canvasSelectedNodeId: toRemove.has(s.canvasSelectedNodeId ?? "")
+        // IDs are globally unique — safe to compare without checking type
+        canvasSelected: s.canvasSelected && toRemove.has(s.canvasSelected.id)
           ? null
-          : s.canvasSelectedNodeId,
+          : s.canvasSelected,
       };
     });
   }
 
   const expandedSet = new Set(ws.canvasExpandedNodes);
-  const selectedNodeId = ws.canvasSelectedNodeId;
-  const selectedEdgeId = ws.canvasSelectedEdgeId;
-  const hasSelection = selectedNodeId !== null || selectedEdgeId !== null;
+  // IDs are globally unique — a single selectedId covers both node and edge selection
+  const selectedId = ws.canvasSelected?.id ?? null;
+  const hasSelection = ws.canvasSelected != null;
 
   const interaction: InteractionState = {
     mode,
@@ -978,7 +1036,7 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
         if (e.key === "Escape") {
           setMode("select");
           setEdgeDraw(null);
-          update((s) => ({ ...s, canvasSelectedNodeId: null, canvasSelectedEdgeId: null }));
+          update((s) => ({ ...s, canvasSelected: null }));
         }
       }}
     >
@@ -997,8 +1055,7 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
             layout,
             expandedSet,
             ws,
-            selectedNodeId,
-            selectedEdgeId,
+            selectedId,
             selectNode,
             selectEdge,
             expandNode,
@@ -1006,6 +1063,8 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
             startDrag,
             interaction,
             { x: 0, y: 0 },
+            diagnostics,
+            highlightEntityIds ?? new Set(),
           )}
           {/* Ghost edge line while drawing */}
           {mode === "add-edge" && edgeDraw && mouseCanvas && (() => {
@@ -1046,6 +1105,7 @@ export function Canvas({ ws, update }: { ws: WorkspaceState; update: Updater }) 
             update={update}
             onExpand={expandNode}
             onCollapse={collapseNode}
+            diagnostics={diagnostics}
           />
         </div>
       )}
@@ -1072,8 +1132,7 @@ function renderLevel(
   layout: LayoutMap,
   expandedSet: Set<string>,
   ws: WorkspaceState,
-  selectedNodeId: string | null,
-  selectedEdgeId: string | null,
+  selectedId: string | null,
   onSelectNode: (id: string) => void,
   onSelectEdge: (id: string) => void,
   onExpand: (id: string) => void,
@@ -1081,6 +1140,8 @@ function renderLevel(
   startDrag: StartDragFn,
   interaction: InteractionState,
   worldOffset: { x: number; y: number },
+  diagnostics: DiagnosticMap,
+  highlightEntityIds: Set<string>,
 ): unknown {
   const level = layout.get(levelId);
   if (!level) return null;
@@ -1099,7 +1160,7 @@ function renderLevel(
       {nodes.map((node) => {
         const pos = posMap.get(node.id);
         if (!pos) return null;
-        const isSelected = selectedNodeId === node.id;
+        const isSelected = selectedId === node.id;
         const isExpanded = expandedSet.has(node.id) && node.kind === "composite";
 
         if (isExpanded) {
@@ -1113,8 +1174,7 @@ function renderLevel(
                   layout,
                   expandedSet,
                   ws,
-                  selectedNodeId,
-                  selectedEdgeId,
+                  selectedId,
                   onSelectNode,
                   onSelectEdge,
                   onExpand,
@@ -1122,6 +1182,8 @@ function renderLevel(
                   startDrag,
                   interaction,
                   { x: worldOffset.x + pos.x, y: worldOffset.y + pos.y },
+                  diagnostics,
+                  highlightEntityIds,
                 )}
               </g>
             );
@@ -1136,6 +1198,26 @@ function renderLevel(
           const rw = bb ? bb.w : pos.w;
           const rh = bb ? bb.h + LABEL_H : pos.h;
 
+          // Constraint visual state for expanded group rect
+          const groupDiags = diagnostics[node.id] ?? [];
+          const groupHasError = groupDiags.some((d) => d.severity === "error");
+          const groupHasWarning = !groupHasError &&
+            groupDiags.some((d) => d.severity === "warning");
+          const groupIsHighlighted = highlightEntityIds.has(node.id);
+          const groupStroke = groupHasError
+            ? "#c04040"
+            : groupHasWarning
+            ? "#c08020"
+            : isSelected
+            ? "#4060b0"
+            : groupIsHighlighted
+            ? "#50c070"
+            : "#1e1e44";
+          const groupStrokeWidth = isSelected || groupHasError || groupHasWarning ||
+              groupIsHighlighted
+            ? 2
+            : 1;
+
           return (
             <g key={node.id} transform={`translate(${pos.x}, ${pos.y})`}>
               <rect
@@ -1143,9 +1225,9 @@ function renderLevel(
                 y={ry}
                 width={rw}
                 height={rh}
-                fill="#0f0f28"
-                stroke={isSelected ? "#4060b0" : "#1e1e44"}
-                stroke-width={isSelected ? 2 : 1}
+                fill={groupHasError ? "#1a0f0f" : "#0f0f28"}
+                stroke={groupStroke}
+                stroke-width={groupStrokeWidth}
                 rx={8}
                 ry={8}
                 style="cursor:pointer;"
@@ -1170,20 +1252,30 @@ function renderLevel(
               <text
                 x={rx + 10}
                 y={ry + LABEL_H - 6}
-                fill={isSelected ? "#8090c0" : "#444466"}
+                fill={isSelected ? "#8090c0" : groupHasError ? "#c07070" : "#444466"}
                 font-size="11"
                 style="user-select:none; pointer-events:none;"
               >
                 {node.label}
               </text>
+              {(groupHasError || groupHasWarning) && (
+                <circle
+                  cx={rx + rw - 8}
+                  cy={ry + 8}
+                  r={5}
+                  fill={groupHasError ? "#c04040" : "#c08020"}
+                  stroke="#0d0d1e"
+                  stroke-width={1}
+                  style="pointer-events:none;"
+                />
+              )}
               {renderLevel(
                 node.children,
                 node.id,
                 layout,
                 expandedSet,
                 ws,
-                selectedNodeId,
-                selectedEdgeId,
+                selectedId,
                 onSelectNode,
                 onSelectEdge,
                 onExpand,
@@ -1191,6 +1283,8 @@ function renderLevel(
                 startDrag,
                 interaction,
                 { x: worldOffset.x + pos.x, y: worldOffset.y + pos.y },
+                diagnostics,
+                highlightEntityIds,
               )}
             </g>
           );
@@ -1214,21 +1308,45 @@ function renderLevel(
           !isEdgeSource && !isCandidate;
         const isHovered = interaction.hoveredNodeId === node.id && isCandidate;
 
-        const fill = isEdgeSource || isHovered || isSelected
+        // Constraint visual state — fill persists even when selected (stroke shows selection)
+        const nodeDiags = diagnostics[node.id] ?? [];
+        const hasError = nodeDiags.some((d) => d.severity === "error");
+        const hasWarning = !hasError && nodeDiags.some((d) => d.severity === "warning");
+        const isHighlighted = highlightEntityIds.has(node.id);
+
+        const fill = isEdgeSource || isHovered
+          ? "#1e2a4a"
+          : hasError
+          ? "#2a1a1a"
+          : isSelected
           ? "#1e2a4a"
           : isComposite
           ? "#141430"
           : "#111125";
-        const stroke = isEdgeSource || isSelected
+        const stroke = isEdgeSource
           ? "#5070c0"
           : isHovered
           ? "#6080e0"
+          : hasError
+          ? "#c04040"
+          : hasWarning
+          ? "#c08020"
+          : isSelected
+          ? "#5070c0"
           : isCandidate
           ? "#3050a0"
+          : isHighlighted
+          ? "#50c070"
           : isComposite
           ? "#303060"
           : "#252545";
-        const strokeWidth = isEdgeSource || isSelected || isHovered ? 2 : isCandidate ? 1.5 : 1;
+        const strokeWidth = isEdgeSource || isSelected || isHovered
+          ? 2
+          : isCandidate
+          ? 1.5
+          : hasError || hasWarning || isHighlighted
+          ? 1.5
+          : 1;
         const nodeCursor = interaction.mode === "add-edge"
           ? (isCandidate || isEdgeSource ? "crosshair" : "default")
           : "pointer";
@@ -1272,6 +1390,17 @@ function renderLevel(
               stroke={stroke}
               stroke-width={strokeWidth}
             />
+            {(hasError || hasWarning) && (
+              <circle
+                cx={r - 2}
+                cy={-(r - 2)}
+                r={5}
+                fill={hasError ? "#c04040" : "#c08020"}
+                stroke="#0d0d1e"
+                stroke-width={1}
+                style="pointer-events:none;"
+              />
+            )}
             <text
               x={0}
               y={hasChildren ? -3 : 3}
@@ -1390,7 +1519,7 @@ function renderLevel(
             r,
             sweep,
             arcC: edgeArcC,
-            isSelected: selectedEdgeId === edge.id,
+            isSelected: selectedId === edge.id,
           });
         }
 
