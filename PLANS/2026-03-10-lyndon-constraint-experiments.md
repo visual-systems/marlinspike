@@ -115,7 +115,7 @@ exists to apply them manually; stories demonstrate the full flow.
 
 ## Verification
 
-- [ ] `NO_COLOR=1 deno task fmt && deno task lint && deno task check && deno task check-ui && deno task test` all pass
+- [x] `NO_COLOR=1 deno task fmt && deno task lint && deno task check && deno task check-ui && deno task test` all pass
 - [x] "+ Constraints View" opens a panel; can add/delete constraints
 - [x] Constraint inspector fields edit correctly
 - [x] "Applied To" attach/detach works from both constraint inspector and entity inspector
