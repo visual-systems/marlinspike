@@ -12,6 +12,7 @@ import {
   type WorkspaceState,
 } from "../workspace.ts";
 import { EdgeInspector, NodeInspector } from "./inspector.tsx";
+import { ConstraintInspector } from "./constraints-panel.tsx";
 import type { DiagnosticMap } from "../../graph/diagnostics.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { SmallBtn } from "./widgets.tsx";
@@ -459,11 +460,12 @@ function findPath(nodes: TreeNode[], targetId: string): TreeNode[] {
 // ---------------------------------------------------------------------------
 
 function CanvasInspector(
-  { ws, update, onExpand, onCollapse }: {
+  { ws, update, onExpand, onCollapse, diagnostics }: {
     ws: WorkspaceState;
     update: Updater;
     onExpand: (id: string) => void;
     onCollapse: (id: string) => void;
+    diagnostics: DiagnosticMap;
   },
 ) {
   const fakePanel: Panel = {
@@ -490,6 +492,23 @@ function CanvasInspector(
     });
   };
 
+  // Inspect a constraint from within the canvas entity inspector.
+  // Uses outer `update` (not canvasUpdate) so canvasSelected is not overridden.
+  function canvasInspectConstraint(constraintId: string) {
+    update((s) => ({
+      ...s,
+      canvasSelected: { type: "constraint" as const, id: constraintId },
+      tabs: s.tabs.map((t) => ({
+        ...t,
+        panels: t.panels.map((p) =>
+          p.type === "constraints"
+            ? { ...p, selected: { type: "constraint" as const, id: constraintId } }
+            : p
+        ),
+      })),
+    }));
+  }
+
   if (ws.canvasSelected?.type === "edge") {
     const sel = ws.canvasSelected;
     const edge = ws.edges.find((e) => e.id === sel.id);
@@ -503,6 +522,7 @@ function CanvasInspector(
             tab={fakeTab}
             ws={ws}
             update={canvasUpdate}
+            onInspectConstraint={canvasInspectConstraint}
           />
         </div>
       );
@@ -527,6 +547,30 @@ function CanvasInspector(
           ws={ws}
           update={canvasUpdate}
           extraActions={expandAction}
+          onInspectConstraint={canvasInspectConstraint}
+        />
+      );
+    }
+  }
+
+  if (ws.canvasSelected?.type === "constraint") {
+    const sel = ws.canvasSelected;
+    const constraint = ws.constraints.find((c) => c.id === sel.id);
+    if (constraint) {
+      function canvasInspectEntity(entityId: string) {
+        const type = findNode(ws.treeNodes, entityId) ? "node" as const : "edge" as const;
+        update((s) => ({ ...s, canvasSelected: { type, id: entityId } }));
+      }
+      return (
+        <ConstraintInspector
+          key={constraint.id}
+          constraint={constraint}
+          panel={fakePanel}
+          tab={fakeTab}
+          ws={ws}
+          update={canvasUpdate}
+          diagnostics={diagnostics}
+          onInspectEntity={canvasInspectEntity}
         />
       );
     }
@@ -1060,6 +1104,7 @@ export function Canvas(
             update={update}
             onExpand={expandNode}
             onCollapse={collapseNode}
+            diagnostics={diagnostics}
           />
         </div>
       )}

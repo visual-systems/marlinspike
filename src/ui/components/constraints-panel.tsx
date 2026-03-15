@@ -267,14 +267,15 @@ function ConstraintRow(
 // ConstraintInspector
 // ---------------------------------------------------------------------------
 
-function ConstraintInspector(
-  { constraint, panel, tab, ws, update, diagnostics }: {
+export function ConstraintInspector(
+  { constraint, panel, tab, ws, update, diagnostics, onInspectEntity }: {
     constraint: Constraint;
     panel: Panel;
     tab: Tab;
     ws: WorkspaceState;
     update: Updater;
     diagnostics: DiagnosticMap;
+    onInspectEntity?: (entityId: string) => void;
   },
 ) {
   const [editingLabel, setEditingLabel] = useState(false);
@@ -475,7 +476,9 @@ function ConstraintInspector(
               <span
                 style={`flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; ${
                   hasDiags ? "color:#c04040;" : "color:#7070a0;"
-                }`}
+                }${onInspectEntity ? " cursor:pointer;" : ""}`}
+                title={onInspectEntity ? "Inspect entity" : undefined}
+                onClick={onInspectEntity ? () => onInspectEntity(app.entityId) : undefined}
               >
                 {label}
               </span>
@@ -625,10 +628,11 @@ function countDiagnostics(
 // ---------------------------------------------------------------------------
 
 export function ConstraintsAttachedSection(
-  { entityId, ws, update }: {
+  { entityId, ws, update, onInspectConstraint }: {
     entityId: string;
     ws: WorkspaceState;
     update: Updater;
+    onInspectConstraint?: (constraintId: string) => void;
   },
 ) {
   const attached = getConstraintsForEntity(ws.constraintApplications, ws.constraints, entityId);
@@ -682,7 +686,7 @@ export function ConstraintsAttachedSection(
           <span
             style="flex:1; color:#7070a0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;"
             title="Inspect constraint"
-            onClick={() => inspectConstraint(c.id)}
+            onClick={() => (onInspectConstraint ?? inspectConstraint)(c.id)}
           >
             {c.label}
           </span>

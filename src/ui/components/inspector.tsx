@@ -95,13 +95,14 @@ function CopyField({ title, value }: { title: string; value: string }) {
 // ---------------------------------------------------------------------------
 
 export function NodeInspector(
-  { node, panel, tab, ws, update, extraActions }: {
+  { node, panel, tab, ws, update, extraActions, onInspectConstraint }: {
     node: TreeNode;
     panel: Panel;
     tab: Tab;
     ws: WorkspaceState;
     update: Updater;
     extraActions?: unknown;
+    onInspectConstraint?: (constraintId: string) => void;
   },
 ) {
   const [editingLabel, setEditingLabel] = useState(false);
@@ -360,7 +361,7 @@ export function NodeInspector(
       />
 
       {/* Constraints */}
-      <ConstraintsAttachedSection entityId={node.id} ws={ws} update={update} />
+      <ConstraintsAttachedSection entityId={node.id} ws={ws} update={update} onInspectConstraint={onInspectConstraint} />
 
       {/* Data */}
       <div style="display:flex; flex-direction:column; gap:4px;">
@@ -481,12 +482,13 @@ export function EdgeRow(
 // ---------------------------------------------------------------------------
 
 export function EdgeInspector(
-  { edge, panel, tab, ws, update }: {
+  { edge, panel, tab, ws, update, onInspectConstraint }: {
     edge: Edge;
     panel: Panel;
     tab: Tab;
     ws: WorkspaceState;
     update: Updater;
+    onInspectConstraint?: (constraintId: string) => void;
   },
 ) {
   const labelInputRef = useRef<HTMLInputElement | null>(null);
@@ -584,7 +586,7 @@ export function EdgeInspector(
       </div>
 
       {/* Constraints */}
-      <ConstraintsAttachedSection entityId={edge.id} ws={ws} update={update} />
+      <ConstraintsAttachedSection entityId={edge.id} ws={ws} update={update} onInspectConstraint={onInspectConstraint} />
 
       {/* Data */}
       <div style="display:flex; flex-direction:column; gap:4px;">
