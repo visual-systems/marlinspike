@@ -32,16 +32,19 @@ function StoryCanvas({
   treeNodes,
   edges = [],
   expandedNodes = [],
+  focusId = null,
 }: {
   treeNodes: TreeNode[];
   edges?: Edge[];
   expandedNodes?: string[];
+  focusId?: string | null;
 }) {
   const initial: WorkspaceState = {
     ...defaultState(),
     treeNodes,
     edges,
     canvasExpandedNodes: expandedNodes,
+    focusId,
   };
   const [ws, setWs] = useState<WorkspaceState>(initial);
   const update: Updater = (fn) => setWs((prev) => fn(prev));
@@ -142,10 +145,13 @@ export function SubgraphLeafOnly() {
       canvas={
         <StoryCanvas
           treeNodes={[
-            makeNode("A", "A", "leaf", []),
-            makeNode("B", "B", "leaf", []),
-            makeNode("C", "C", "leaf", []),
+            makeNode("my-graph", "my-graph", "composite", [
+              makeNode("A", "A", "leaf", []),
+              makeNode("B", "B", "leaf", []),
+              makeNode("C", "C", "leaf", []),
+            ]),
           ]}
+          focusId="my-graph"
         />
       }
       graph={{
@@ -180,12 +186,15 @@ export function SubgraphNested() {
       canvas={
         <StoryCanvas
           treeNodes={[
-            makeNode("B", "B", "leaf", []),
-            makeNode("C", "C", "composite", [
-              makeNode("D", "D", "leaf", []),
+            makeNode("A", "A", "composite", [
+              makeNode("B", "B", "leaf", []),
+              makeNode("C", "C", "composite", [
+                makeNode("D", "D", "leaf", []),
+              ]),
             ]),
           ]}
           expandedNodes={["C"]}
+          focusId="A"
         />
       }
       graph={{
@@ -398,33 +407,22 @@ export function MixedSemantics() {
       canvas={
         <StoryCanvas
           treeNodes={[
-            makeNode("ingress", "ingress", "leaf", []),
-            makeNode("processor", "processor", "composite", [
-              makeNode("validate", "validate", "leaf", []),
-              makeNode("enrich", "enrich", "leaf", []),
-              makeNode("respond", "respond", "leaf", []),
+            makeNode("auth-service", "auth-service", "composite", [
+              makeNode("ingress", "ingress", "leaf", []),
+              makeNode("processor", "processor", "composite", [
+                makeNode("validate", "validate", "leaf", []),
+                makeNode("enrich", "enrich", "leaf", []),
+                makeNode("respond", "respond", "leaf", []),
+              ]),
+              makeNode("egress", "egress", "leaf", []),
             ]),
-            makeNode("egress", "egress", "leaf", []),
           ]}
           edges={[
-            {
-              id: "e-validate-enrich",
-              fromId: "validate",
-              toId: "enrich",
-              label: "",
-              data: {},
-              version: 1,
-            },
-            {
-              id: "e-enrich-respond",
-              fromId: "enrich",
-              toId: "respond",
-              label: "",
-              data: {},
-              version: 1,
-            },
+            { id: "e-ve", fromId: "validate", toId: "enrich", label: "", data: {}, version: 1 },
+            { id: "e-er", fromId: "enrich", toId: "respond", label: "", data: {}, version: 1 },
           ]}
           expandedNodes={["processor"]}
+          focusId="auth-service"
         />
       }
       graph={{
@@ -463,19 +461,15 @@ export function PortNodes() {
       canvas={
         <StoryCanvas
           treeNodes={[
-            makeNode("ingress", "ingress", "leaf", []),
-            makeNode("validator", "validator", "leaf", []),
+            makeNode("auth-service", "auth-service", "composite", [
+              makeNode("ingress", "ingress", "leaf", []),
+              makeNode("validator", "validator", "leaf", []),
+            ]),
           ]}
           edges={[
-            {
-              id: "e-0",
-              fromId: "ingress",
-              toId: "validator",
-              label: "",
-              data: {},
-              version: 1,
-            },
+            { id: "e-0", fromId: "ingress", toId: "validator", label: "", data: {}, version: 1 },
           ]}
+          focusId="auth-service"
         />
       }
       graph={{
@@ -532,13 +526,16 @@ export function SubgraphInliningVsUri() {
         canvas={
           <StoryCanvas
             treeNodes={[
-              makeNode("processor", "processor", "composite", [
-                makeNode("validate", "validate", "leaf", []),
-                makeNode("enrich", "enrich", "leaf", []),
-                makeNode("respond", "respond", "leaf", []),
+              makeNode("auth-service", "auth-service", "composite", [
+                makeNode("processor", "processor", "composite", [
+                  makeNode("validate", "validate", "leaf", []),
+                  makeNode("enrich", "enrich", "leaf", []),
+                  makeNode("respond", "respond", "leaf", []),
+                ]),
               ]),
             ]}
             expandedNodes={["processor"]}
+            focusId="auth-service"
           />
         }
         graph={{ note: "processor subgraph inlined — full structure visible." }}
@@ -550,8 +547,11 @@ export function SubgraphInliningVsUri() {
         canvas={
           <StoryCanvas
             treeNodes={[
-              makeNode("processor", "processor", "composite", []),
+              makeNode("auth-service", "auth-service", "composite", [
+                makeNode("processor", "processor", "composite", []),
+              ]),
             ]}
+            focusId="auth-service"
           />
         }
         graph={{
@@ -585,7 +585,12 @@ export function PropertiesMap() {
       lisp={lisp}
       canvas={
         <StoryCanvas
-          treeNodes={[makeNode("worker", "worker", "leaf", [])]}
+          treeNodes={[
+            makeNode("my-graph", "my-graph", "composite", [
+              makeNode("worker", "worker", "leaf", []),
+            ]),
+          ]}
+          focusId="my-graph"
         />
       }
       graph={{
@@ -625,8 +630,11 @@ export function AlternativeImplementations() {
       canvas={
         <StoryCanvas
           treeNodes={[
-            makeNode("payment-processor", "payment-processor", "leaf", []),
+            makeNode("billing-service", "billing-service", "composite", [
+              makeNode("payment-processor", "payment-processor", "leaf", []),
+            ]),
           ]}
+          focusId="billing-service"
         />
       }
       graph={{
