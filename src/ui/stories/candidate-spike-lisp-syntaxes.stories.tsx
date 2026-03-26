@@ -596,7 +596,10 @@ export function PropertiesMap() {
         <StoryCanvas
           treeNodes={[
             makeNode("my-graph", "my-graph", "composite", [
-              makeNode("worker", "worker", "leaf", []),
+              {
+                ...makeNode("worker", "worker", "leaf", []),
+                data: { "retry-limit": 3, "timeout-ms": 5000, tags: ["critical", "async"] },
+              },
             ]),
           ]}
           focusId="my-graph"
