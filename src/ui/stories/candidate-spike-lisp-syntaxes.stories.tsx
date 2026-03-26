@@ -348,32 +348,41 @@ export function CallDiamond() {
   const lisp = `
 ; A -> B, A -> C, B -> D, C -> D
 ;
-; Diamond expressed by repeating D as the target of both branches:
+; Candidate A — implicit: D appears twice, deduplicated by label identity.
+; Problem: fragile if two distinct nodes share a label.
 #Call (A (B D) (C D))
-;
-; D appears twice but refers to the same node.
-; The interpreter deduplicates by symbol identity.`;
+
+; Candidate B — explicit let binding: d is a named reference to node D.
+; Both branches share the same binding. No implicit deduplication needed.
+#Call (let [d D]
+  (A (B d) (C d)))
+
+; Candidate C — explicit :id on each occurrence.
+; Verbose but unambiguous even when labels collide.
+#Call (A (B (D :id "node-d")) (C (D :id "node-d")))`;
+
+  const diamondCanvas = (
+    <StoryCanvas
+      treeNodes={[
+        makeNode("A", "A", "leaf", []),
+        makeNode("B", "B", "leaf", []),
+        makeNode("C", "C", "leaf", []),
+        makeNode("D", "D", "leaf", []),
+      ]}
+      edges={[
+        { id: "e-AB", fromId: "A", toId: "B", label: "", data: {}, version: 1 },
+        { id: "e-AC", fromId: "A", toId: "C", label: "", data: {}, version: 1 },
+        { id: "e-BD", fromId: "B", toId: "D", label: "", data: {}, version: 1 },
+        { id: "e-CD", fromId: "C", toId: "D", label: "", data: {}, version: 1 },
+      ]}
+    />
+  );
 
   return (
     <Story
-      title="Call — diamond A → B → D ← C ← A"
+      title="Call — diamond A → B → D ← C ← A (node identity candidates)"
       lisp={lisp}
-      canvas={
-        <StoryCanvas
-          treeNodes={[
-            makeNode("A", "A", "leaf", []),
-            makeNode("B", "B", "leaf", []),
-            makeNode("C", "C", "leaf", []),
-            makeNode("D", "D", "leaf", []),
-          ]}
-          edges={[
-            { id: "e-AB", fromId: "A", toId: "B", label: "", data: {}, version: 1 },
-            { id: "e-AC", fromId: "A", toId: "C", label: "", data: {}, version: 1 },
-            { id: "e-BD", fromId: "B", toId: "D", label: "", data: {}, version: 1 },
-            { id: "e-CD", fromId: "C", toId: "D", label: "", data: {}, version: 1 },
-          ]}
-        />
-      }
+      canvas={diamondCanvas}
       graph={{
         nodes: { A: {}, B: {}, C: {}, D: {} },
         edges: {
@@ -383,7 +392,7 @@ export function CallDiamond() {
           "e-CD": { from: { node: "C", port: "out" }, to: { node: "D", port: "in" } },
         },
       }}
-      notes="The diamond falls naturally out of the fan-out syntax: (A (B D) (C D)) = A fans out to B and C; both call D. Symbol D is deduplicated — one node, two incoming edges."
+      notes="All three candidates produce the same graph. Candidate A (implicit) is concise but fragile — two distinct nodes with label 'D' would incorrectly merge. Candidate B (let) is the Lisp-idiomatic resolution and also addresses pure fan-in and named-wire semantics. Candidate C (explicit :id) is unambiguous but verbose."
     />
   );
 }

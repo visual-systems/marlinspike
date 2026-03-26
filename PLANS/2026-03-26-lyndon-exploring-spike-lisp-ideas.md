@@ -92,10 +92,14 @@ Spike-Lisp is a **two-layer system**:
 - **Port node notation** — `:port (in ...)` inline on a node form vs a separate declaration. Stories will explore this.
 - **Properties bag** — `Node.properties` is `Record<string, unknown>`; render as an EDN map `{:key val}` attached to the node form.
 - **Workspace migration** — bridge exploration will reveal whether `TreeNode` should grow port-node support or stay as a UI-layer simplification.
+- **Node identity in `#Call` — implicit label deduplication is fragile** — `#Call (A (B D) (C D))` relies on `D` appearing twice meaning the *same* node by label identity. Two nodes with the same label would incorrectly collapse; labels aren't stable IDs. Two candidate resolutions:
+  1. **Explicit ID/URI** — nodes carry an explicit `:id` or URI: `(B :id "d" D)` and `(C :id "d" D)` — verbose for inline graphs
+  2. **Let binding** — `#Call (let [d D] (A (B d) (C d)))` — `d` is a local name bound to node `D`; both branches reference the same binding. This is the cleaner resolution and also addresses pure fan-in and named-wire semantics (see below). Note: `let` was already anticipated in the original `#Call` description.
+
 - **Mixing `#Subgraph`/`#Call` vs. separate metadata** — `#Call` inside `#Subgraph` contributes nodes + edges to the containing graph; `#Subgraph` inside `#Call` defines a composite node inline. This handles most wiring and structure without a separate metadata system. Three known gaps where nesting breaks down:
   1. **Edge properties** — per-edge metadata (label, type, retry policy) has no slot in pure structural nesting; needs some decoration form e.g. `(#edge :label "retry" B)`
-  2. **Pure fan-in** — two independent sources converging on one target with no shared caller can't be expressed caller-first; needs source-set syntax `((A B) C)` or shared symbols
-  3. **Let/binding** — naming intermediate values in dataflow (`let result = A(x) in B(result, y)`) is inherently flat; nesting gives the topology but loses named-wire semantics
+  2. **Pure fan-in** — two independent sources converging on one target with no shared caller can't be expressed caller-first; let binding may resolve this: `(let [c C] (A c) (B c))`
+  3. **Let/binding** — naming intermediate values in dataflow (`let result = A(x) in B(result, y)`) is inherently flat; nesting gives the topology but loses named-wire semantics; `let` addresses this directly
 
 ## Critical Files
 
