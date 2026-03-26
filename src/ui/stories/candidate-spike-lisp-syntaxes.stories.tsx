@@ -406,8 +406,11 @@ export function MixedSemantics() {
 ; A service graph (structural) containing a processing pipeline (call chain)
 #Subgraph (auth-service
   ingress
-  (#Call processor (validate (enrich respond)))
-  egress)`;
+  #Call (processor (validate (enrich respond)))
+  egress)
+
+; #Call is a reader tag applied to the next form — same usage as #Subgraph.
+; Both sit at the same syntactic level: tag applied to the following list.`;
 
   return (
     <Story
