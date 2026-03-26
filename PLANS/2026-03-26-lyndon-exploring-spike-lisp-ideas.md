@@ -92,6 +92,10 @@ Spike-Lisp is a **two-layer system**:
 - **Port node notation** — `:port (in ...)` inline on a node form vs a separate declaration. Stories will explore this.
 - **Properties bag** — `Node.properties` is `Record<string, unknown>`; render as an EDN map `{:key val}` attached to the node form.
 - **Workspace migration** — bridge exploration will reveal whether `TreeNode` should grow port-node support or stay as a UI-layer simplification.
+- **Mixing `#Subgraph`/`#Call` vs. separate metadata** — `#Call` inside `#Subgraph` contributes nodes + edges to the containing graph; `#Subgraph` inside `#Call` defines a composite node inline. This handles most wiring and structure without a separate metadata system. Three known gaps where nesting breaks down:
+  1. **Edge properties** — per-edge metadata (label, type, retry policy) has no slot in pure structural nesting; needs some decoration form e.g. `(#edge :label "retry" B)`
+  2. **Pure fan-in** — two independent sources converging on one target with no shared caller can't be expressed caller-first; needs source-set syntax `((A B) C)` or shared symbols
+  3. **Let/binding** — naming intermediate values in dataflow (`let result = A(x) in B(result, y)`) is inherently flat; nesting gives the topology but loses named-wire semantics
 
 ## Critical Files
 
@@ -113,3 +117,8 @@ Spike-Lisp is a **two-layer system**:
 - [ ] Round-trip: `interpret(parse(serialize(fixture)))` deep-equals fixture for each story's graph
 - [ ] Bridge: `treeNodeToGraph` runs on the default workspace tree without throwing
 - [ ] DESIGN.md updated with the two-layer architecture
+
+## Other deferred item to push back into design
+
+* Try two-finger pan, pinch to zoom. Instead of drag to zoom.
+* A data explorer modal to render data style information larger
