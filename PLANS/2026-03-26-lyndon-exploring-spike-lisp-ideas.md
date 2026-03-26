@@ -98,7 +98,7 @@ Spike-Lisp is a **two-layer system**:
 
 - **Mixing `#Subgraph`/`#Call` vs. separate metadata** — `#Call` inside `#Subgraph` contributes nodes + edges to the containing graph; `#Subgraph` inside `#Call` defines a composite node inline. This handles most wiring and structure without a separate metadata system. Three known gaps where nesting breaks down:
   1. **Edge properties** — per-edge metadata (label, type, retry policy) has no slot in pure structural nesting; needs some decoration form e.g. `(#edge :label "retry" B)`
-  2. **Pure fan-in** — two independent sources converging on one target with no shared caller can't be expressed caller-first; let binding may resolve this: `(let [c C] (A c) (B c))`
+  2. **Pure fan-in** — `((A B) C)` is not viable: it implies A→B (which doesn't exist), and a `#Subgraph` grouping would require edges to transgress subgraph boundaries implicitly. Let binding is the correct resolution: `(let [c C] (A c) (B c))` — c is a named reference; A and B call it independently with no implied relationship between A and B
   3. **Let/binding** — naming intermediate values in dataflow (`let result = A(x) in B(result, y)`) is inherently flat; nesting gives the topology but loses named-wire semantics; `let` addresses this directly
 
 ## Critical Files

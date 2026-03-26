@@ -304,12 +304,18 @@ export function CallFanIn() {
   const lisp = `
 ; A -> C, B -> C  (pure fan-in, no common source)
 ;
-; Candidate: parenthesised source set
-#Call ((A B) C)
+; NOT this — ((A B) C) implies A->B which doesn't exist.
+; A #Subgraph grouping would be even worse: edges must not
+; transgress subgraph boundaries implicitly.
 ;
-; Tension: the nesting model is caller-first.
-; Fan-in has no natural single "head" — this needs
-; an explicit grouping syntax to name the callers.`;
+; Candidate A — let binding (preferred)
+#Call (let [c C]
+  (A c)
+  (B c))
+;
+; Candidate B — explicit :id, two separate chains sharing a node
+#Call (A (C :id "node-c"))
+#Call (B (C :id "node-c"))`;
 
   return (
     <Story
@@ -335,7 +341,7 @@ export function CallFanIn() {
           "e-BC": { from: { node: "B", port: "out" }, to: { node: "C", port: "in" } },
         },
       }}
-      notes="Pure fan-in is awkward in the caller-first nesting model. (A B) as a source set is a candidate — but it's syntactically ambiguous with a nested subgraph containing A and B."
+      notes="((A B) C) is not viable — it implies A→B which doesn't exist, and a #Subgraph grouping would transgress subgraph boundaries. Let binding is the cleaner resolution: c is a named reference to C; both A and B call it independently."
     />
   );
 }
