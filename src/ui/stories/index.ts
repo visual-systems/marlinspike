@@ -7,3 +7,4 @@ export * as CanvasStories from "./canvas.stories.tsx";
 export * as ConstraintsPanelStories from "./constraints-panel.stories.tsx";
 export * as LayoutStories from "./layout.stories.tsx";
 export * as ExamplesStories from "./examples.stories.tsx";
+export * as SpikeLispStories from "./candidate-spike-lisp-syntaxes.stories.tsx";
