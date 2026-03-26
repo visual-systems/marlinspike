@@ -1,12 +1,21 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
+import { useState } from "@hono/hono/jsx/dom";
+import { Canvas } from "../components/canvas.tsx";
+import {
+  defaultState,
+  makeNode,
+  type TreeNode,
+  type Updater,
+  type WorkspaceState,
+} from "../workspace.ts";
+import type { Edge } from "../workspace.ts";
 
 /**
  * Candidate Spike-Lisp syntax examples.
  *
- * Each story pairs a Spike-Lisp string literal with the graph structure it
- * should represent. The goal is to settle the syntax design with concrete
- * examples before committing to a parser implementation.
+ * Each story pairs a Spike-Lisp string literal with an interactive canvas
+ * showing the corresponding graph, plus the formal Graph type as JSON.
  *
  * Two semantic variants are explored:
  *   #Subgraph — direct correspondence between sexp structure and containment
@@ -16,33 +25,36 @@
 export const meta = { title: "Spike-Lisp Syntax Candidates" };
 
 // ---------------------------------------------------------------------------
-// Display helpers
+// Canvas helper
 // ---------------------------------------------------------------------------
 
-function Row({ children }: { children: unknown }) {
+function StoryCanvas({
+  treeNodes,
+  edges = [],
+  expandedNodes = [],
+}: {
+  treeNodes: TreeNode[];
+  edges?: Edge[];
+  expandedNodes?: string[];
+}) {
+  const initial: WorkspaceState = {
+    ...defaultState(),
+    treeNodes,
+    edges,
+    canvasExpandedNodes: expandedNodes,
+  };
+  const [ws, setWs] = useState<WorkspaceState>(initial);
+  const update: Updater = (fn) => setWs((prev) => fn(prev));
   return (
-    <div style="display:flex; gap:24px; align-items:flex-start; padding:16px; font-family:monospace;">
-      {children}
+    <div style="position:relative; width:100%; height:320px; border:1px solid #30363d; border-radius:6px; overflow:hidden;">
+      <Canvas ws={ws} update={update} />
     </div>
   );
 }
 
-function Col({
-  label,
-  children,
-}: {
-  label: string;
-  children: unknown;
-}) {
-  return (
-    <div style="flex:1; min-width:0;">
-      <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">
-        {label}
-      </div>
-      {children}
-    </div>
-  );
-}
+// ---------------------------------------------------------------------------
+// Display helpers
+// ---------------------------------------------------------------------------
 
 function Code({ src }: { src: string }) {
   return (
@@ -53,10 +65,10 @@ function Code({ src }: { src: string }) {
   );
 }
 
-function Graph({ data }: { data: unknown }) {
+function Json({ data }: { data: unknown }) {
   return (
     <pre style="background:#161b22; color:#adbac7; padding:12px; border-radius:6px;
-             font-size:12px; line-height:1.6; margin:0; white-space:pre-wrap; overflow-x:auto;">
+             font-size:11px; line-height:1.5; margin:0; white-space:pre-wrap; overflow-x:auto; height:320px; overflow-y:auto;">
       {JSON.stringify(data, null, 2)}
     </pre>
   );
@@ -75,29 +87,39 @@ function Story({
   title,
   lisp,
   graph,
+  canvas,
   notes,
 }: {
   title: string;
   lisp: string;
   graph: unknown;
+  canvas: JSX.Element;
   notes?: string;
 }) {
   return (
-    <div style="background:#0d1117; border:1px solid #30363d; border-radius:8px;
-             margin:16px; overflow:hidden;">
+    <div style="background:#0d1117; border:1px solid #30363d; border-radius:8px; margin:16px; overflow:hidden;">
       <div style="padding:10px 16px; background:#161b22; border-bottom:1px solid #30363d;
                color:#e6edf3; font-size:13px; font-weight:600;">
         {title}
       </div>
-      <Row>
-        <Col label="Spike-Lisp">
-          <Code src={lisp} />
-          {notes && <Note>{notes}</Note>}
-        </Col>
-        <Col label="Graph (formal types)">
-          <Graph data={graph} />
-        </Col>
-      </Row>
+      <div style="padding:16px;">
+        <Code src={lisp} />
+        {notes && <Note>{notes}</Note>}
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:0 16px 16px;">
+        <div>
+          <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">
+            Canvas
+          </div>
+          {canvas}
+        </div>
+        <div>
+          <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px;">
+            Graph (formal types)
+          </div>
+          <Json data={graph} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -111,25 +133,31 @@ export function SubgraphLeafOnly() {
 #Subgraph (my-graph
   A
   B
-  C)
-`;
-
-  const graph = {
-    uri: "spike://local/my-graph",
-    nodes: {
-      A: { id: "A", kind: "node", label: "A", subgraph: null, properties: {} },
-      B: { id: "B", kind: "node", label: "B", subgraph: null, properties: {} },
-      C: { id: "C", kind: "node", label: "C", subgraph: null, properties: {} },
-    },
-    edges: {},
-  };
+  C)`;
 
   return (
     <Story
       title="Subgraph — leaf-only"
       lisp={lisp}
-      graph={graph}
-      notes="Each symbol is a leaf node (no children). The head of the list names the graph."
+      canvas={
+        <StoryCanvas
+          treeNodes={[
+            makeNode("A", "A", "leaf", []),
+            makeNode("B", "B", "leaf", []),
+            makeNode("C", "C", "leaf", []),
+          ]}
+        />
+      }
+      graph={{
+        uri: "spike://local/my-graph",
+        nodes: {
+          A: { id: "A", kind: "node", label: "A", subgraph: null },
+          B: { id: "B", kind: "node", label: "B", subgraph: null },
+          C: { id: "C", kind: "node", label: "C", subgraph: null },
+        },
+        edges: {},
+      }}
+      notes="Each symbol is a leaf node. The head of the list names the graph."
     />
   );
 }
@@ -143,45 +171,42 @@ export function SubgraphNested() {
 ; {label: A, children: [B, {label: C, children: [D]}]}
 #Subgraph (A
   B
-  (C D))
-`;
-
-  const graph = {
-    uri: "spike://local/A",
-    nodes: {
-      B: { id: "B", kind: "node", label: "B", subgraph: null, properties: {} },
-      C: {
-        id: "C",
-        kind: "node",
-        label: "C",
-        subgraph: "spike://local/A/C",
-        properties: {},
-      },
-    },
-    edges: {},
-    subgraphs: {
-      "spike://local/A/C": {
-        uri: "spike://local/A/C",
-        nodes: {
-          D: {
-            id: "D",
-            kind: "node",
-            label: "D",
-            subgraph: null,
-            properties: {},
-          },
-        },
-        edges: {},
-      },
-    },
-  };
+  (C D))`;
 
   return (
     <Story
       title="Subgraph — nested containment"
       lisp={lisp}
-      graph={graph}
-      notes="(C D) means C is a composite node whose subgraph contains D. The URI for C's subgraph is derived from the parent path."
+      canvas={
+        <StoryCanvas
+          treeNodes={[
+            makeNode("B", "B", "leaf", []),
+            makeNode("C", "C", "composite", [
+              makeNode("D", "D", "leaf", []),
+            ]),
+          ]}
+          expandedNodes={["C"]}
+        />
+      }
+      graph={{
+        uri: "spike://local/A",
+        nodes: {
+          B: { id: "B", kind: "node", label: "B", subgraph: null },
+          C: {
+            id: "C",
+            kind: "node",
+            label: "C",
+            subgraph: "spike://local/A/C",
+          },
+        },
+        subgraphs: {
+          "spike://local/A/C": {
+            uri: "spike://local/A/C",
+            nodes: { D: { id: "D", kind: "node", label: "D", subgraph: null } },
+          },
+        },
+      }}
+      notes="(C D) = C is a composite whose subgraph contains D. URI for C's subgraph is derived from the parent path."
     />
   );
 }
@@ -193,113 +218,226 @@ export function SubgraphNested() {
 export function CallChain() {
   const lisp = `
 ; A -> B -> C
-#Call (A (B C))
-`;
-
-  const graph = {
-    uri: "spike://local/call-example",
-    nodes: {
-      A: { id: "A", kind: "node", label: "A", subgraph: null, properties: {} },
-      B: { id: "B", kind: "node", label: "B", subgraph: null, properties: {} },
-      C: { id: "C", kind: "node", label: "C", subgraph: null, properties: {} },
-    },
-    edges: {
-      "e-A-B": {
-        id: "e-A-B",
-        from: { node: "A", port: "out" },
-        to: { node: "B", port: "in" },
-        properties: {},
-      },
-      "e-B-C": {
-        id: "e-B-C",
-        from: { node: "B", port: "out" },
-        to: { node: "C", port: "in" },
-        properties: {},
-      },
-    },
-  };
+#Call (A (B C))`;
 
   return (
     <Story
-      title="Call — simple chain A → B → C"
+      title="Call — chain A → B → C"
       lisp={lisp}
-      graph={graph}
-      notes="Nesting implies invocation order. (A (B C)) reads: A calls B, B calls C. Edges are implicit from structure."
+      canvas={
+        <StoryCanvas
+          treeNodes={[
+            makeNode("A", "A", "leaf", []),
+            makeNode("B", "B", "leaf", []),
+            makeNode("C", "C", "leaf", []),
+          ]}
+          edges={[
+            { id: "e-AB", fromId: "A", toId: "B", label: "", data: {}, version: 1 },
+            { id: "e-BC", fromId: "B", toId: "C", label: "", data: {}, version: 1 },
+          ]}
+        />
+      }
+      graph={{
+        nodes: { A: {}, B: {}, C: {} },
+        edges: {
+          "e-AB": { from: { node: "A", port: "out" }, to: { node: "B", port: "in" } },
+          "e-BC": { from: { node: "B", port: "out" }, to: { node: "C", port: "in" } },
+        },
+      }}
+      notes="Nesting implies invocation order. (A (B C)) = A calls B, B calls C. Edges are implicit from structure."
     />
   );
 }
 
 // ---------------------------------------------------------------------------
-// 4. Call semantics — branching (fan-out)
+// 4. Call semantics — fan-out
 // ---------------------------------------------------------------------------
 
 export function CallFanOut() {
   const lisp = `
 ; A -> B, A -> C
-#Call (A B C)
-`;
-
-  const graph = {
-    uri: "spike://local/fan-out",
-    nodes: {
-      A: { id: "A", kind: "node", label: "A", subgraph: null, properties: {} },
-      B: { id: "B", kind: "node", label: "B", subgraph: null, properties: {} },
-      C: { id: "C", kind: "node", label: "C", subgraph: null, properties: {} },
-    },
-    edges: {
-      "e-A-B": {
-        id: "e-A-B",
-        from: { node: "A", port: "out" },
-        to: { node: "B", port: "in" },
-        properties: {},
-      },
-      "e-A-C": {
-        id: "e-A-C",
-        from: { node: "A", port: "out" },
-        to: { node: "C", port: "in" },
-        properties: {},
-      },
-    },
-  };
+#Call (A B C)`;
 
   return (
     <Story
       title="Call — fan-out A → B, A → C"
       lisp={lisp}
-      graph={graph}
-      notes="When siblings follow the head without nesting, the head calls all of them (fan-out). (A B C) = A calls both B and C."
+      canvas={
+        <StoryCanvas
+          treeNodes={[
+            makeNode("A", "A", "leaf", []),
+            makeNode("B", "B", "leaf", []),
+            makeNode("C", "C", "leaf", []),
+          ]}
+          edges={[
+            { id: "e-AB", fromId: "A", toId: "B", label: "", data: {}, version: 1 },
+            { id: "e-AC", fromId: "A", toId: "C", label: "", data: {}, version: 1 },
+          ]}
+        />
+      }
+      graph={{
+        nodes: { A: {}, B: {}, C: {} },
+        edges: {
+          "e-AB": { from: { node: "A", port: "out" }, to: { node: "B", port: "in" } },
+          "e-AC": { from: { node: "A", port: "out" }, to: { node: "C", port: "in" } },
+        },
+      }}
+      notes="Siblings after the head receive calls from it. (A B C) = A calls both B and C."
     />
   );
 }
 
 // ---------------------------------------------------------------------------
-// 5. Mixed semantics in one document
+// 5. Call semantics — fan-in
+// ---------------------------------------------------------------------------
+
+export function CallFanIn() {
+  const lisp = `
+; A -> C, B -> C  (pure fan-in, no common source)
+;
+; Candidate: parenthesised source set
+#Call ((A B) C)
+;
+; Tension: the nesting model is caller-first.
+; Fan-in has no natural single "head" — this needs
+; an explicit grouping syntax to name the callers.`;
+
+  return (
+    <Story
+      title="Call — fan-in A → C, B → C"
+      lisp={lisp}
+      canvas={
+        <StoryCanvas
+          treeNodes={[
+            makeNode("A", "A", "leaf", []),
+            makeNode("B", "B", "leaf", []),
+            makeNode("C", "C", "leaf", []),
+          ]}
+          edges={[
+            { id: "e-AC", fromId: "A", toId: "C", label: "", data: {}, version: 1 },
+            { id: "e-BC", fromId: "B", toId: "C", label: "", data: {}, version: 1 },
+          ]}
+        />
+      }
+      graph={{
+        nodes: { A: {}, B: {}, C: {} },
+        edges: {
+          "e-AC": { from: { node: "A", port: "out" }, to: { node: "C", port: "in" } },
+          "e-BC": { from: { node: "B", port: "out" }, to: { node: "C", port: "in" } },
+        },
+      }}
+      notes="Pure fan-in is awkward in the caller-first nesting model. (A B) as a source set is a candidate — but it's syntactically ambiguous with a nested subgraph containing A and B."
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 6. Call semantics — diamond (fan-out + fan-in)
+// ---------------------------------------------------------------------------
+
+export function CallDiamond() {
+  const lisp = `
+; A -> B, A -> C, B -> D, C -> D
+;
+; Diamond expressed by repeating D as the target of both branches:
+#Call (A (B D) (C D))
+;
+; D appears twice but refers to the same node.
+; The interpreter deduplicates by symbol identity.`;
+
+  return (
+    <Story
+      title="Call — diamond A → B → D ← C ← A"
+      lisp={lisp}
+      canvas={
+        <StoryCanvas
+          treeNodes={[
+            makeNode("A", "A", "leaf", []),
+            makeNode("B", "B", "leaf", []),
+            makeNode("C", "C", "leaf", []),
+            makeNode("D", "D", "leaf", []),
+          ]}
+          edges={[
+            { id: "e-AB", fromId: "A", toId: "B", label: "", data: {}, version: 1 },
+            { id: "e-AC", fromId: "A", toId: "C", label: "", data: {}, version: 1 },
+            { id: "e-BD", fromId: "B", toId: "D", label: "", data: {}, version: 1 },
+            { id: "e-CD", fromId: "C", toId: "D", label: "", data: {}, version: 1 },
+          ]}
+        />
+      }
+      graph={{
+        nodes: { A: {}, B: {}, C: {}, D: {} },
+        edges: {
+          "e-AB": { from: { node: "A", port: "out" }, to: { node: "B", port: "in" } },
+          "e-AC": { from: { node: "A", port: "out" }, to: { node: "C", port: "in" } },
+          "e-BD": { from: { node: "B", port: "out" }, to: { node: "D", port: "in" } },
+          "e-CD": { from: { node: "C", port: "out" }, to: { node: "D", port: "in" } },
+        },
+      }}
+      notes="The diamond falls naturally out of the fan-out syntax: (A (B D) (C D)) = A fans out to B and C; both call D. Symbol D is deduplicated — one node, two incoming edges."
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 7. Mixed semantics in one document
 // ---------------------------------------------------------------------------
 
 export function MixedSemantics() {
   const lisp = `
-; A service graph (structural) that contains a processing pipeline (call chain)
+; A service graph (structural) containing a processing pipeline (call chain)
 #Subgraph (auth-service
   ingress
   (#Call processor (validate (enrich respond)))
-  egress)
-`;
+  egress)`;
 
   return (
     <Story
       title="Mixed — #Subgraph containing a #Call subgraph"
       lisp={lisp}
+      canvas={
+        <StoryCanvas
+          treeNodes={[
+            makeNode("ingress", "ingress", "leaf", []),
+            makeNode("processor", "processor", "composite", [
+              makeNode("validate", "validate", "leaf", []),
+              makeNode("enrich", "enrich", "leaf", []),
+              makeNode("respond", "respond", "leaf", []),
+            ]),
+            makeNode("egress", "egress", "leaf", []),
+          ]}
+          edges={[
+            {
+              id: "e-validate-enrich",
+              fromId: "validate",
+              toId: "enrich",
+              label: "",
+              data: {},
+              version: 1,
+            },
+            {
+              id: "e-enrich-respond",
+              fromId: "enrich",
+              toId: "respond",
+              label: "",
+              data: {},
+              version: 1,
+            },
+          ]}
+          expandedNodes={["processor"]}
+        />
+      }
       graph={{
         note:
-          "auth-service is a Subgraph with leaf nodes ingress and egress, and a composite node 'processor' whose subgraph is a Call chain: validate → enrich → respond",
+          "auth-service is a Subgraph with leaf nodes ingress/egress and a composite 'processor' whose subgraph is a Call chain: validate → enrich → respond",
       }}
-      notes="Semantic tags can be mixed within a document. A #Subgraph node can reference a #Call subgraph inline. The tag scopes to its immediate form."
+      notes="Semantic tags are scoped to their form and can be mixed. A #Subgraph node's subgraph can use #Call semantics by tagging the inner form."
     />
   );
 }
 
 // ---------------------------------------------------------------------------
-// 6. Port nodes and schemas
+// 8. Port nodes and schemas
 // ---------------------------------------------------------------------------
 
 export function PortNodes() {
@@ -316,59 +454,60 @@ export function PortNodes() {
     :port (out :id p-ok  :schema spike.dataflow.token)
     :port (out :id p-err :schema spike.dataflow.error))
 
-  (edge :from [ingress p-out] :to [validator p-in]))
-`;
-
-  const graph = {
-    uri: "spike://local/auth-service",
-    activeSchemas: ["spike.topology.pipeline", "io.http"],
-    nodes: {
-      ingress: {
-        id: "ingress",
-        kind: "node",
-        label: "ingress",
-        subgraph: null,
-        properties: {},
-      },
-      "ingress/p-in": {
-        id: "ingress/p-in",
-        kind: "port",
-        label: "p-in",
-        portSchema: "io.http.request",
-        direction: "in",
-        properties: {},
-      },
-      "ingress/p-out": {
-        id: "ingress/p-out",
-        kind: "port",
-        label: "p-out",
-        portSchema: "spike.dataflow.bytes",
-        direction: "out",
-        properties: {},
-      },
-    },
-    edges: {
-      "e-0": {
-        id: "e-0",
-        from: { node: "ingress", port: "p-out" },
-        to: { node: "validator", port: "p-in" },
-        properties: {},
-      },
-    },
-  };
+  (edge :from [ingress p-out] :to [validator p-in]))`;
 
   return (
     <Story
       title="Port nodes and schemas"
       lisp={lisp}
-      graph={graph}
-      notes="Port nodes are declared inline as :port keyword args on their parent node. They are reconstructed as separate nodes in the formal Graph type."
+      canvas={
+        <StoryCanvas
+          treeNodes={[
+            makeNode("ingress", "ingress", "leaf", []),
+            makeNode("validator", "validator", "leaf", []),
+          ]}
+          edges={[
+            {
+              id: "e-0",
+              fromId: "ingress",
+              toId: "validator",
+              label: "",
+              data: {},
+              version: 1,
+            },
+          ]}
+        />
+      }
+      graph={{
+        activeSchemas: ["spike.topology.pipeline", "io.http"],
+        nodes: {
+          ingress: { id: "ingress", kind: "node", subgraph: null },
+          "ingress/p-in": {
+            kind: "port",
+            portSchema: "io.http.request",
+            direction: "in",
+          },
+          "ingress/p-out": {
+            kind: "port",
+            portSchema: "spike.dataflow.bytes",
+            direction: "out",
+          },
+          validator: { id: "validator", kind: "node", subgraph: null },
+        },
+        edges: {
+          "e-0": {
+            from: { node: "ingress", port: "p-out" },
+            to: { node: "validator", port: "p-in" },
+          },
+        },
+      }}
+      notes="Port nodes declared inline as :port keyword args. Reconstructed as separate kind:'port' nodes in the formal Graph type. Note: the canvas doesn't model ports yet."
     />
   );
 }
 
 // ---------------------------------------------------------------------------
-// 7. URI reference vs. inlined subgraph
+// 9. URI reference vs. inlined subgraph
 // ---------------------------------------------------------------------------
 
 export function SubgraphInliningVsUri() {
@@ -378,31 +517,49 @@ export function SubgraphInliningVsUri() {
   (processor
     validate
     enrich
-    respond))
-`;
+    respond))`;
 
   const byUri = `
 ; URI reference — processor is opaque here
 #Subgraph (auth-service
-  (processor :subgraph "spike://acme/backend/auth-service/processor"))
-`;
+  (processor :subgraph "spike://acme/backend/processor"))`;
 
   return (
     <div>
       <Story
-        title="Inlined subgraph (more readable for humans and agents)"
+        title="Inlined subgraph (readable for humans and agents)"
         lisp={inlined}
-        graph={{
-          note: "processor node has its subgraph inlined. Full structure is visible at this level.",
-        }}
-        notes="Default for serialisation when the subgraph is available in the workspace."
+        canvas={
+          <StoryCanvas
+            treeNodes={[
+              makeNode("processor", "processor", "composite", [
+                makeNode("validate", "validate", "leaf", []),
+                makeNode("enrich", "enrich", "leaf", []),
+                makeNode("respond", "respond", "leaf", []),
+              ]),
+            ]}
+            expandedNodes={["processor"]}
+          />
+        }
+        graph={{ note: "processor subgraph inlined — full structure visible." }}
+        notes="Default serialisation when the subgraph is available in the workspace."
       />
       <Story
         title="URI-referenced subgraph (opaque, for library nodes)"
         lisp={byUri}
+        canvas={
+          <StoryCanvas
+            treeNodes={[
+              makeNode("processor", "processor", "composite", []),
+            ]}
+          />
+        }
         graph={{
-          note:
-            "processor.subgraph = 'spike://acme/backend/auth-service/processor'. The subgraph is not expanded here.",
+          nodes: {
+            processor: {
+              subgraph: "spike://acme/backend/processor",
+            },
+          },
         }}
         notes="Used when the subgraph URI refers to an external / shared library node not available locally."
       />
@@ -411,27 +568,29 @@ export function SubgraphInliningVsUri() {
 }
 
 // ---------------------------------------------------------------------------
-// 8. Properties via EDN maps
+// 10. Properties via EDN maps
 // ---------------------------------------------------------------------------
 
 export function PropertiesMap() {
   const lisp = `
 #Subgraph (my-graph
   (node worker
-    :props {:retry-limit 3, :timeout-ms 5000, :tags ["critical" "async"]}))
-`;
+    :props {:retry-limit 3
+            :timeout-ms  5000
+            :tags        ["critical" "async"]}))`;
 
   return (
     <Story
       title="Properties as EDN map"
       lisp={lisp}
+      canvas={
+        <StoryCanvas
+          treeNodes={[makeNode("worker", "worker", "leaf", [])]}
+        />
+      }
       graph={{
         nodes: {
           worker: {
-            id: "worker",
-            kind: "node",
-            label: "worker",
-            subgraph: null,
             properties: {
               "retry-limit": 3,
               "timeout-ms": 5000,
@@ -440,13 +599,13 @@ export function PropertiesMap() {
           },
         },
       }}
-      notes=":props takes an EDN map. Keys are keywords (the colon is stripped). Values can be any base-lisp scalar or collection."
+      notes=":props takes an EDN map. Keyword keys have their colon stripped. Values can be any base-lisp scalar or collection."
     />
   );
 }
 
 // ---------------------------------------------------------------------------
-// 9. Alternative implementations
+// 11. Alternative implementations
 // ---------------------------------------------------------------------------
 
 export function AlternativeImplementations() {
@@ -457,43 +616,32 @@ export function AlternativeImplementations() {
   (node payment-processor
     :impl {:production "spike://acme/billing/stripe-processor"
            :mock       "spike://acme/billing/mock-processor"
-           :canary     "spike://acme/billing/v2-processor"}))
-`;
+           :canary     "spike://acme/billing/v2-processor"}))`;
 
   return (
     <Story
       title="Alternative implementations"
       lisp={lisp}
+      canvas={
+        <StoryCanvas
+          treeNodes={[
+            makeNode("payment-processor", "payment-processor", "leaf", []),
+          ]}
+        />
+      }
       graph={{
         activeImplementation: "production",
         nodes: {
           "payment-processor": {
-            id: "payment-processor",
-            kind: "node",
-            label: "payment-processor",
-            subgraph: null,
             implementations: {
-              production: {
-                label: "production",
-                subgraph: "spike://acme/billing/stripe-processor",
-                tags: ["production"],
-              },
-              mock: {
-                label: "mock",
-                subgraph: "spike://acme/billing/mock-processor",
-                tags: ["mock"],
-              },
-              canary: {
-                label: "canary",
-                subgraph: "spike://acme/billing/v2-processor",
-                tags: ["canary"],
-              },
+              production: { subgraph: "spike://acme/billing/stripe-processor" },
+              mock: { subgraph: "spike://acme/billing/mock-processor" },
+              canary: { subgraph: "spike://acme/billing/v2-processor" },
             },
-            properties: {},
           },
         },
       }}
-      notes=":impl takes an EDN map of tag → URI. :active-impl on the graph sets the default implementation."
+      notes=":impl takes an EDN map of tag → URI. :active-impl on the graph sets the default."
     />
   );
 }
