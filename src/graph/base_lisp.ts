@@ -85,7 +85,7 @@ class Reader {
   }
 
   private readDelimited<T extends SExp>(
-    open: string,
+    _open: string,
     close: string,
     name: string,
     build: (items: SExp[]) => T,
