@@ -112,11 +112,13 @@ Spike-Lisp is a **two-layer system**:
 - `src/ui/stories/candidate-spike-lisp-syntaxes.stories.tsx` — new: syntax candidate stories
 - `DESIGN.md` §13.2 — update with layered architecture and findings
 
+## Diversions
+
+- **2026-03-28 — CI `deno task ci`** — CI was failing due to a lint error (`no-unused-vars` on `open` param in `base_lisp.ts`). Fixed by prefixing with `_`. Added a `ci` task to `deno.json` that runs `fmt --check && lint && check && test` in sequence, and updated `CLAUDE.md` to require `NO_COLOR=1 deno task ci` before every commit/push.
+
 ## Verification
 
-- [ ] `NO_COLOR=1 deno task test` passes (all existing + new round-trip tests)
-- [ ] `NO_COLOR=1 deno task check` passes (type-check clean)
-- [ ] `NO_COLOR=1 deno task fmt` passes (format clean)
+- [ ] `NO_COLOR=1 deno task ci` passes (fmt, lint, type-check, tests)
 - [ ] Syntax stories render in the stories shell without errors
 - [ ] Round-trip: `interpret(parse(serialize(fixture)))` deep-equals fixture for each story's graph
 - [ ] Bridge: `treeNodeToGraph` runs on the default workspace tree without throwing
