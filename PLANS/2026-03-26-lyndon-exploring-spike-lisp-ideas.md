@@ -115,6 +115,7 @@ Spike-Lisp is a **two-layer system**:
 ## Diversions
 
 - **2026-03-28 — CI `deno task ci`** — CI was failing due to a lint error (`no-unused-vars` on `open` param in `base_lisp.ts`). Fixed by prefixing with `_`. Added a `ci` task to `deno.json` that runs `fmt --check && lint && check && test` in sequence, and updated `CLAUDE.md` to require `NO_COLOR=1 deno task ci` before every commit/push.
+- **2026-03-29 — CI `check-ui` missing from `ci` task** — `TS2503: Cannot find namespace 'JSX'` in the stories file. Root cause: `JSX` must be imported from `@hono/hono/jsx/dom/jsx-runtime` (as `main.tsx` does), not the dom module itself. Also `check-ui` was absent from the `ci` task so it wasn't caught locally — added it.
 
 ## Verification
 
