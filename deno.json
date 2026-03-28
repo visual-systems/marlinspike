@@ -7,7 +7,7 @@
     "lint": "deno lint --fix",
     "test": "deno test --allow-read",
     "check": "deno check mod.tsx src/graph/**/*.ts src/ui/App.tsx src/ui/StoriesShell.tsx src/ui/workspace.ts",
-    "ci": "deno fmt --check && deno lint && deno check mod.tsx src/graph/**/*.ts src/ui/App.tsx src/ui/StoriesShell.tsx src/ui/workspace.ts && deno test --allow-read",
+    "ci": "deno fmt --check && deno lint && deno check mod.tsx src/graph/**/*.ts src/ui/App.tsx src/ui/StoriesShell.tsx src/ui/workspace.ts && deno check --config deno.client.json src/ui/client.tsx src/ui/stories/main.tsx && deno test --allow-read",
     "check-ui": "deno check --config deno.client.json src/ui/client.tsx src/ui/stories/main.tsx",
     "build": "deno run --allow-read --allow-write --allow-net --allow-env build.ts"
   },

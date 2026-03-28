@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useState } from "@hono/hono/jsx/dom";
+import type { JSX } from "@hono/hono/jsx/dom/jsx-runtime";
 import { Canvas } from "../components/canvas.tsx";
 import {
   defaultState,
