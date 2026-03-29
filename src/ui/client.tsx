@@ -6,9 +6,11 @@ import { FocusDropdown } from "./components/focus-dropdown.tsx";
 import { SmallBtn } from "./components/widgets.tsx";
 import { TreePanel } from "./components/tree-panel.tsx";
 import { ConstraintsPanel } from "./components/constraints-panel.tsx";
+import { CodePanel } from "./components/code-panel.tsx";
 import { Canvas } from "./components/canvas.tsx";
 import { validateWorkspace } from "../graph/validate_workspace.ts";
 import {
+  defaultCodePanel,
   defaultConstraintsPanel,
   defaultPanel,
   getActiveTab,
@@ -338,6 +340,16 @@ function WorkspaceControls(
     }));
   }
 
+  function addCodePanel() {
+    const tab = getActiveTab(ws);
+    update((s) => ({
+      ...s,
+      tabs: s.tabs.map((t) =>
+        t.id === tab.id ? { ...t, panels: [...t.panels, defaultCodePanel()] } : t
+      ),
+    }));
+  }
+
   return (
     <div id="workspace-controls">
       {/* Workflow dropdown */}
@@ -370,6 +382,14 @@ function WorkspaceControls(
           onClick={addConstraintsPanel}
         >
           + Constraints View
+        </button>
+        <button
+          type="button"
+          title="Add a Code View panel to this tab"
+          style="background:none; border:1px solid #2a2a4a; color:#555; font-size:11px; cursor:pointer; padding:2px 8px; border-radius:3px; letter-spacing:0.04em;"
+          onClick={addCodePanel}
+        >
+          + Code View
         </button>
       </div>
 
@@ -505,6 +525,15 @@ function WorkspaceArea({ ws, update }: { ws: WorkspaceState; update: Updater }) 
                     ws={ws}
                     update={update}
                     diagnostics={diagnostics}
+                  />
+                )
+                : panel.type === "code"
+                ? (
+                  <CodePanel
+                    panel={panel}
+                    tab={tab}
+                    ws={ws}
+                    update={update}
                   />
                 )
                 : (

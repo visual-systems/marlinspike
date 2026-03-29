@@ -5,7 +5,7 @@
 
 import type { AlgorithmId } from "./lib/algorithms/index.ts";
 
-export const PANEL_TYPES = ["tree", "constraints"] as const;
+export const PANEL_TYPES = ["tree", "constraints", "code"] as const;
 export type PanelType = (typeof PANEL_TYPES)[number];
 
 /** Unified selection — a panel or the canvas can select exactly one entity at a time. */
@@ -21,6 +21,8 @@ export interface Panel {
   expandedNodes: string[];
   selected: Selection;
   inspectorSplit: number; // 0–1, fraction of body height given to inspector
+  /** Code representation language; only used when type === "code". */
+  codeLanguage?: string;
 }
 
 export interface Tab {
@@ -256,6 +258,17 @@ export function defaultConstraintsPanel(): Panel {
   };
 }
 
+export function defaultCodePanel(): Panel {
+  return {
+    id: crypto.randomUUID(),
+    type: "code",
+    expandedNodes: [],
+    selected: null,
+    inspectorSplit: 0.5,
+    codeLanguage: "spike-clojure",
+  };
+}
+
 export function defaultState(): WorkspaceState {
   const tabId = crypto.randomUUID();
   return {
@@ -342,6 +355,7 @@ export function loadState(): WorkspaceState {
             expandedNodes: (p.expandedNodes as string[] | undefined) ?? [],
             selected: (p.selected as Selection | undefined) ?? null,
             inspectorSplit: (p.inspectorSplit as number | undefined) ?? 0.5,
+            codeLanguage: (p.codeLanguage as string | undefined) ?? "spike-clojure",
           }))
           : [{
             id: crypto.randomUUID(),

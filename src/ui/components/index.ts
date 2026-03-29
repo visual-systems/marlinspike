@@ -11,3 +11,4 @@ export {
   NodeInspector,
 } from "./inspector.tsx";
 export { Canvas } from "./canvas.tsx";
+export { CodePanel } from "./code-panel.tsx";
