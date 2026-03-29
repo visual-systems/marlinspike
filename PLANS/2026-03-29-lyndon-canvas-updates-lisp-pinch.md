@@ -61,6 +61,23 @@ The lisp semantic layer goes in a new `src/code/` directory, parallel to `src/ui
 | `src/ui/components/canvas.tsx` | Pinch-to-zoom, fit-to-screen, code-view toggle + panel |
 | `src/ui/stories/canvas.stories.tsx` | Add `CodeView` story |
 
+## Deferred / Future Work
+
+- [ ] **Multi-word node labels** — `New Node` can't be a bare symbol in Clojure. Options: kebab-case convention (`new-node`), quoted strings (`"New Node"`), or auto-slugging on serialise with a display label stored separately. Need to decide on UX and update `graphToSpike`/`spikeToGraph` accordingly.
+
+- [ ] **Syntax highlighting** — investigate available packages (e.g. CodeMirror 6, Monaco, or a lightweight tokeniser-only lib like `highlight.js` or `Prism`). Want something that can run in the browser without a heavy build step and ideally understands Clojure/EDN syntax.
+
+- [ ] **Edge representation** — edges are currently emitted as `;` line comments. Need an idiomatic Clojure approach: `defn` argument lists and `let` bindings are the natural forms; map out exactly how dataflow edges translate to call-graph notation (see `docs/spike-clojure.md` §Callable nodes).
+
+- [ ] **Bidirectional ID tracking** — symbols currently correspond to labels, not graph IDs (e.g. `spike://acme/backend`). Options to explore:
+  - Convention: IDs are created / assigned when "mirroring to canvas" for the first time (author without IDs, IDs materialise on mirror).
+  - Metadata annotations: `^{:id "spike://acme/backend"}` on the symbol (EDN reader metadata).
+  - Decide what happens to existing IDs when the user renames a symbol in the code view.
+
+- [ ] **Data block expansion** — nodes have an opaque `data: Record<string, unknown>` field; the code view should be able to represent and round-trip this (possibly as a trailing map literal in the `def` form).
+
+- [ ] **Schema-based data block UI** — once the constraint/schema system can describe `data` fields, the inspector should render a typed form rather than raw JSON. Depends on the constraint plugin protocol.
+
 ## Open Questions
 
 - Should `spikeToGraph` generate stable IDs (e.g. symbol name → id) or random UUIDs? Symbol name as ID is cleaner for round-trip stability. ← go with symbol name.
