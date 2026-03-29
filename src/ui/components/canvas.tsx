@@ -574,12 +574,13 @@ function CanvasInspector(
 // ---------------------------------------------------------------------------
 
 function CanvasTopBar(
-  { ws, update, mode, onSetMode, onExecute }: {
+  { ws, update, mode, onSetMode, onExecute, onFitView }: {
     ws: WorkspaceState;
     update: Updater;
     mode: CanvasMode;
     onSetMode: (m: CanvasMode) => void;
     onExecute?: () => void;
+    onFitView: () => void;
   },
 ) {
   function selectNode(id: string) {
@@ -637,6 +638,13 @@ function CanvasTopBar(
           update((s) => ({ ...s, canvasAlgorithm: id as WorkspaceState["canvasAlgorithm"] }))}
         width={90}
       />
+      <span
+        title="Fit to screen"
+        onClick={onFitView}
+        style={pillStyle + " cursor:pointer; color:#666;"}
+      >
+        Fit
+      </span>
 
       {/* Breadcrumb */}
       {items.length > 0 && (
@@ -1056,6 +1064,21 @@ export function Canvas(
     return { x: (clientX - rect.left - v.tx) / v.scale, y: (clientY - rect.top - v.ty) / v.scale };
   }
 
+  function fitView() {
+    const el = svgRef.current;
+    if (!el) return;
+    const rootLevel = layout.get("");
+    if (!rootLevel || rootLevel.nodes.length === 0) return;
+    const bb = boundingBox(rootLevel.nodes, 40);
+    const rect = el.getBoundingClientRect();
+    const vw = rect.width;
+    const vh = rect.height;
+    const scale = Math.min((vw * 0.8) / bb.w, (vh * 0.8) / bb.h, 2);
+    const cx = (bb.minX + bb.maxX) / 2;
+    const cy = (bb.minY + bb.maxY) / 2;
+    setView({ scale, tx: vw / 2 - cx * scale, ty: vh / 2 - cy * scale });
+  }
+
   function addNode(parentId: string | null, localX: number, localY: number) {
     const id = crypto.randomUUID();
     const newNode: TreeNode = { id, label: "", kind: "leaf", children: [], data: {}, version: 1 };
@@ -1291,7 +1314,14 @@ export function Canvas(
       </svg>
 
       {/* Top-right bar: canvas-wide controls + breadcrumb */}
-      <CanvasTopBar ws={ws} update={update} mode={mode} onSetMode={setMode} onExecute={onExecute} />
+      <CanvasTopBar
+        ws={ws}
+        update={update}
+        mode={mode}
+        onSetMode={setMode}
+        onExecute={onExecute}
+        onFitView={fitView}
+      />
 
       {/* Inspector overlay — bottom-right */}
       {hasSelection && (

@@ -40,8 +40,9 @@ The lisp semantic layer goes in a new `src/code/` directory, parallel to `src/ui
   - Live bidirectional sync via `entityDrafts` in `WorkspaceState` — no save needed to see edits.
   - Title shows `Data: parent / child` path; language locked to JSON; Cmd+Enter saves.
 
-- [ ] **5. Canvas — fit-to-screen button**
-  - Not yet done. Compute bbox of current layout, scale + translate to fill ~80% of SVG viewport.
+- [x] **5. Canvas — fit-to-screen button**
+  - "Fit" `SmallBtn` to the right of the layout dropdown in `CanvasTopBar`.
+  - `fitView()`: reads root-level `ForceNode[]` from `layout.get("")`, calls `boundingBox(nodes, 40)`, computes scale to fill 80% of viewport, centres the bbox.
 
 - [ ] **6. Story for Code View panel**
   - Not yet done. Add a story to show the code panel with sample workspace content.
@@ -175,5 +176,5 @@ Ref: [wooorm/starry-night](https://github.com/wooorm/starry-night)
 - [x] Code view panel opens from `+ Code View` button; Spike-Clojure syntax highlighting works
 - [x] Inspector `⊞` button opens a JSON code panel synced bidirectionally with the data textarea
 - [x] `graphToSpike` round-trips through `spikeToGraph` (manual verified)
-- [ ] "Fit" button centers and scales the graph (not yet implemented)
+- [x] "Fit" button centers and scales the graph
 - [ ] Code View panel story added to storybook
