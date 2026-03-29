@@ -271,20 +271,31 @@ Validation operates in two modes, settable per context (per-graph, per-persona, 
 
 | Mode | Description | When to use |
 |---|---|---|
-| **Speculative** | Violations produce live diagnostic feedback but do not block any operation. The graph may be in a violated state at any time. | Active authoring, exploratory design, early-stage graphs |
-| **Enforced** | Violations are hard stops at designated checkpoints: save, commit, publish, compile, or transition to a downstream target. The graph cannot advance past a checkpoint in a violated state. | Production graphs, shared libraries, CI validation, runtime targeting |
+| **sketch** | Violations produce live diagnostic feedback but do not block any operation. The graph may be in a violated state at any time. | Active authoring, exploratory design, early-stage graphs |
+| **enforce** | Violations are hard stops at designated checkpoints: save, commit, publish, compile, or transition to a downstream target. The graph cannot advance past a checkpoint in a violated state. | Production graphs, shared libraries, CI validation, runtime targeting |
 
-The mode applies to a *schema set*, not globally. A graph may have speculative mode for in-progress topology schemas and enforced mode for the base format schema simultaneously. This allows "soft typing" on evolving layers while maintaining hard invariants on stable ones.
+The mode applies to a *schema set*, not globally. A graph may have sketch mode for in-progress topology schemas and enforce mode for the base format schema simultaneously. This allows "soft typing" on evolving layers while maintaining hard invariants on stable ones.
 
-Checkpoints where enforced mode blocks are declared by the schema plugin:
+Checkpoints where enforce mode blocks are declared by the schema plugin:
 
 ```jsonc
 {
   "schema": "spike.topology.pipeline",
   "enforcedAt": ["save", "compile"],   // blocks at these checkpoints if violated
-  "speculativeHints": true              // even in speculative mode, surface live hints
+  "sketchHints": true                  // even in sketch mode, surface live hints
 }
 ```
+
+#### Relationship to the UI authoring layer
+
+The UI type system (`TreeNode`/`Edge` in the workspace) is intentionally permissive. It can represent all graph concepts — ports, schemas, implementations, typed edges — but does not structurally require any of them. Fields are optional rather than absent. A node without ports, an edge without a schema, a graph without active constraints: all are valid UI states.
+
+This is a deliberate design choice, not a limitation:
+
+- The UI is the **sketching surface**. Structure emerges incrementally as the author fills things in.
+- The **constraint system provides enforcement**. In sketch mode it surfaces feedback as the graph is developed; in enforce mode it blocks advancement past checkpoints.
+- The relationship is: **enforce-valid ⊆ sketch-valid ⊆ UI-representable**. A graph that satisfies all enforced constraints is always a valid sketch; a valid sketch is always representable in the UI. The reverse does not hold.
+- There is no separate "formal type" that the UI must be converted into. The UI *is* the authoring model; constraints are what distinguish a finished graph from a work-in-progress.
 
 ### 5.4 Protocol
 

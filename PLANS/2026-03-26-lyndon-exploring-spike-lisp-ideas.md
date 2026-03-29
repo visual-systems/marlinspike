@@ -74,9 +74,7 @@ Spike-Lisp is a **two-layer system**:
   - `interpret(parse(serialize(graph)))` deep-equals the original for each fixture
   - Reuse graph fixtures from the syntax stories
 
-- [ ] **7. Bridge exploration** (`src/graph/bridge.ts`) — implement `treeNodeToGraph(node: TreeNode, edges: Edge[]): Graph`
-  - Map `TreeNode` → `Node` (composite detection via children)
-  - Document what's lost (portSchema, direction, implementations) and what workspace changes would be needed
+- [x] **7. Bridge exploration** — resolved as a design question; no converter needed. See design decision below.
 
 - [ ] **8. Update DESIGN.md** — replace/extend §13.2 with the two-layer architecture:
   - Base-lisp token grammar (EDN-inspired)
@@ -117,6 +115,11 @@ Spike-Lisp is a **two-layer system**:
   - Implication for future work: the base-lisp reader and semantic interpreter should be designed with language-variant extensibility in mind — the tokeniser and `SExp` types are shared; the host-language mapping layer is a variant.
 
 - **Rename: Spike-Lisp → Spike-Clojure** — the Clojure variant is now called Spike-Clojure, reflecting that it is a true Clojure subset rather than merely Lisp-inspired. Future variants (TypeScript, Scheme, etc.) will have their own names. The base reader layer remains "base-lisp" as it is language-agnostic.
+
+- **UI layer vs. formal types — resolved**: The UI type system (`TreeNode`/`Edge`) is intentionally permissive. It can author all graph concepts (ports, schemas, implementations) but does not structurally require any of them — fields are optional, not absent. There is no separate "formal type" that the UI must be converted into; the UI *is* the authoring model. The constraint system distinguishes a finished graph from a work-in-progress via two modes:
+  - **sketch** — constraints run, surface feedback, but do not block. The graph may be in a violated state.
+  - **enforce** — violations are hard stops at declared checkpoints (save, compile, publish).
+  - Relationship: **enforce-valid ⊆ sketch-valid ⊆ UI-representable**. The bridge task (writing a `TreeNode → Graph` converter) was the wrong framing — no converter is needed because the UI is already the graph representation; enforcement level is a separate concern.
 
 - **`def` for structural containers** — resolved: `def` (not `defn`) is the correct form for a named structural container. `defn` implies callability; a pure grouping is a value, not a function. The three-form distinction is now:
   - `def` — structural container, named value, not callable; body is a vector of node references
