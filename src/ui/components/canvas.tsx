@@ -469,12 +469,18 @@ function CanvasInspector(
     update((s) => {
       const synth = { ...s, tabs: [...s.tabs, fakeTab] };
       const result = fn(synth);
-      const resultPanel = result.tabs
-        .find((t) => t.id === "__canvas_tab__")
-        ?.panels.find((p) => p.id === "__canvas__");
+      const resultFakeTab = result.tabs.find((t) => t.id === "__canvas_tab__");
+      const resultPanel = resultFakeTab?.panels.find((p) => p.id === "__canvas__");
+      const newPanels = resultFakeTab?.panels.filter((p) => p.id !== "__canvas__") ?? [];
+      const realTabs = result.tabs.filter((t) => t.id !== "__canvas_tab__");
+      const tabs = newPanels.length > 0
+        ? realTabs.map((t) =>
+          t.id === result.activeTabId ? { ...t, panels: [...t.panels, ...newPanels] } : t
+        )
+        : realTabs;
       return {
         ...result,
-        tabs: result.tabs.filter((t) => t.id !== "__canvas_tab__"),
+        tabs,
         canvasSelected: resultPanel?.selected ?? null,
       };
     });
