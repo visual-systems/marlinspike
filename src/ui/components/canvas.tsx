@@ -797,6 +797,7 @@ export function Canvas(
   }, []);
 
   // Wheel: two-finger scroll → pan; pinch (ctrlKey) → zoom. Non-passive so we can preventDefault.
+  const scrollCursorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -818,6 +819,11 @@ export function Canvas(
         });
       } else {
         // Two-finger scroll → pan (inverted: dragging canvas behind viewport)
+        document.body.style.cursor = "none";
+        if (scrollCursorTimer.current) clearTimeout(scrollCursorTimer.current);
+        scrollCursorTimer.current = setTimeout(() => {
+          document.body.style.cursor = "";
+        }, 300);
         setView((v) => ({ ...v, tx: v.tx + e.deltaX, ty: v.ty + e.deltaY }));
       }
     };
@@ -1014,6 +1020,7 @@ export function Canvas(
       update((s) => ({ ...s, canvasSelected: null }));
     }
     panRef.current = null;
+    document.body.style.cursor = "";
     document.removeEventListener("mousemove", onDocMouseMove as EventListener);
     document.removeEventListener("mouseup", onDocMouseUp);
   }
@@ -1109,6 +1116,7 @@ export function Canvas(
       origTy: viewRef.current!.ty,
       hasMoved: false,
     };
+    document.body.style.cursor = "none";
     document.addEventListener("mousemove", onDocMouseMove as EventListener);
     document.addEventListener("mouseup", onDocMouseUp);
   }
