@@ -24,6 +24,10 @@ When the code-view button is clicked from the canvas inspector, a new code panel
 
 None.
 
+## Deferred
+
+- Consider refactoring `CanvasInspector` to eliminate the fake tab shim. The shim exists so `NodeInspector`/`EdgeInspector` can be reused as-is in the canvas context (which has no real tab), but it's a leaky abstraction — as this bug showed, any new inspector action that mutates tabs requires the shim to be updated. A cleaner approach would be to decouple inspector components from tab/panel state and pass callbacks instead.
+
 ## Verification
 
 - [x] Click a node/edge on the canvas
