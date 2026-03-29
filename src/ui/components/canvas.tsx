@@ -796,7 +796,7 @@ export function Canvas(
     return () => obs.disconnect();
   }, []);
 
-  // Wheel zoom — non-passive, excluded when cursor is over inspector/breadcrumb
+  // Wheel: two-finger scroll → pan; pinch (ctrlKey) → zoom. Non-passive so we can preventDefault.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -804,16 +804,22 @@ export function Canvas(
       // Let the inspector scroll naturally
       if (inspectorRef.current?.contains(e.target as Node)) return;
       e.preventDefault();
-      const rect = el.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
-      setView((v) => {
-        const newScale = Math.max(0.1, Math.min(10, v.scale * factor));
-        const canvasX = (mx - v.tx) / v.scale;
-        const canvasY = (my - v.ty) / v.scale;
-        return { scale: newScale, tx: mx - canvasX * newScale, ty: my - canvasY * newScale };
-      });
+      if (e.ctrlKey) {
+        // Pinch-to-zoom via trackpad (browser sets ctrlKey for pinch gestures)
+        const rect = el.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+        setView((v) => {
+          const newScale = Math.max(0.1, Math.min(10, v.scale * factor));
+          const canvasX = (mx - v.tx) / v.scale;
+          const canvasY = (my - v.ty) / v.scale;
+          return { scale: newScale, tx: mx - canvasX * newScale, ty: my - canvasY * newScale };
+        });
+      } else {
+        // Two-finger scroll → pan (inverted: dragging canvas behind viewport)
+        setView((v) => ({ ...v, tx: v.tx + e.deltaX, ty: v.ty + e.deltaY }));
+      }
     };
     el.addEventListener("wheel", handler, { passive: false });
     return () => el.removeEventListener("wheel", handler);
