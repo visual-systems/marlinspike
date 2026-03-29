@@ -69,6 +69,20 @@ export function CodePanel(
     }
   }
 
+  function mirrorOnCanvas() {
+    const ids: string[] = [];
+    function collect(nodes: typeof ws.treeNodes) {
+      for (const n of nodes) {
+        if (n.kind === "composite" && n.children.length > 0) {
+          ids.push(n.id);
+          collect(n.children);
+        }
+      }
+    }
+    collect(ws.treeNodes);
+    update((s) => ({ ...s, canvasExpandedNodes: ids }));
+  }
+
   function closePanel() {
     update((s) => ({
       ...s,
@@ -87,7 +101,10 @@ export function CodePanel(
       {/* Title bar — matches height of other panel headers */}
       <div style="display:flex; align-items:center; justify-content:space-between; padding:4px 8px; font-size:11px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:#666; border-bottom:1px solid #2a2a4a; flex-shrink:0;">
         <span>Code View</span>
-        <IconBtn label="×" title="Close panel" onClick={closePanel} />
+        <div style="display:flex; gap:2px; align-items:center;">
+          <IconBtn label="⬡" title="Mirror on canvas" onClick={mirrorOnCanvas} />
+          <IconBtn label="×" title="Close panel" onClick={closePanel} />
+        </div>
       </div>
 
       {/* Editor area — textarea + floating language control */}
