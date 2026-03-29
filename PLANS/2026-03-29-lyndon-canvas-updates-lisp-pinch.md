@@ -48,6 +48,15 @@ The lisp semantic layer goes in a new `src/code/` directory, parallel to `src/ui
   - `src/ui/stories/code-panel.stories.tsx` — five stories: DefaultWorkspace, CallChain, FanOut, NestedSubgraph, Diamond.
   - Each shows the live editable panel (seeded from graphToSpike) alongside a reference snippet from the syntax candidates.
 
+- [x] **7. Data block expansion**
+  - `⊞` button in inspector opens a JSON code panel for the entity's `data` field.
+  - Bidirectional live sync via `entityDrafts`; Cmd+Enter commits to `node.data` / `edge.data`.
+
+- [x] **8. Syntax highlighting**
+  - Option A: DIY tokeniser (`src/ui/lib/spike-tokenise.ts`) + transparent-textarea overlay.
+  - Spike-Clojure and JSON tokenisers; applied to code panel and syntax candidate stories.
+  - See Syntax Highlighting Research section below for alternatives considered.
+
 ## Critical Files
 
 | File | Change |
@@ -64,7 +73,7 @@ The lisp semantic layer goes in a new `src/code/` directory, parallel to `src/ui
 
 - [ ] **Multi-word node labels** — `New Node` can't be a bare symbol in Clojure. Options: kebab-case convention (`new-node`), quoted strings (`"New Node"`), or auto-slugging on serialise with a display label stored separately. Need to decide on UX and update `graphToSpike`/`spikeToGraph` accordingly.
 
-- [x] **Syntax highlighting** — implemented as Option A (DIY tokeniser + overlay); see research below.
+- [x] **Syntax highlighting** — completed; moved to Approach item 8.
 
 - [ ] **Edge representation** — edges are currently emitted as `;` line comments. Need an idiomatic Clojure approach: `defn` argument lists and `let` bindings are the natural forms; map out exactly how dataflow edges translate to call-graph notation (see `docs/spike-clojure.md` §Callable nodes).
 
@@ -73,7 +82,7 @@ The lisp semantic layer goes in a new `src/code/` directory, parallel to `src/ui
   - Metadata annotations: `^{:id "spike://acme/backend"}` on the symbol (EDN reader metadata).
   - Decide what happens to existing IDs when the user renames a symbol in the code view.
 
-- [ ] **Data block expansion** — nodes have an opaque `data: Record<string, unknown>` field; the code view should be able to represent and round-trip this (possibly as a trailing map literal in the `def` form).
+- [x] **Data block expansion** — implemented via the inspector JSON code panel (item 7 above).
 
 - [ ] **Schema-based data block UI** — once the constraint/schema system can describe `data` fields, the inspector should render a typed form rather than raw JSON. Depends on the constraint plugin protocol.
 
