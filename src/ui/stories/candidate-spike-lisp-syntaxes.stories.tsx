@@ -13,17 +13,22 @@ import {
 import type { Edge } from "../workspace.ts";
 
 /**
- * Candidate Spike-Lisp syntax examples.
+ * Candidate Spike-Clojure syntax examples.
  *
- * Each story pairs a Spike-Lisp string literal with an interactive canvas
+ * Each story pairs a Spike-Clojure string literal with an interactive canvas
  * showing the corresponding graph, plus the formal Graph type as JSON.
  *
- * Two semantic variants are explored:
- *   #Subgraph — direct correspondence between sexp structure and containment
- *   #Call     — invocation / dataflow chain (nesting = call order)
+ * Spike-Clojure is a Clojure subset: valid Spike-Clojure is valid Clojure.
+ * Core forms:
+ *   def  — structural container (named value, not callable)
+ *   defn — callable node (has ports, can be invoked)
+ *   fn   — anonymous sub-subgraph
+ *
+ * #Subgraph and #Call are optional explicit annotations (retained for
+ * disambiguation and user-defined variant extensibility).
  */
 
-export const meta = { title: "Spike-Lisp Syntax Candidates" };
+export const meta = { title: "Spike-Clojure Syntax Candidates" };
 
 // ---------------------------------------------------------------------------
 // Canvas helper
@@ -134,14 +139,13 @@ function Story({
 
 export function SubgraphLeafOnly() {
   const lisp = `
-#Subgraph (my-graph
-  A
-  B
-  C)`;
+; def — structural container (named value, not callable)
+; A, B, C are leaf nodes present in my-graph; no call order expressed.
+(def my-graph [A B C])`;
 
   return (
     <Story
-      title="Subgraph — leaf-only"
+      title="def — leaf-only structural container"
       lisp={lisp}
       canvas={
         <StoryCanvas
@@ -164,7 +168,7 @@ export function SubgraphLeafOnly() {
         },
         edges: {},
       }}
-      notes="Each symbol is a leaf node. The head of the list names the graph."
+      notes="def is a named value (a graph), not a function. Each symbol in the vector is a leaf node. No call order is expressed — this is a structural listing, not a pipeline."
     />
   );
 }
@@ -175,14 +179,14 @@ export function SubgraphLeafOnly() {
 
 export function SubgraphNested() {
   const lisp = `
-; {label: A, children: [B, {label: C, children: [D]}]}
-#Subgraph (A
-  B
-  (C D))`;
+; Nested structural containers — def forms can be nested or defined separately.
+; C is a named sub-container holding D; A holds B and C.
+(def C [D])
+(def A [B C])`;
 
   return (
     <Story
-      title="Subgraph — nested containment"
+      title="def — nested containment"
       lisp={lisp}
       canvas={
         <StoryCanvas
@@ -216,7 +220,7 @@ export function SubgraphNested() {
           },
         },
       }}
-      notes="(C D) = C is a composite whose subgraph contains D. URI for C's subgraph is derived from the parent path."
+      notes="def forms compose: C is defined first, then referenced by name inside A. Subgraphs can also be defined inline using (def C [D]) as an item in the parent vector — separate top-level definitions are cleaner when the sub-container has its own identity."
     />
   );
 }
@@ -227,12 +231,16 @@ export function SubgraphNested() {
 
 export function CallChain() {
   const lisp = `
-; A -> B -> C
-#Call (A (B C))`;
+; A → B → C: sequential call chain expressed as a defn body
+; Each let binding passes the output of one node to the next.
+(defn pipeline [input]
+  (let [a (A input)
+        b (B a)]
+    (C b)))`;
 
   return (
     <Story
-      title="Call — chain A → B → C"
+      title="defn — chain A → B → C"
       lisp={lisp}
       canvas={
         <StoryCanvas
@@ -254,7 +262,7 @@ export function CallChain() {
           "e-BC": { from: { node: "B", port: "out" }, to: { node: "C", port: "in" } },
         },
       }}
-      notes="Nesting implies invocation order. (A (B C)) = A calls B, B calls C. Edges are implicit from structure."
+      notes="defn body: let bindings chain outputs to inputs — the topology falls out of the data flow. No separate edge declarations needed. Valid Clojure top to bottom."
     />
   );
 }
@@ -265,12 +273,16 @@ export function CallChain() {
 
 export function CallFanOut() {
   const lisp = `
-; A -> B, A -> C
-#Call (A B C)`;
+; A fans out to B and C — both receive A's output
+(defn pipeline [input]
+  (let [a (A input)
+        b (B a)
+        c (C a)]
+    {:b b :c c}))`;
 
   return (
     <Story
-      title="Call — fan-out A → B, A → C"
+      title="defn — fan-out A → B, A → C"
       lisp={lisp}
       canvas={
         <StoryCanvas
@@ -292,7 +304,7 @@ export function CallFanOut() {
           "e-AC": { from: { node: "A", port: "out" }, to: { node: "C", port: "in" } },
         },
       }}
-      notes="Siblings after the head receive calls from it. (A B C) = A calls both B and C."
+      notes="Fan-out: binding a to A's output then using it in both B and C naturally expresses parallel branches. The map return collects both outputs."
     />
   );
 }
@@ -303,24 +315,18 @@ export function CallFanOut() {
 
 export function CallFanIn() {
   const lisp = `
-; A -> C, B -> C  (pure fan-in, no common source)
-;
-; NOT this — ((A B) C) implies A->B which doesn't exist.
-; A #Subgraph grouping would be even worse: edges must not
-; transgress subgraph boundaries implicitly.
-;
-; Candidate A — let binding (preferred)
-#Call (let [c C]
-  (A c)
-  (B c))
-;
-; Candidate B — explicit :id, two separate chains sharing a node
-#Call (A (C :id "node-c"))
-#Call (B (C :id "node-c"))`;
+; Pure fan-in: A and B both feed C — C takes two independent inputs.
+; Let bindings make it explicit: a and b are computed independently,
+; then both passed to C. No implicit relationship between A and B.
+(defn pipeline [x y]
+  (let [a (A x)
+        b (B y)
+        c (C a b)]
+    c))`;
 
   return (
     <Story
-      title="Call — fan-in A → C, B → C"
+      title="defn — fan-in A → C, B → C"
       lisp={lisp}
       canvas={
         <StoryCanvas
@@ -342,7 +348,7 @@ export function CallFanIn() {
           "e-BC": { from: { node: "B", port: "out" }, to: { node: "C", port: "in" } },
         },
       }}
-      notes="((A B) C) is not viable — it implies A→B which doesn't exist, and a #Subgraph grouping would transgress subgraph boundaries. Let binding is the cleaner resolution: c is a named reference to C; both A and B call it independently."
+      notes="Fan-in: A and B are computed in separate let bindings — no implied relationship between them. Both results are passed to C as distinct arguments. This is natural Clojure; no special fan-in syntax needed."
     />
   );
 }
@@ -353,20 +359,17 @@ export function CallFanIn() {
 
 export function CallDiamond() {
   const lisp = `
+; Diamond: A fans out to B and C; both converge at D.
 ; A -> B, A -> C, B -> D, C -> D
 ;
-; Candidate A — implicit: D appears twice, deduplicated by label identity.
-; Problem: fragile if two distinct nodes share a label.
-#Call (A (B D) (C D))
-
-; Candidate B — explicit let binding: d is a named reference to node D.
-; Both branches share the same binding. No implicit deduplication needed.
-#Call (let [d D]
-  (A (B d) (C d)))
-
-; Candidate C — explicit :id on each occurrence.
-; Verbose but unambiguous even when labels collide.
-#Call (A (B (D :id "node-d")) (C (D :id "node-d")))`;
+; let naturally expresses the diamond — a is reused in both branches,
+; b and c are computed in parallel, both flow into d.
+(defn pipeline [input]
+  (let [a (A input)
+        b (B a)
+        c (C a)
+        d (D b c)]
+    d))`;
 
   const diamondCanvas = (
     <StoryCanvas
@@ -387,7 +390,7 @@ export function CallDiamond() {
 
   return (
     <Story
-      title="Call — diamond A → B → D ← C ← A (node identity candidates)"
+      title="defn — diamond A → B → D ← C ← A"
       lisp={lisp}
       canvas={diamondCanvas}
       graph={{
@@ -399,7 +402,7 @@ export function CallDiamond() {
           "e-CD": { from: { node: "C", port: "out" }, to: { node: "D", port: "in" } },
         },
       }}
-      notes="All three candidates produce the same graph. Candidate A (implicit) is concise but fragile — two distinct nodes with label 'D' would incorrectly merge. Candidate B (let) is the Lisp-idiomatic resolution and also addresses pure fan-in and named-wire semantics. Candidate C (explicit :id) is unambiguous but verbose."
+      notes="The diamond emerges naturally from let: binding a once and reusing it in both b and c expresses the fan-out; passing both b and c into d expresses the fan-in. No special graph syntax needed — this is idiomatic Clojure."
     />
   );
 }
@@ -410,20 +413,20 @@ export function CallDiamond() {
 
 export function MixedSemantics() {
   const lisp = `
-; A service graph (structural) containing a processing pipeline (call chain)
-#Subgraph (auth-service
-  ingress
-  (processor
-    #Call (validate (enrich respond)))
-  egress)
+; auth-service: structural container (def) holding a callable processor (defn).
+; processor's body defines its internal call graph via let.
 
-; processor is a composite node at auth-service level (a #Subgraph child).
-; #Call (validate (enrich respond)) defines what is *inside* processor —
-; the call chain is scoped to processor's subgraph, not auth-service's.`;
+(defn processor [input]
+  (let [v (validate input)
+        e (enrich v)]
+    (respond e)))
+
+; def — structural container, not callable
+(def auth-service [ingress processor egress])`;
 
   return (
     <Story
-      title="Mixed — #Subgraph containing a #Call subgraph"
+      title="Mixed — def structural container with defn call-graph inside"
       lisp={lisp}
       canvas={
         <StoryCanvas
@@ -450,7 +453,7 @@ export function MixedSemantics() {
         note:
           "auth-service is a Subgraph with leaf nodes ingress/egress and a composite 'processor' whose subgraph is a Call chain: validate → enrich → respond",
       }}
-      notes="Semantic tags are scoped to their form and can be mixed. A #Subgraph node's subgraph can use #Call semantics by tagging the inner form."
+      notes="def and defn naturally mix: auth-service is a structural listing (def), processor is a callable sub-component (defn) whose body defines its internal topology via let. #Subgraph and #Call are no longer needed — the form type carries the structural/callable distinction."
     />
   );
 }
@@ -461,23 +464,26 @@ export function MixedSemantics() {
 
 export function PortNodes() {
   const lisp = `
-#Subgraph (auth-service
-  :schemas [spike.topology.pipeline io.http]
+; Port declarations via defn — in-ports are args, out-ports are {:ports {...}}
+(defn ingress
+  {:ports {:p-out spike.dataflow.bytes}}
+  [^io.http.request p-in]
+  ...)
 
-  (node ingress
-    :port (in  :id p-in  :schema io.http.request)
-    :port (out :id p-out :schema spike.dataflow.bytes))
+(defn validator
+  {:ports {:p-ok spike.dataflow.token :p-err spike.dataflow.error}}
+  [^spike.dataflow.bytes p-in]
+  ...)
 
-  (node validator
-    :port (in  :id p-in  :schema spike.dataflow.bytes)
-    :port (out :id p-ok  :schema spike.dataflow.token)
-    :port (out :id p-err :schema spike.dataflow.error))
+; Structural container groups the nodes
+(def auth-service [ingress validator])
 
-  (edge :from [ingress p-out] :to [validator p-in]))`;
+; Explicit edge for port-to-port wiring
+(edge :from [ingress p-out] :to [validator p-in])`;
 
   return (
     <Story
-      title="Port nodes and schemas"
+      title="Port declarations via defn"
       lisp={lisp}
       canvas={
         <StoryCanvas
@@ -516,7 +522,7 @@ export function PortNodes() {
           },
         },
       }}
-      notes="Port nodes declared inline as :port keyword args. Reconstructed as separate kind:'port' nodes in the formal Graph type. Note: the canvas doesn't model ports yet."
+      notes="In-ports are function arguments with ^Type hints; out-ports use {:ports {:name Type}} in the attr-map position — standard Clojure, used for :deprecated, :arglists etc. Explicit (edge ...) forms are still needed for port-to-port wiring. Note: the canvas doesn't model ports yet."
     />
   );
 }
@@ -527,17 +533,15 @@ export function PortNodes() {
 
 export function SubgraphInliningVsUri() {
   const inlined = `
-; Inlined — full structure visible
-#Subgraph (auth-service
-  (processor
-    validate
-    enrich
-    respond))`;
+; Inlined — full structure visible as nested def forms
+(def processor [validate enrich respond])
+(def auth-service [ingress processor egress])`;
 
   const byUri = `
-; URI reference — processor is opaque here
-#Subgraph (auth-service
-  (processor :subgraph "spike://acme/backend/processor"))`;
+; URI reference — processor's internals are opaque
+; {:subgraph "..."} in the attr-map marks the node as externally defined
+(defn processor {:subgraph "spike://acme/backend/processor"} [input] ...)
+(def auth-service [ingress processor egress])`;
 
   return (
     <div>
@@ -560,7 +564,7 @@ export function SubgraphInliningVsUri() {
           />
         }
         graph={{ note: "processor subgraph inlined — full structure visible." }}
-        notes="Default serialisation when the subgraph is available in the workspace."
+        notes="Nested def forms: processor is defined separately then referenced by name inside auth-service. The full structure is visible and traversable."
       />
       <Story
         title="URI-referenced subgraph (opaque, for library nodes)"
@@ -582,7 +586,7 @@ export function SubgraphInliningVsUri() {
             },
           },
         }}
-        notes="Used when the subgraph URI refers to an external / shared library node not available locally."
+        notes="URI reference: {:subgraph '...'} in the attr-map marks the node as externally defined. The interface (args, ports) is still declared locally; only the implementation is opaque."
       />
     </div>
   );
@@ -594,15 +598,19 @@ export function SubgraphInliningVsUri() {
 
 export function PropertiesMap() {
   const lisp = `
-#Subgraph (my-graph
-  (node worker
-    :props {:retry-limit 3
-            :timeout-ms  5000
-            :tags        ["critical" "async"]}))`;
+; Node properties via defn attr-map — same position as :deprecated, :doc etc.
+(defn worker
+  {:retry-limit 3
+   :timeout-ms  5000
+   :tags        ["critical" "async"]}
+  [input]
+  ...)
+
+(def my-graph [worker])`;
 
   return (
     <Story
-      title="Properties as EDN map"
+      title="Node properties via defn attr-map"
       lisp={lisp}
       canvas={
         <StoryCanvas
@@ -628,13 +636,567 @@ export function PropertiesMap() {
           },
         },
       }}
-      notes=":props takes an EDN map. Keyword keys have their colon stripped. Values can be any base-lisp scalar or collection."
+      notes="Node properties go in the attr-map (between name and param list) — the same position Clojure uses for :deprecated, :arglists, :doc etc. Values can be any scalar or collection. The def container groups nodes without imposing a call order."
     />
   );
 }
 
 // ---------------------------------------------------------------------------
-// 11. Alternative implementations
+// 11. Port syntax via defn
+// ---------------------------------------------------------------------------
+
+export function PortSyntax() {
+  const lisp = `
+; Single output — ^Type before the name (standard Clojure type hint)
+(defn ^string transform [^bytes input] ...)
+
+; Multiple outputs — {:ports {...}} attr-map between name and params
+(defn validator
+  {:ports {:p-ok token :p-err error}}
+  [^bytes p-in]
+  ...)
+
+; Calling single-output: just call it
+(transform input)
+
+; Calling multi-output: Clojure destructuring picks the port
+(let [{:keys [p-ok]}  (validator p-in)]
+  (consumer p-ok))
+
+; Structural container — def with vector of node references
+(def pipeline [transform validator])`;
+
+  return (
+    <Story
+      title="Port syntax — defnode (function-style interface definition)"
+      lisp={lisp}
+      canvas={
+        <StoryCanvas
+          treeNodes={[
+            makeNode("pipeline", "pipeline", "composite", [
+              makeNode("transform", "transform", "leaf", []),
+              makeNode("validator", "validator", "leaf", []),
+            ]),
+          ]}
+          edges={[
+            { id: "e-tv", fromId: "transform", toId: "validator", label: "", data: {}, version: 1 },
+          ]}
+          focusId="pipeline"
+        />
+      }
+      graph={{
+        nodes: {
+          transform: {
+            kind: "node",
+            ports: {
+              "input": { direction: "in", portSchema: "bytes" },
+              "out": { direction: "out", portSchema: "string" },
+            },
+          },
+          validator: {
+            kind: "node",
+            ports: {
+              "p-in": { direction: "in", portSchema: "bytes" },
+              "p-ok": { direction: "out", portSchema: "token" },
+              "p-err": { direction: "out", portSchema: "error" },
+            },
+          },
+        },
+      }}
+      notes="Single output: ^Type hint before name — standard Clojure. Multiple outputs: {:ports {...}} attr-map — valid Clojure attr-map position. Port selection uses Clojure destructuring {:keys [port-name]}, not a graph-specific :from keyword. Structural containers use def — not callable, not defn. All valid Clojure with no extensions."
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 12. Quadratic roots — full algorithm as a subgraph
+// ---------------------------------------------------------------------------
+
+export function QuadraticRoots() {
+  const lispInterface = `
+; High-level interface — discriminant feeds real-roots
+(defn ^float discriminant [^float a ^float b ^float c] ...)
+
+(defn real-roots
+  {:ports {:x1 float :x2 float}}
+  [^float a ^float b ^float c]
+  ...)
+
+; a=1, b=-5, c=6  →  x1=3.0, x2=2.0
+; def — a named example run, not a reusable callable
+(def example
+  (let [a    1.0
+        b   -5.0
+        c    6.0
+        {:keys [x1 x2]} (real-roots a b c)]
+    {:x1 x1 :x2 x2}))`;
+
+  const lispExpanded = `
+; ── Primitives — all single-output ───────────────────────────────────────────
+(defn ^float negate   [^float x]           ...)
+(defn ^float sqrt     [^float x]           ...)
+(defn ^float square   [^float x]           ...)
+(defn ^float add      [^float x ^float y]  ...)
+(defn ^float subtract [^float x ^float y]  ...)
+(defn ^float multiply [^float x ^float y]  ...)
+(defn ^float divide   [^float x ^float y]  ...)
+
+; ── defn with body — valid Clojure, body IS the subgraph ─────────────────────
+; Swap body for :subgraph "spike://math/quadratic-roots" to make it opaque.
+(defn quadratic-roots
+  {:ports {:x1 float :x2 float}}
+  [^float a ^float b ^float c]
+  (let [neg-b  (negate b)
+        disc   (subtract (square b) (multiply 4.0 (multiply a c)))
+        sqrt-d (sqrt disc)
+        two-a  (multiply 2.0 a)]
+    {:x1 (divide (add      neg-b sqrt-d) two-a)
+     :x2 (divide (subtract neg-b sqrt-d) two-a)}))`;
+
+  // Nodes inside the quadratic-roots subgraph
+  const innerNodes = [
+    makeNode("a", "a", "leaf", []),
+    makeNode("b", "b", "leaf", []),
+    makeNode("c", "c", "leaf", []),
+    makeNode("negate-b", "negate  (−b)", "leaf", []),
+    makeNode("square-b", "square  (b²)", "leaf", []),
+    makeNode("mul-ac", "multiply  (a·c)", "leaf", []),
+    makeNode("mul-4ac", "multiply  (4·ac)", "leaf", []),
+    makeNode("sub-disc", "subtract  (disc)", "leaf", []),
+    makeNode("sqrt-disc", "sqrt  (√disc)", "leaf", []),
+    makeNode("mul-2a", "multiply  (2a)", "leaf", []),
+    makeNode("add-plus", "add  (−b+√d)", "leaf", []),
+    makeNode("sub-minus", "subtract  (−b−√d)", "leaf", []),
+    makeNode("div-x1", "divide  (x₁)", "leaf", []),
+    makeNode("div-x2", "divide  (x₂)", "leaf", []),
+  ];
+
+  const expandedEdges = [
+    { id: "e-b-neg", fromId: "b", toId: "negate-b", label: "", data: {}, version: 1 as const },
+    { id: "e-b-sq", fromId: "b", toId: "square-b", label: "", data: {}, version: 1 as const },
+    { id: "e-a-mac", fromId: "a", toId: "mul-ac", label: "", data: {}, version: 1 as const },
+    { id: "e-c-mac", fromId: "c", toId: "mul-ac", label: "", data: {}, version: 1 as const },
+    {
+      id: "e-mac-m4",
+      fromId: "mul-ac",
+      toId: "mul-4ac",
+      label: "ac",
+      data: {},
+      version: 1 as const,
+    },
+    {
+      id: "e-sq-disc",
+      fromId: "square-b",
+      toId: "sub-disc",
+      label: "b²",
+      data: {},
+      version: 1 as const,
+    },
+    {
+      id: "e-m4-disc",
+      fromId: "mul-4ac",
+      toId: "sub-disc",
+      label: "4ac",
+      data: {},
+      version: 1 as const,
+    },
+    {
+      id: "e-disc-sqrt",
+      fromId: "sub-disc",
+      toId: "sqrt-disc",
+      label: "disc",
+      data: {},
+      version: 1 as const,
+    },
+    {
+      id: "e-neg-add",
+      fromId: "negate-b",
+      toId: "add-plus",
+      label: "−b",
+      data: {},
+      version: 1 as const,
+    },
+    {
+      id: "e-neg-sub",
+      fromId: "negate-b",
+      toId: "sub-minus",
+      label: "−b",
+      data: {},
+      version: 1 as const,
+    },
+    {
+      id: "e-sqrt-add",
+      fromId: "sqrt-disc",
+      toId: "add-plus",
+      label: "√d",
+      data: {},
+      version: 1 as const,
+    },
+    {
+      id: "e-sqrt-sub",
+      fromId: "sqrt-disc",
+      toId: "sub-minus",
+      label: "√d",
+      data: {},
+      version: 1 as const,
+    },
+    { id: "e-a-2a", fromId: "a", toId: "mul-2a", label: "", data: {}, version: 1 as const },
+    {
+      id: "e-add-x1",
+      fromId: "add-plus",
+      toId: "div-x1",
+      label: "+",
+      data: {},
+      version: 1 as const,
+    },
+    {
+      id: "e-sub-x2",
+      fromId: "sub-minus",
+      toId: "div-x2",
+      label: "−",
+      data: {},
+      version: 1 as const,
+    },
+    { id: "e-2a-x1", fromId: "mul-2a", toId: "div-x1", label: "2a", data: {}, version: 1 as const },
+    { id: "e-2a-x2", fromId: "mul-2a", toId: "div-x2", label: "2a", data: {}, version: 1 as const },
+  ];
+
+  return (
+    <div>
+      <Story
+        title="Quadratic roots — interface (minimal explicit ports)"
+        lisp={lispInterface}
+        canvas={
+          <StoryCanvas
+            treeNodes={[
+              makeNode("discriminant", "discriminant", "leaf", []),
+              makeNode("real-roots", "real-roots", "leaf", []),
+            ]}
+            edges={[
+              {
+                id: "e-dr",
+                fromId: "discriminant",
+                toId: "real-roots",
+                label: "disc",
+                data: {},
+                version: 1,
+              },
+            ]}
+          />
+        }
+        graph={{
+          nodes: {
+            discriminant: {
+              ports: {
+                a: { direction: "in" },
+                b: { direction: "in" },
+                c: { direction: "in" },
+                out: { direction: "out", portSchema: "float" },
+              },
+            },
+            "real-roots": {
+              ports: {
+                a: { direction: "in" },
+                b: { direction: "in" },
+                c: { direction: "in" },
+                x1: { direction: "out", portSchema: "float" },
+                x2: { direction: "out", portSchema: "float" },
+              },
+            },
+          },
+        }}
+        notes="At the interface level discriminant is opaque — one output, no #PORTS. real-roots has two named output ports. Both nodes can be inlined as subgraphs or referenced by URI."
+      />
+      <Story
+        title="quadratic-roots — full algorithm as a defnode with body"
+        lisp={lispExpanded}
+        canvas={
+          <StoryCanvas
+            treeNodes={[
+              makeNode("quadratic-roots", "quadratic-roots", "composite", innerNodes),
+            ]}
+            edges={expandedEdges}
+            focusId="quadratic-roots"
+          />
+        }
+        graph={{
+          uri: "spike://math/quadratic-roots",
+          nodes: Object.fromEntries(innerNodes.map((n) => [n.id, { id: n.id, label: n.label }])),
+          edges: Object.fromEntries(
+            expandedEdges.map((e) => [
+              e.id,
+              {
+                from: { node: e.fromId, port: "out" },
+                to: { node: e.toId, port: "in" },
+                label: e.label,
+              },
+            ]),
+          ),
+          outputs: { x1: { node: "div-x1", port: "out" }, x2: { node: "div-x2", port: "out" } },
+        }}
+        notes={"defn with body: valid Clojure top to bottom. {:ports {:x1 float :x2 float}} is the attr-map position in defn — standard Clojure, used for :deprecated, :arglists etc. " +
+          "The body is a plain let returning a map — no #PORTS or #Call needed. " +
+          "Each let binding is a distinct node; the ± split after sqrt-disc produces x₁ and x₂ as the two output ports."}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 13. Port syntax — OIDC flow examples
+// ---------------------------------------------------------------------------
+
+export function PortSyntaxExamples() {
+  const catalogueLisp = `
+; ── Interface catalogue ──────────────────────────────────────────────────────
+; Pure interface definitions — no topology, no wiring. Valid Clojure.
+; Single output: ^Type before name. Multiple outputs: {:ports {...}} attr-map.
+
+(defn parse-auth-request
+  {:ports {:params oidc.AuthParams :error http.BadRequest}}
+  [^http.Request req]
+  ...)
+
+(defn validate-client
+  {:ports {:client oidc.Client :error http.Unauthorized}}
+  [^oidc.ClientId client-id]
+  ...)
+
+(defn authenticate-user
+  {:ports {:session oidc.Session :denied http.Unauthorized}}
+  [^oidc.AuthParams params]
+  ...)
+
+(defn ^oidc.AuthCode issue-auth-code [^oidc.Session session ^oidc.Client client] ...)
+
+(defn exchange-code
+  {:ports {:tokens oidc.TokenSet :error http.BadRequest}}
+  [^oidc.AuthCode code]
+  ...)
+
+(defn ^http.Response build-response [^oidc.TokenSet tokens] ...)`;
+
+  const catalogueGraph = {
+    nodes: {
+      "parse-auth-request": {
+        ports: {
+          req: { direction: "in", portSchema: "http.Request" },
+          params: { direction: "out", portSchema: "oidc.AuthParams" },
+          error: { direction: "out", portSchema: "http.BadRequest" },
+        },
+      },
+      "validate-client": {
+        ports: {
+          "client-id": { direction: "in", portSchema: "oidc.ClientId" },
+          client: { direction: "out", portSchema: "oidc.Client" },
+          error: { direction: "out", portSchema: "http.Unauthorized" },
+        },
+      },
+      "authenticate-user": {
+        ports: {
+          params: { direction: "in", portSchema: "oidc.AuthParams" },
+          session: { direction: "out", portSchema: "oidc.Session" },
+          denied: { direction: "out", portSchema: "http.Unauthorized" },
+        },
+      },
+      "issue-auth-code": {
+        ports: {
+          session: { direction: "in", portSchema: "oidc.Session" },
+          client: { direction: "in", portSchema: "oidc.Client" },
+          out: { direction: "out", portSchema: "oidc.AuthCode" },
+        },
+      },
+      "exchange-code": {
+        ports: {
+          code: { direction: "in", portSchema: "oidc.AuthCode" },
+          tokens: { direction: "out", portSchema: "oidc.TokenSet" },
+          error: { direction: "out", portSchema: "http.BadRequest" },
+        },
+      },
+      "build-response": {
+        ports: {
+          tokens: { direction: "in", portSchema: "oidc.TokenSet" },
+          out: { direction: "out", portSchema: "http.Response" },
+        },
+      },
+    },
+  };
+
+  const topologyLisp = `
+; ── OIDC authorisation flow — defn with let + Clojure destructuring ───────────
+; Destructuring {:keys [...]} selects named output ports — no graph-specific syntax.
+; validate-client and authenticate-user run independently on parsed params
+; then converge at issue-auth-code (diamond fan-in via let bindings).
+
+(defn oidc-flow [^http.Request http-request]
+  (let [parsed            (parse-auth-request http-request)
+        {:keys [client]}  (validate-client parsed)
+        {:keys [session]} (authenticate-user parsed)
+        code              (issue-auth-code session client)
+        {:keys [tokens]}  (exchange-code code)]
+    (build-response tokens)))`;
+
+  const topologyNodes = [
+    makeNode("parse-auth-request", "parse-auth-request", "leaf", []),
+    makeNode("validate-client", "validate-client", "leaf", []),
+    makeNode("authenticate-user", "authenticate-user", "leaf", []),
+    makeNode("issue-auth-code", "issue-auth-code", "leaf", []),
+    makeNode("exchange-code", "exchange-code", "leaf", []),
+    makeNode("build-response", "build-response", "leaf", []),
+  ];
+
+  const topologyEdges = [
+    {
+      id: "e-pv",
+      fromId: "parse-auth-request",
+      toId: "validate-client",
+      label: "params",
+      data: {},
+      version: 1 as const,
+    },
+    {
+      id: "e-pa",
+      fromId: "parse-auth-request",
+      toId: "authenticate-user",
+      label: "params",
+      data: {},
+      version: 1 as const,
+    },
+    {
+      id: "e-vi",
+      fromId: "validate-client",
+      toId: "issue-auth-code",
+      label: "client",
+      data: {},
+      version: 1 as const,
+    },
+    {
+      id: "e-ai",
+      fromId: "authenticate-user",
+      toId: "issue-auth-code",
+      label: "session",
+      data: {},
+      version: 1 as const,
+    },
+    {
+      id: "e-ie",
+      fromId: "issue-auth-code",
+      toId: "exchange-code",
+      label: "",
+      data: {},
+      version: 1 as const,
+    },
+    {
+      id: "e-eb",
+      fromId: "exchange-code",
+      toId: "build-response",
+      label: "tokens",
+      data: {},
+      version: 1 as const,
+    },
+  ];
+
+  const topologyGraph = {
+    nodes: {
+      "parse-auth-request": {},
+      "validate-client": {},
+      "authenticate-user": {},
+      "issue-auth-code": {},
+      "exchange-code": {},
+      "build-response": {},
+    },
+    edges: {
+      "e-pv": {
+        from: { node: "parse-auth-request", port: "params" },
+        to: { node: "validate-client", port: "client-id" },
+      },
+      "e-pa": {
+        from: { node: "parse-auth-request", port: "params" },
+        to: { node: "authenticate-user", port: "params" },
+      },
+      "e-vi": {
+        from: { node: "validate-client", port: "client" },
+        to: { node: "issue-auth-code", port: "client" },
+      },
+      "e-ai": {
+        from: { node: "authenticate-user", port: "session" },
+        to: { node: "issue-auth-code", port: "session" },
+      },
+      "e-ie": {
+        from: { node: "issue-auth-code", port: "out" },
+        to: { node: "exchange-code", port: "code" },
+      },
+      "e-eb": {
+        from: { node: "exchange-code", port: "tokens" },
+        to: { node: "build-response", port: "tokens" },
+      },
+    },
+  };
+
+  const structuralLisp = `
+; ── Structural container — def with vector of node references ────────────────
+; Same node interfaces, no call order expressed.
+; def is not callable — it is a named value (a graph), not a function.
+; Bare symbol references — no invocation, just presence.
+
+(def oidc-provider
+  [parse-auth-request
+   validate-client
+   authenticate-user
+   issue-auth-code
+   exchange-code
+   build-response])`;
+
+  return (
+    <div>
+      <Story
+        title="OIDC — Interface catalogue (defn declarations)"
+        lisp={catalogueLisp}
+        canvas={
+          <StoryCanvas
+            treeNodes={topologyNodes}
+          />
+        }
+        graph={catalogueGraph}
+        notes="Pure interface declarations — no topology, no wiring. Single output: ^Type before name. Multiple outputs: {:ports {...}} attr-map. Valid Clojure."
+      />
+      <Story
+        title="OIDC — Call topology (defn + let + Clojure destructuring)"
+        lisp={topologyLisp}
+        canvas={
+          <StoryCanvas
+            treeNodes={topologyNodes}
+            edges={topologyEdges}
+          />
+        }
+        graph={topologyGraph}
+        notes="defn body: let bindings reference each other — the topology falls out of the data flow. {:keys [port-name]} destructuring selects a named output port — standard Clojure, no graph-specific syntax. Diamond via let: parse-auth-request fans out; validate-client and authenticate-user converge at issue-auth-code."
+      />
+      <Story
+        title="OIDC — Structural container (def, same node interfaces)"
+        lisp={structuralLisp}
+        canvas={
+          <StoryCanvas
+            treeNodes={[
+              makeNode("oidc-provider", "oidc-provider", "composite", topologyNodes),
+            ]}
+            focusId="oidc-provider"
+          />
+        }
+        graph={{
+          uri: "spike://local/oidc-provider",
+          nodes: Object.fromEntries(
+            topologyNodes.map((n) => [n.id, { id: n.id, kind: "node" }]),
+          ),
+        }}
+        notes="def — a named value, not a function. The vector lists which nodes are present; bare symbol references imply no invocation or call order. The same defn interfaces work here unchanged — def vs defn is the only difference between structural and callable."
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 13. Alternative implementations
 // ---------------------------------------------------------------------------
 
 export function AlternativeImplementations() {
