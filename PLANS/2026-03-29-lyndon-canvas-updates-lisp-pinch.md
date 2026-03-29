@@ -44,8 +44,9 @@ The lisp semantic layer goes in a new `src/code/` directory, parallel to `src/ui
   - "Fit" `SmallBtn` to the right of the layout dropdown in `CanvasTopBar`.
   - `fitView()`: reads root-level `ForceNode[]` from `layout.get("")`, calls `boundingBox(nodes, 40)`, computes scale to fill 80% of viewport, centres the bbox.
 
-- [ ] **6. Story for Code View panel**
-  - Not yet done. Add a story to show the code panel with sample workspace content.
+- [x] **6. Story for Code View panel**
+  - `src/ui/stories/code-panel.stories.tsx` — five stories: DefaultWorkspace, CallChain, FanOut, NestedSubgraph, Diamond.
+  - Each shows the live editable panel (seeded from graphToSpike) alongside a reference snippet from the syntax candidates.
 
 ## Critical Files
 
@@ -177,4 +178,4 @@ Ref: [wooorm/starry-night](https://github.com/wooorm/starry-night)
 - [x] Inspector `⊞` button opens a JSON code panel synced bidirectionally with the data textarea
 - [x] `graphToSpike` round-trips through `spikeToGraph` (manual verified)
 - [x] "Fit" button centers and scales the graph
-- [ ] Code View panel story added to storybook
+- [x] Code View panel story added to storybook
