@@ -65,7 +65,7 @@ The lisp semantic layer goes in a new `src/code/` directory, parallel to `src/ui
 
 - [ ] **Multi-word node labels** — `New Node` can't be a bare symbol in Clojure. Options: kebab-case convention (`new-node`), quoted strings (`"New Node"`), or auto-slugging on serialise with a display label stored separately. Need to decide on UX and update `graphToSpike`/`spikeToGraph` accordingly.
 
-- [ ] **Syntax highlighting** — investigate available packages (e.g. CodeMirror 6, Monaco, or a lightweight tokeniser-only lib like `highlight.js` or `Prism`). Want something that can run in the browser without a heavy build step and ideally understands Clojure/EDN syntax.
+- [ ] **Syntax highlighting** — see research below.
 
 - [ ] **Edge representation** — edges are currently emitted as `;` line comments. Need an idiomatic Clojure approach: `defn` argument lists and `let` bindings are the natural forms; map out exactly how dataflow edges translate to call-graph notation (see `docs/spike-clojure.md` §Callable nodes).
 
@@ -81,6 +81,89 @@ The lisp semantic layer goes in a new `src/code/` directory, parallel to `src/ui
 - [ ] **Graph overlays** — allow the same entity to be defined multiple times across separate overlay documents, with features unioned at load time (inspired by inductive datatypes). Primary use case: attaching IDs and metadata to code-view symbols in a separate overlay, keeping main `def` forms clean and human-readable. Needs design work on the overlay merge semantics and how overlays are addressed (URI? local file?).
 
 - [ ] **Rename "AI interface" → "Code Interface" in DESIGN.md** — the MCP/Spike-Lisp API is a general programmatic interface useful for tooling, scripting, and AI agents alike; the current name over-constrains how people think about it.
+
+## Syntax Highlighting Research
+
+The core challenge: `@deno/emit` can bundle HTTPS ESM URLs (e.g. `esm.sh`) but **cannot** handle `npm:` specifiers. CodeMirror 6 was already tried and failed because its full package set doesn't survive the bundler.
+
+### The overlay / backdrop technique
+
+All of the library options below target `<pre><code>` blocks, not editable `<textarea>` elements. To get a highlighted editor you need the *overlay trick*: a `<div>` is positioned directly behind a transparent `<textarea>`, the text is tokenised into `<span>` elements inside the div, and scroll position is mirrored via a `scroll` event listener. Known pitfalls:
+
+- Scroll drift — both `scrollTop` and `scrollLeft` must be synced on every `input` and `scroll` event.
+- Final-newline gap — `<pre>` collapses a trailing empty line; must append a dummy `\u00A0` to avoid cursor drift.
+- Firefox adds padding inside textareas that doesn't exist in the backdrop.
+- iOS adds 3 px of non-removable left/right padding.
+
+Refs: [CSS-Tricks](https://css-tricks.com/creating-an-editable-textarea-that-supports-syntax-highlighted-code/), [DEV overlay article](https://dev.to/helgesverre/syntax-highlighting-a-plain-textarea-with-a-transparent-overlay-1fck), [Coder's Block deep-dive](https://codersblock.com/blog/highlight-text-inside-a-textarea/)
+
+---
+
+### Option A — DIY tokeniser + overlay (recommended)
+
+We already wrote a complete Spike-Clojure `StreamParser` (line comments, strings, keywords, brackets, numbers, special forms) while attempting the CodeMirror integration. Adapting it to emit `<span class="tok-keyword">…</span>` HTML rather than CodeMirror tokens is straightforward. Pair with the overlay technique above.
+
+- **Bundle impact:** zero — no new dependency.
+- **Clojure support:** exact, hand-tuned for Spike-Clojure's actual token set.
+- **`@deno/emit` compatibility:** N/A — pure TS.
+- **Downside:** we own the tokeniser; edge cases (multiline strings, nested maps) need manual handling.
+
+---
+
+### Option B — highlight.js via `esm.sh`
+
+highlight.js v11 ships a CJS build; `esm.sh` converts it to ESM automatically. Has a built-in Clojure grammar. Core + Clojure grammar ≈ 30–40 kB gzipped.
+
+```ts
+import hljs from "https://esm.sh/highlight.js/lib/core";
+import clojure from "https://esm.sh/highlight.js/lib/languages/clojure";
+hljs.registerLanguage("clojure", clojure);
+const result = hljs.highlight(code, { language: "clojure" });
+// result.value is the HTML string with <span class="hljs-*"> tags
+```
+
+- **`@deno/emit` compatibility:** likely — esm.sh can convert CJS highlight.js, but not yet validated in this project's bundler. Worth a quick spike.
+- **Downside:** Clojure ≠ Spike-Clojure; the grammar won't know about Spike-specific forms. Still good enough for basic colouring.
+- **Overlay still needed** for the textarea editor.
+
+Ref: [highlightjs.org](https://highlightjs.org/), [SUPPORTED_LANGUAGES](https://github.com/highlightjs/highlight.js/blob/main/SUPPORTED_LANGUAGES.md)
+
+---
+
+### Option C — lezer-clojure (standalone, no full CodeMirror)
+
+`lezer-clojure` is the Lezer grammar used internally by CodeMirror's Clojure mode. It can be used with just `@lezer/common` and `@lezer/highlight` — no `EditorView` or `EditorState` needed.
+
+```ts
+import { parser } from "https://esm.sh/lezer-clojure";
+import { highlightCode, classHighlighter } from "https://esm.sh/@lezer/highlight";
+```
+
+Walk the parse tree, emit spans. ~60–80 kB gzipped total for the three packages.
+
+- **`@deno/emit` compatibility:** uncertain — `lezer-clojure` hasn't been published recently (last release ~3 years ago) and its esm.sh bundle needs testing.
+- **Clojure support:** high quality (the same parser CodeMirror uses).
+- **Overlay still needed.**
+
+Ref: [lezer-clojure npm](https://www.npmjs.com/package/lezer-clojure), [Better Clojure highlighting post](https://blog.michielborkent.nl/better-clojure-highlighting.html)
+
+---
+
+### Option D — starry-night (`@wooorm/starry-night`)
+
+Pure ESM, uses TextMate grammars, ships a WASM binary. GitHub-quality output. Total for core + WASM ≈ 185 kB gzipped; adding the common language set (35 languages incl. Clojure) adds ~250 kB more.
+
+- **`@deno/emit` compatibility:** probably works via esm.sh (pure ESM), but the WASM binary fetch is a runtime concern.
+- **Size:** heaviest of the options listed here.
+- **Overlay still needed.**
+
+Ref: [wooorm/starry-night](https://github.com/wooorm/starry-night)
+
+---
+
+### Recommendation
+
+**Start with Option A (DIY).** The tokeniser is already written; adapting it to emit HTML spans and wiring the overlay is ~50 lines of code with no bundler risk. If richer highlighting (rainbow parens, semantic tokens) becomes desirable later, Option C (lezer-clojure) is the natural upgrade path.
 
 ## Open Questions
 
