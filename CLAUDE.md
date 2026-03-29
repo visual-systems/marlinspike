@@ -14,6 +14,7 @@ This is a Deno project. Always prefix deno commands with `NO_COLOR=1` to suppres
 | Task | Command |
 |---|---|
 | Dev server (watch) | `NO_COLOR=1 deno task dev` |
+| **All CI checks** | `NO_COLOR=1 deno task ci` |
 | Run tests | `NO_COLOR=1 deno task test` |
 | Format check | `NO_COLOR=1 deno task fmt` |
 | Lint | `NO_COLOR=1 deno task lint` |
@@ -28,6 +29,8 @@ This is a Deno project. Always prefix deno commands with `NO_COLOR=1` to suppres
 If currently in a git branch, and there is a matching plan in PLANS, then assume that we are following a "documented-plan" based workflow.
 
 If not clear about weather to be performing actions, check if the more planning needs to be done.
+
+Always run `NO_COLOR=1 deno task ci` before committing and pushing. Fix any failures before proceeding.
 
 See the `/branch` command for more information.
 

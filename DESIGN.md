@@ -271,20 +271,31 @@ Validation operates in two modes, settable per context (per-graph, per-persona, 
 
 | Mode | Description | When to use |
 |---|---|---|
-| **Speculative** | Violations produce live diagnostic feedback but do not block any operation. The graph may be in a violated state at any time. | Active authoring, exploratory design, early-stage graphs |
-| **Enforced** | Violations are hard stops at designated checkpoints: save, commit, publish, compile, or transition to a downstream target. The graph cannot advance past a checkpoint in a violated state. | Production graphs, shared libraries, CI validation, runtime targeting |
+| **sketch** | Violations produce live diagnostic feedback but do not block any operation. The graph may be in a violated state at any time. | Active authoring, exploratory design, early-stage graphs |
+| **enforce** | Violations are hard stops at designated checkpoints: save, commit, publish, compile, or transition to a downstream target. The graph cannot advance past a checkpoint in a violated state. | Production graphs, shared libraries, CI validation, runtime targeting |
 
-The mode applies to a *schema set*, not globally. A graph may have speculative mode for in-progress topology schemas and enforced mode for the base format schema simultaneously. This allows "soft typing" on evolving layers while maintaining hard invariants on stable ones.
+The mode applies to a *schema set*, not globally. A graph may have sketch mode for in-progress topology schemas and enforce mode for the base format schema simultaneously. This allows "soft typing" on evolving layers while maintaining hard invariants on stable ones.
 
-Checkpoints where enforced mode blocks are declared by the schema plugin:
+Checkpoints where enforce mode blocks are declared by the schema plugin:
 
 ```jsonc
 {
   "schema": "spike.topology.pipeline",
   "enforcedAt": ["save", "compile"],   // blocks at these checkpoints if violated
-  "speculativeHints": true              // even in speculative mode, surface live hints
+  "sketchHints": true                  // even in sketch mode, surface live hints
 }
 ```
+
+#### Relationship to the UI authoring layer
+
+The UI type system (`TreeNode`/`Edge` in the workspace) is intentionally permissive. It can represent all graph concepts — ports, schemas, implementations, typed edges — but does not structurally require any of them. Fields are optional rather than absent. A node without ports, an edge without a schema, a graph without active constraints: all are valid UI states.
+
+This is a deliberate design choice, not a limitation:
+
+- The UI is the **sketching surface**. Structure emerges incrementally as the author fills things in.
+- The **constraint system provides enforcement**. In sketch mode it surfaces feedback as the graph is developed; in enforce mode it blocks advancement past checkpoints.
+- The relationship is: **enforce-valid ⊆ sketch-valid ⊆ UI-representable**. A graph that satisfies all enforced constraints is always a valid sketch; a valid sketch is always representable in the UI. The reverse does not hold.
+- There is no separate "formal type" that the UI must be converted into. The UI *is* the authoring model; constraints are what distinguish a finished graph from a work-in-progress.
 
 ### 5.4 Protocol
 
@@ -815,94 +826,63 @@ This phase builds out the full modular type system vision from §5. Phase 3 esta
 
 The graph should be easily readable, writable, and navigable by an AI agent without requiring access to the visual canvas. Three properties make this achievable:
 
-- The rose-tree structure maps directly to S-expressions — the graph *is* a nested list
+- The graph structure maps directly to S-expressions — the rose-tree *is* a nested list
 - The URI addressing scheme gives the AI stable references to any subgraph, node, or port
 - The constraint system already produces structured, informative diagnostics — these serve as the AI's error feedback loop, closing the edit→validate→fix cycle without human intervention
 
-The interface has two components: a **Spike-Lisp** text format for reading and writing graphs, and an **MCP server** that exposes graph operations as tools an AI agent can call.
+The interface has two components: a text format for reading and writing graphs, and an **MCP server** that exposes graph operations as tools an AI agent can call.
 
-### 13.2 Spike-Lisp — A Lisp-Like Graph Notation
+### 13.2 Language representations
 
-Spike-Lisp is a round-trippable text representation of the graph. It is not a programming language — it is a serialisation format optimised for readability and editability by both humans and AI. It compiles to and from the canonical JSON graph format without information loss.
+#### Concept
 
-Spike-Lisp also serves as the backing format for the IDE's **text view** (§6.5) — a human-facing code editor pane that is a full peer of the canvas. The LSP server for Spike-Lisp is the constraint plugin host; there is no separate validation path for text edits vs. canvas edits.
+A **language representation** is a text format that is simultaneously valid in a host programming language and encodes graph semantics. The two readings coexist without conflict:
 
-#### Basic Structure
+- A reader who ignores graph semantics sees ordinary code — typed function definitions, data structures, and composition.
+- A reader who cares sees the graph layered on top — nodes, edges, ports, and containment emerge from the code structure without any extra annotation.
 
-```lisp
-; A subgraph is a list headed by its node label
-; Properties are keyword arguments
-; Edges are declared separately from the tree structure
+This isomorphism is a design goal, not an implementation detail. It means:
 
-(graph :uri "spike://acme/backend/auth-service"
-       :schemas (spike.topology.pipeline io.http)
+- The graph notation is learnable by anyone who knows the host language.
+- AI agents can read and write graphs using familiar programming patterns.
+- The constraint system validates both the code semantics and the graph semantics in one pass.
+- The text view (§6.5) is a full peer of the canvas — editing code and editing the graph are the same operation.
 
-  ; Nodes — composite nodes contain their subgraph inline
-  (node :id "ingress" :label "HTTP Ingress"
-    :port (in  :id "p-in"  :schema io.http.request)
-    :port (out :id "p-out" :schema spike.dataflow.bytes))
+#### Two layers
 
-  (node :id "validator" :label "Token Validator"
-    :port (in  :id "p-in"  :schema spike.dataflow.bytes)
-    :port (out :id "p-ok"  :schema spike.dataflow.token)
-    :port (out :id "p-err" :schema spike.dataflow.error))
+Every language representation is built on two layers:
 
-  ; Composite node — subgraph inline or by URI reference
-  (node :id "processor" :label "Request Processor"
-    :subgraph "spike://acme/backend/auth-service/processor"
-    :port (in  :id "p-in"  :schema spike.dataflow.token)
-    :port (out :id "p-out" :schema io.http.response))
+1. **Base reader** — a general-purpose S-expression reader (`src/graph/base_lisp.ts`), EDN-inspired. Produces a typed AST with no graph semantics. Shared across all language variants.
 
-  ; Edges — from/to reference node-id and port-id
-  (edge :from ("ingress"   . "p-out")
-        :to   ("validator" . "p-in"))
+2. **Semantic layer** — maps host-language forms to graph concepts. Each variant defines its own mapping; no new syntax is introduced at this layer.
 
-  (edge :from ("validator" . "p-ok")
-        :to   ("processor" . "p-in"))
-        
-  ; Properties on edges
-  (edge :from ("validator" . "p-err")
-        :to   ("ingress"   . "p-in")   ; feedback — would violate pipeline constraint
-        :props (:label "retry")))
-```
+#### Language variants
 
-#### ArrowChoice Branching
+The Spike notation is not tied to a single language. Each variant is a true subset of its host language:
 
-```lisp
-(node :id "router" :label "Auth Router"
-  :port (in  :id "p-in"    :schema spike.dataflow.request)
-  :port (out :id "p-left"  :schema spike.dataflow.request :tag :authenticated)
-  :port (out :id "p-right" :schema spike.dataflow.request :tag :anonymous))
-```
+| Variant | Host language | Status |
+|---|---|---|
+| **Spike-Clojure** | Clojure / EDN | Active — see [`docs/spike-clojure.md`](../docs/spike-clojure.md) |
+| Spike-TypeScript | TypeScript | Planned |
+| Spike-Scheme | Scheme | Planned |
 
-#### ArrowLoop Feedback
+Spike-Clojure is the first variant and the current implementation target. It is not the canonical form — future variants follow the same isomorphism principle in their respective host languages.
 
-```lisp
-(node :id "accumulator" :label "State Accumulator"
-  :port (in    :id "p-in"    :schema spike.dataflow.event)
-  :port (out   :id "p-out"   :schema spike.dataflow.result)
-  :port (loop  :id "p-state" :schema spike.dataflow.state))  ; loop wire
-```
+#### Graph concepts in language form
 
-#### Actor Dynamic Dispatch
+Regardless of variant, the mapping follows a common pattern:
 
-```lisp
-(node :id "dispatcher" :label "Event Dispatcher"
-  :port (in      :id "p-in"  :schema spike.actor.message)
-  :port (dynamic :id "p-out" :dispatch-group "handlers"
-                 :schema spike.actor.message))  ; target resolved at runtime
-```
-
-#### Subgraph Reference (without inlining)
-
-```lisp
-; Reference a shared library subgraph by URI
-(node :id "map-reduce" :label "Map Reduce"
-  :subgraph "spike://community/stdlib/map-reduce@v1.2.0"
-  :impl :production          ; implementation selection
-  :port (in  :id "p-in"  :schema spike.dataflow.collection)
-  :port (out :id "p-out" :schema spike.dataflow.collection))
-```
+| Graph concept | Language form |
+|---|---|
+| Structural container | Named value / variable binding |
+| Callable node | Function definition with typed arguments and return |
+| Call graph topology | `let` bindings referencing each other |
+| Input ports | Function arguments (with type annotations) |
+| Single output port | Return type annotation |
+| Multiple output ports | Named fields in return map / record |
+| Port selection | Destructuring of the return value |
+| Inline subgraph | Function body |
+| Opaque / external subgraph | URI reference in place of body |
 
 ### 13.3 MCP Server Interface
 
