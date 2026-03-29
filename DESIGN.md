@@ -815,161 +815,63 @@ This phase builds out the full modular type system vision from §5. Phase 3 esta
 
 The graph should be easily readable, writable, and navigable by an AI agent without requiring access to the visual canvas. Three properties make this achievable:
 
-- The rose-tree structure maps directly to S-expressions — the graph *is* a nested list
+- The graph structure maps directly to S-expressions — the rose-tree *is* a nested list
 - The URI addressing scheme gives the AI stable references to any subgraph, node, or port
 - The constraint system already produces structured, informative diagnostics — these serve as the AI's error feedback loop, closing the edit→validate→fix cycle without human intervention
 
-The interface has two components: a **Spike-Lisp** text format for reading and writing graphs, and an **MCP server** that exposes graph operations as tools an AI agent can call.
+The interface has two components: a text format for reading and writing graphs, and an **MCP server** that exposes graph operations as tools an AI agent can call.
 
-### 13.2 Spike-Clojure — A Clojure-Subset Graph Notation
+### 13.2 Language representations
 
-**Spike-Clojure** is the Clojure variant of the Spike graph notation. It is a round-trippable text representation of the graph that is simultaneously valid, idiomatic Clojure — a reader who ignores graph semantics sees ordinary typed functions; a reader who cares sees the graph structure layered on top. The two readings coexist without conflict.
+#### Concept
 
-Spike-Clojure serves as the backing format for the IDE's **text view** (§6.5) — a human-facing code editor pane that is a full peer of the canvas. The LSP server is the constraint plugin host; there is no separate validation path for text edits vs. canvas edits.
+A **language representation** is a text format that is simultaneously valid in a host programming language and encodes graph semantics. The two readings coexist without conflict:
 
-Future language variants (TypeScript, Scheme, etc.) will follow the same isomorphism principle in their respective host languages. Spike-Clojure is the first variant, not the canonical form.
+- A reader who ignores graph semantics sees ordinary code — typed function definitions, data structures, and composition.
+- A reader who cares sees the graph layered on top — nodes, edges, ports, and containment emerge from the code structure without any extra annotation.
 
-#### Base reader
+This isomorphism is a design goal, not an implementation detail. It means:
 
-Spike-Clojure is parsed by **base-lisp** — a general-purpose EDN-inspired S-expression reader that produces a typed `SExp` AST with no graph semantics. Token types:
+- The graph notation is learnable by anyone who knows the host language.
+- AI agents can read and write graphs using familiar programming patterns.
+- The constraint system validates both the code semantics and the graph semantics in one pass.
+- The text view (§6.5) is a full peer of the canvas — editing code and editing the graph are the same operation.
 
-| Type | Syntax | Example |
+#### Two layers
+
+Every language representation is built on two layers:
+
+1. **Base reader** — a general-purpose S-expression reader (`src/graph/base_lisp.ts`), EDN-inspired. Produces a typed AST with no graph semantics. Shared across all language variants.
+
+2. **Semantic layer** — maps host-language forms to graph concepts. Each variant defines its own mapping; no new syntax is introduced at this layer.
+
+#### Language variants
+
+The Spike notation is not tied to a single language. Each variant is a true subset of its host language:
+
+| Variant | Host language | Status |
 |---|---|---|
-| `symbol` | bare identifier | `A`, `my-node`, `spike.topology.pipeline` |
-| `keyword` | `:foo` | `:ports`, `:subgraph` |
-| `string` | `"..."` | `"spike://acme/backend"` |
-| `number` | integer or float | `42`, `3.14` |
-| `boolean` | `true` / `false` | `true` |
-| `nil` | `nil` | `nil` |
-| `list` | `(...)` | `(A B C)` |
-| `vector` | `[...]` | `[^float a ^float b]` |
-| `map` | `{:k v ...}` | `{:ports {:x1 float :x2 float}}` |
-| `tagged` | `#Tag value` | `#Call (A B)`, `#Subgraph (...)` |
+| **Spike-Clojure** | Clojure / EDN | Active — see [`docs/spike-clojure.md`](../docs/spike-clojure.md) |
+| Spike-TypeScript | TypeScript | Planned |
+| Spike-Scheme | Scheme | Planned |
 
-Comments: `;` to end of line. Commas: treated as whitespace (EDN convention).
+Spike-Clojure is the first variant and the current implementation target. It is not the canonical form — future variants follow the same isomorphism principle in their respective host languages.
 
-#### Core forms
+#### Graph concepts in language form
 
-Three Clojure definition forms carry the graph semantics:
+Regardless of variant, the mapping follows a common pattern:
 
-| Form | Clojure meaning | Spike-Clojure meaning |
-|---|---|---|
-| `def` | named value | structural container — nodes present, no implied call order |
-| `defn` | named function | callable node — has input/output ports, can be invoked |
-| `fn` | anonymous function | anonymous sub-subgraph |
-
-**Callable node — `defn`**
-
-Single output: `^Type` hint before the name (standard Clojure type hint).
-Multiple outputs: `{:ports {...}}` attr-map between name and params (valid Clojure attr-map position).
-
-```clojure
-; Single output
-(defn ^float discriminant [^float a ^float b ^float c] ...)
-
-; Multiple named outputs
-(defn real-roots
-  {:ports {:x1 float :x2 float}}
-  [^float a ^float b ^float c]
-  ...)
-```
-
-With an inline body the `let` structure becomes the subgraph topology — each binding is a call site, the return map is the output. The body is plain Clojure; no graph-specific syntax is required inside it:
-
-```clojure
-(defn quadratic-roots
-  {:ports {:x1 float :x2 float}}
-  [^float a ^float b ^float c]
-  (let [neg-b  (negate b)
-        disc   (subtract (square b) (multiply 4.0 (multiply a c)))
-        sqrt-d (sqrt disc)
-        two-a  (multiply 2.0 a)]
-    {:x1 (divide (add      neg-b sqrt-d) two-a)
-     :x2 (divide (subtract neg-b sqrt-d) two-a)}))
-```
-
-Replace the body with `:subgraph "spike://math/quadratic-roots"` to reference an external implementation.
-
-**Structural container — `def`**
-
-`def` with a vector of node references declares which nodes are present without implying any call order. It is not callable:
-
-```clojure
-(def oidc-provider
-  [parse-auth-request
-   validate-client
-   authenticate-user
-   issue-auth-code
-   exchange-code
-   build-response])
-```
-
-Nested containers can be defined separately (cleaner when shared) or inline (more compact):
-
-```clojure
-; Separate — C has its own top-level identity
-(def C [D])
-(def A [B C])
-
-; Inline — shorthand, equivalent to the above
-(def A [B (def C [D])])
-```
-
-Both forms produce the same graph. Inline `def` inside a vector defines and names the sub-container in one form.
-
-**Named wiring — `defn` with topology**
-
-When the `let` bindings in a `defn` body reference each other, the call graph is expressed directly. Selecting a specific output port uses Clojure destructuring:
-
-```clojure
-(defn oidc-flow [^http.Request http-request]
-  (let [parsed            (parse-auth-request http-request)
-        {:keys [client]}  (validate-client parsed)   ; destructure :client port
-        {:keys [session]} (authenticate-user parsed)  ; destructure :session port
-        code              (issue-auth-code session client)
-        {:keys [tokens]}  (exchange-code code)]
-    (build-response tokens)))
-```
-
-Port syntax summary:
-
-| Case | Syntax |
+| Graph concept | Language form |
 |---|---|
-| Single output, typed | `(defn ^float foo [^float x] ...)` |
-| Single output, untyped | `(defn foo [x] ...)` |
-| Multiple outputs | `(defn foo {:ports {:x1 float :x2 float}} [^float a] ...)` |
-| Abstract (no impl) | `(defn ^float foo [^float x])` |
-| URI-referenced impl | `(defn foo {:ports {...}} [args] :subgraph "spike://...")` |
-| Select named port | `(let [{:keys [port-name]} (node args)] ...)` |
-| Structural container | `(def name [node1 node2 ...])` |
-| Inline named sub-container | `(def outer [A (def inner [B C])])` |
-
-#### Optional explicit annotations — `#Subgraph` and `#Call`
-
-`#Subgraph` and `#Call` are reader tags that can be used as explicit semantic annotations where disambiguation is wanted. They are not required — `def`/`defn`/`fn` already convey the same semantics. They may also serve as the hook for user-defined semantic variants.
-
-```clojure
-; Explicit — tags spell out the intended semantic
-#Subgraph (auth-service ingress processor egress)
-#Call (validate (enrich respond))
-
-; Implicit — same meaning, no tags needed
-(def auth-service (let [ingress (ingress) processor (processor) egress (egress)] nil))
-(defn pipeline [] (let [v (validate) e (enrich r (respond)] (r)))
-```
-
-#### Explicit edge declaration
-
-For attaching properties to edges (which have no slot in the `let` structure), edges can be declared explicitly within a `def` container:
-
-```clojure
-(def auth-service
-  {:schemas [spike.topology.pipeline io.http]
-   :nodes   [(ingress) (validator)]
-   :edges   [(edge :from [ingress p-out] :to [validator p-in])
-             (edge :from [validator p-err] :to [ingress p-in]
-                   :props {:label "retry"})]})  ; would violate pipeline constraint
-```
+| Structural container | Named value / variable binding |
+| Callable node | Function definition with typed arguments and return |
+| Call graph topology | `let` bindings referencing each other |
+| Input ports | Function arguments (with type annotations) |
+| Single output port | Return type annotation |
+| Multiple output ports | Named fields in return map / record |
+| Port selection | Destructuring of the return value |
+| Inline subgraph | Function body |
+| Opaque / external subgraph | URI reference in place of body |
 
 ### 13.3 MCP Server Interface
 
