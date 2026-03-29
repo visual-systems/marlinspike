@@ -178,50 +178,84 @@ export function SubgraphLeafOnly() {
 // ---------------------------------------------------------------------------
 
 export function SubgraphNested() {
-  const lisp = `
-; Nested structural containers — def forms can be nested or defined separately.
-; C is a named sub-container holding D; A holds B and C.
+  const lispSeparate = `
+; Separate top-level definitions — C has its own identity
 (def C [D])
 (def A [B C])`;
 
+  const lispInline = `
+; Inline named definition — shorthand for the above
+; (def C [D]) inside the vector defines and names C in one form.
+; Both forms produce the same graph; inline is more compact.
+(def A [B (def C [D])])`;
+
   return (
-    <Story
-      title="def — nested containment"
-      lisp={lisp}
-      canvas={
-        <StoryCanvas
-          treeNodes={[
-            makeNode("A", "A", "composite", [
-              makeNode("B", "B", "leaf", []),
-              makeNode("C", "C", "composite", [
-                makeNode("D", "D", "leaf", []),
+    <div>
+      <Story
+        title="def — nested containment (separate definitions)"
+        lisp={lispSeparate}
+        canvas={
+          <StoryCanvas
+            treeNodes={[
+              makeNode("A", "A", "composite", [
+                makeNode("B", "B", "leaf", []),
+                makeNode("C", "C", "composite", [
+                  makeNode("D", "D", "leaf", []),
+                ]),
               ]),
-            ]),
-          ]}
-          expandedNodes={["C"]}
-          focusId="A"
-        />
-      }
-      graph={{
-        uri: "spike://local/A",
-        nodes: {
-          B: { id: "B", kind: "node", label: "B", subgraph: null },
-          C: {
-            id: "C",
-            kind: "node",
-            label: "C",
-            subgraph: "spike://local/A/C",
+            ]}
+            expandedNodes={["C"]}
+            focusId="A"
+          />
+        }
+        graph={{
+          uri: "spike://local/A",
+          nodes: {
+            B: { id: "B", kind: "node", label: "B", subgraph: null },
+            C: { id: "C", kind: "node", label: "C", subgraph: "spike://local/A/C" },
           },
-        },
-        subgraphs: {
-          "spike://local/A/C": {
-            uri: "spike://local/A/C",
-            nodes: { D: { id: "D", kind: "node", label: "D", subgraph: null } },
+          subgraphs: {
+            "spike://local/A/C": {
+              uri: "spike://local/A/C",
+              nodes: { D: { id: "D", kind: "node", label: "D", subgraph: null } },
+            },
           },
-        },
-      }}
-      notes="def forms compose: C is defined first, then referenced by name inside A. Subgraphs can also be defined inline using (def C [D]) as an item in the parent vector — separate top-level definitions are cleaner when the sub-container has its own identity."
-    />
+        }}
+        notes="Separate top-level definitions: C is defined first and referenced by name inside A. Cleaner when the sub-container has its own identity or is shared."
+      />
+      <Story
+        title="def — nested containment (inline named definition)"
+        lisp={lispInline}
+        canvas={
+          <StoryCanvas
+            treeNodes={[
+              makeNode("A", "A", "composite", [
+                makeNode("B", "B", "leaf", []),
+                makeNode("C", "C", "composite", [
+                  makeNode("D", "D", "leaf", []),
+                ]),
+              ]),
+            ]}
+            expandedNodes={["C"]}
+            focusId="A"
+          />
+        }
+        graph={{
+          uri: "spike://local/A",
+          nodes: {
+            B: { id: "B", kind: "node", label: "B", subgraph: null },
+            C: { id: "C", kind: "node", label: "C", subgraph: "spike://local/A/C" },
+          },
+          subgraphs: {
+            "spike://local/A/C": {
+              uri: "spike://local/A/C",
+              nodes: { D: { id: "D", kind: "node", label: "D", subgraph: null } },
+            },
+          },
+        }}
+        notes="Inline named definition: (def C [D]) inside the vector defines and names C in one form — shorthand for the separate-definition style. Both produce the same graph. Inline is compact; separate is cleaner when sub-containers are shared or deeply nested."
+      />
+    </div>
   );
 }
 

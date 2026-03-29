@@ -1,11 +1,11 @@
-# Exploring Spike-Lisp Ideas
+# Exploring Spike-Clojure Ideas
 
 **Branch:** lyndon/exploring-spike-lisp-ideas
 **Date:** 2026-03-26
 
 ## Context
 
-DESIGN.md §13.2 specifies Spike-Lisp — a round-trippable text representation of the graph for both the human-facing text view (§6.5) and the AI/MCP interface (§13). The design is well-described but no implementation exists.
+DESIGN.md §13.2 specifies Spike-Clojure (originally called Spike-Lisp — renamed during this branch to reflect that the Clojure variant is a true Clojure subset) — a round-trippable text representation of the graph for both the human-facing text view (§6.5) and the AI/MCP interface (§13). The design is well-described but no implementation exists.
 
 The codebase currently has two separate type systems:
 - `src/graph/types.ts` — formal `Graph`/`Node`/`Edge` types matching DESIGN.md §4.3 (port nodes, portSchema, implementations, URIs, activeSchemas)
@@ -100,6 +100,61 @@ Spike-Lisp is a **two-layer system**:
   1. **Edge properties** — per-edge metadata (label, type, retry policy) has no slot in pure structural nesting; needs some decoration form e.g. `(#edge :label "retry" B)`
   2. **Pure fan-in** — `((A B) C)` is not viable: it implies A→B (which doesn't exist), and a `#Subgraph` grouping would require edges to transgress subgraph boundaries implicitly. Let binding is the correct resolution: `(let [c C] (A c) (B c))` — c is a named reference; A and B call it independently with no implied relationship between A and B
   3. **Let/binding** — naming intermediate values in dataflow (`let result = A(x) in B(result, y)`) is inherently flat; nesting gives the topology but loses named-wire semantics; `let` addresses this directly
+
+- **`defn` as the primary form for named nodes** — `defn` is cleaner than `defnode` or a separate `#Subgraph` wrapper. It reads like an ordinary Clojure function definition. The body IS the subgraph. Three distinct cases:
+  - `(defn ^Type foo [...])` — abstract interface only (no body)
+  - `(defn foo {:ports {...}} [...] :subgraph "spike://...")` — URI-referenced implementation (opaque)
+  - `(defn foo {:ports {...}} [...] (let [...] {...}))` — inline subgraph; body is a plain `let` returning a map
+  - `fn` is reserved for anonymous / non-subgraph forms.
+  - `#Subgraph` is reserved for top-level graphs that aren't named nodes and for embedding anonymous subgraphs structurally inside another form.
+  - **Open question**: if the `defn` body is a bare `#Subgraph` rather than a `let`/`#Call`, does that mean the node's implementation is a containment graph, or that the node *is* the graph? Needs pinning down.
+  - **Aesthetic goal**: Spike-Lisp should read like code. Someone reading it should be able to ignore the graph semantics entirely and just see typed function definitions. `defn` achieves this; `#Subgraph (foo ...)` does not. Prefer function-definition style whenever the context is unambiguous.
+
+- **Isomorphism with idiomatic code — design principle** — the goal is not merely to be *inspired by* Clojure syntax but to be isomorphic with it: a Spike-Lisp document using `defn` + type hints + `let` bodies should simultaneously be valid, idiomatic code in the host language. Graph semantics layer on top without breaking host-language validity.
+  - The current variant targets Clojure/EDN. `defn` bodies, `^Type` hints, `let` + map returns, and `:ports` metadata are all native Clojure.
+  - Future variants could target other languages — TypeScript, Scheme, Python, etc. Each variant should feel native in its host language; the Clojure variant is the first, not the canonical one.
+  - This means: when a design choice arises, prefer the form that is idiomatic in the host language. Non-host forms (tagged literals like `#Call`, `#Subgraph`) should be reserved for concepts that have no natural host-language equivalent (graph-level topology, semantic tagging of top-level composition).
+  - Implication for future work: the base-lisp reader and semantic interpreter should be designed with language-variant extensibility in mind — the tokeniser and `SExp` types are shared; the host-language mapping layer is a variant.
+
+- **Rename: Spike-Lisp → Spike-Clojure** — the Clojure variant is now called Spike-Clojure, reflecting that it is a true Clojure subset rather than merely Lisp-inspired. Future variants (TypeScript, Scheme, etc.) will have their own names. The base reader layer remains "base-lisp" as it is language-agnostic.
+
+- **`def` for structural containers** — resolved: `def` (not `defn`) is the correct form for a named structural container. `defn` implies callability; a pure grouping is a value, not a function. The three-form distinction is now:
+  - `def` — structural container, named value, not callable; body is a vector of node references
+  - `defn` — callable node, has ports, can be invoked
+  - `fn` — anonymous sub-subgraph
+
+- **`def` body is a vector of node references** — resolved: `(def my-graph [A B C])` uses a bare vector, not `(let [...] nil)`. `(node)` invocation syntax inside a structural container implied calling the node, which is wrong. Bare symbol references express presence without call order.
+
+- **Inline named `def` inside a vector** — resolved: `(def A [B (def C [D])])` is valid shorthand for defining and naming a sub-container inline. Equivalent to `(def C [D])` + `(def A [B C])` as separate top-level forms. Use separate forms when the sub-container has its own identity or is shared; use inline for compact one-off nesting.
+
+- **`#Subgraph` and `#Call` are now optional annotations** — resolved: `def`/`defn`/`fn` already encode the structural vs. callable distinction; `#Subgraph` and `#Call` are no longer required. They are retained as optional explicit annotations for disambiguation and as the extensibility hook for user-defined semantic variants.
+
+- **Destructuring replaces `:from :port-name`** — resolved: Clojure destructuring `{:keys [port-name]}` replaces the Spike-Lisp-specific `:from :port-name` port selector in `let` bindings. This makes port selection valid, idiomatic Clojure with no graph-specific syntax.
+
+- **Return type annotation conventions** — resolved:
+  - Single output (default): `^Type` before the name — standard Clojure type hint. Omit entirely when untyped.
+  - Multiple outputs: `{:ports {:x1 Type :x2 Type}}` as the attr-map between name and params — valid Clojure (same position used for `{:deprecated true}`, `{:arglists ...}` etc.). `:ports` names the concept explicitly and aligns with existing design vocabulary.
+  - `#PORTS` and `#Call` are dropped from `defn` bodies — bodies are plain Clojure `let` + map returns. The result is valid Clojure from top to bottom.
+  - ID/URI tagging for `defn` forms deferred as an open question.
+
+- **Port syntax via `defnode`** — in-ports are named arguments (like function parameters), out-ports are record fields (like function return type). Candidate syntax:
+  ```lisp
+  ; Single output — bare type annotation
+  (defnode transform [^bytes input]
+    ^string)
+
+  ; Multi-output — #PORTS tag with a record of named ports
+  (defnode validator [^bytes p-in]
+    #PORTS {:p-ok  ^token
+            :p-err ^error})
+  ```
+  `defnode` unifies call-graph and dataflow: the same interface definition works in both `#Call` (invocation semantics) and `#Subgraph` (containment semantics) contexts. The topology context determines what the ports mean.
+
+- **`defnode` invocation in `#Call` context** — when wiring to a named out-port (multi-output node), callers must specify which port they receive from. Candidate: `(consumer :from :p-ok (validator input))` — explicit port selector. Wiring to the single default out-port can remain implicit.
+
+- **Inout ports** — not a primary concern. Call-graph invocation semantics already handles bidirectional communication: every invocation is inherently bidirectional (request/response). Inout ports fall out naturally.
+
+- **Correlated input/output types (deferred)** — e.g. `(defnode id [^T x] ^T)` where the out-type mirrors the in-type. Dynamic dispatch / type-level polymorphism. Deferred: out of scope for this branch.
 
 ## Critical Files
 
