@@ -692,6 +692,12 @@ interface PanState {
   hasMoved: boolean;
 }
 
+interface TouchState {
+  /** Captured touch points at gesture start, keyed by identifier. */
+  points: Map<number, { x: number; y: number }>;
+  origView: View;
+}
+
 /** All add-edge interaction state bundled for passing into renderLevel. */
 interface InteractionState {
   mode: CanvasMode;
@@ -813,6 +819,107 @@ export function Canvas(
     return () => el.removeEventListener("wheel", handler);
   }, []);
 
+  // Touch pan / pinch-to-zoom — non-passive so we can preventDefault
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    function onTouchStart(e: TouchEvent) {
+      e.preventDefault();
+      const points = new Map<number, { x: number; y: number }>();
+      for (const t of Array.from(e.touches)) {
+        points.set(t.identifier, { x: t.clientX, y: t.clientY });
+      }
+      touchRef.current = { points, origView: { ...viewRef.current! } };
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      e.preventDefault();
+      const state = touchRef.current;
+      if (!state || !el) return;
+      const rect = el.getBoundingClientRect();
+      const cur = new Map<number, { x: number; y: number }>();
+      for (const t of Array.from(e.touches)) {
+        cur.set(t.identifier, { x: t.clientX, y: t.clientY });
+      }
+
+      if (cur.size === 1) {
+        // Single-touch pan
+        const [id] = cur.keys();
+        const orig = state.points.get(id);
+        const now = cur.get(id)!;
+        if (!orig) return;
+        const sdx = now.x - orig.x;
+        const sdy = now.y - orig.y;
+        setView(() => ({
+          scale: state.origView.scale,
+          tx: state.origView.tx + sdx,
+          ty: state.origView.ty + sdy,
+        }));
+      } else if (cur.size >= 2) {
+        // Two-touch pinch + pan
+        const [idA, idB] = cur.keys();
+        const origA = state.points.get(idA);
+        const origB = state.points.get(idB);
+        const nowA = cur.get(idA)!;
+        const nowB = cur.get(idB)!;
+        if (!origA || !origB) return;
+
+        // Pivot = current midpoint in container-local coords
+        const midX = (nowA.x + nowB.x) / 2 - rect.left;
+        const midY = (nowA.y + nowB.y) / 2 - rect.top;
+
+        // Scale from original distance ratio
+        const origDist = Math.hypot(origB.x - origA.x, origB.y - origA.y);
+        const nowDist = Math.hypot(nowB.x - nowA.x, nowB.y - nowA.y);
+        if (origDist < 1) return;
+        const factor = nowDist / origDist;
+        const newScale = Math.max(0.1, Math.min(10, state.origView.scale * factor));
+
+        // Pan: shift from original midpoint to current midpoint
+        const origMidX = (origA.x + origB.x) / 2 - rect.left;
+        const origMidY = (origA.y + origB.y) / 2 - rect.top;
+
+        // Keep the canvas point under the original midpoint fixed, then apply pan delta
+        const canvasX = (origMidX - state.origView.tx) / state.origView.scale;
+        const canvasY = (origMidY - state.origView.ty) / state.origView.scale;
+        const panDx = midX - origMidX;
+        const panDy = midY - origMidY;
+
+        setView(() => ({
+          scale: newScale,
+          tx: midX - canvasX * newScale + panDx,
+          ty: midY - canvasY * newScale + panDy,
+        }));
+      }
+    }
+
+    function onTouchEnd(e: TouchEvent) {
+      e.preventDefault();
+      if (e.touches.length === 0) {
+        touchRef.current = null;
+        return;
+      }
+      // Finger lifted mid-gesture: restart from current positions
+      const points = new Map<number, { x: number; y: number }>();
+      for (const t of Array.from(e.touches)) {
+        points.set(t.identifier, { x: t.clientX, y: t.clientY });
+      }
+      touchRef.current = { points, origView: { ...viewRef.current! } };
+    }
+
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd, { passive: false });
+    el.addEventListener("touchcancel", onTouchEnd, { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, []);
+
   // RAF simulation loop
   useEffect(() => {
     let rafId = 0;
@@ -851,6 +958,7 @@ export function Canvas(
   // Drag / pan gesture refs
   const dragRef = useRef<DragState | null>(null);
   const panRef = useRef<PanState | null>(null);
+  const touchRef = useRef<TouchState | null>(null);
 
   function onDocMouseMove(e: MouseEvent) {
     if (dragRef.current) {
@@ -1108,7 +1216,7 @@ export function Canvas(
       ref={containerRef}
       // deno-lint-ignore no-explicit-any
       tabIndex={0 as any}
-      style="position:absolute; inset:0; overflow:hidden; background:#0d0d1e; outline:none;"
+      style="position:absolute; inset:0; overflow:hidden; background:#0d0d1e; outline:none; touch-action:none;"
       onKeyDown={(e: KeyboardEvent) => {
         if (e.key === "Escape") {
           setMode("select");
