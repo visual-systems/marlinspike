@@ -78,6 +78,10 @@ The lisp semantic layer goes in a new `src/code/` directory, parallel to `src/ui
 
 - [ ] **Schema-based data block UI** — once the constraint/schema system can describe `data` fields, the inspector should render a typed form rather than raw JSON. Depends on the constraint plugin protocol.
 
+- [ ] **Graph overlays** — allow the same entity to be defined multiple times across separate overlay documents, with features unioned at load time (inspired by inductive datatypes). Primary use case: attaching IDs and metadata to code-view symbols in a separate overlay, keeping main `def` forms clean and human-readable. Needs design work on the overlay merge semantics and how overlays are addressed (URI? local file?).
+
+- [ ] **Rename "AI interface" → "Code Interface" in DESIGN.md** — the MCP/Spike-Lisp API is a general programmatic interface useful for tooling, scripting, and AI agents alike; the current name over-constrains how people think about it.
+
 ## Open Questions
 
 - Should `spikeToGraph` generate stable IDs (e.g. symbol name → id) or random UUIDs? Symbol name as ID is cleaner for round-trip stability. ← go with symbol name.

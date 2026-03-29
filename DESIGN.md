@@ -792,7 +792,7 @@ This phase builds out the full modular type system vision from §5. Phase 3 esta
 - [ ] Cross-URI constraint checking: schemas that span subgraph boundaries
 - [ ] Public subgraph URI registry
 
-### Phase 9 — AI Interface
+### Phase 9 — Code Interface
 - [ ] Spike-Lisp serialiser and parser (round-trip with JSON graph format)
 - [ ] MCP server with core read/write/validate tools
 - [ ] `suggestion` field required in all constraint plugin diagnostics
@@ -816,11 +816,11 @@ This phase builds out the full modular type system vision from §5. Phase 3 esta
 | Haskell backend | Servant + existing repos | Constraint plugins and runtime targets |
 | Serialisation | JSON (base) + MessagePack (wire) | JSON for tooling; MessagePack for performance |
 | URI resolution | Custom resolver | Local file, remote HTTP, version registry |
-| AI interface | MCP server + Spike-Lisp | See §11 |
+| Code interface | MCP server + Spike-Lisp | See §13 |
 
 ---
 
-## 13. AI Interface
+## 13. Code Interface
 
 ### 13.1 Design Goals
 
@@ -962,7 +962,7 @@ Spike-Lisp is designed to be token-efficient for LLMs:
 
 The MCP interface makes the constraint system's quality directly observable. A vague diagnostic like *"invalid graph"* is useless to an AI agent; it has no recourse. The `suggestion` field in diagnostics is therefore not optional polish — it is a **first-class requirement** for every constraint plugin that wants to be usable in the AI workflow.
 
-This is a useful design forcing function: if a constraint plugin cannot explain its violations in terms of concrete repair suggestions, it is incomplete. The AI interface raises the bar for constraint plugin quality across the whole system.
+This is a useful design forcing function: if a constraint plugin cannot explain its violations in terms of concrete repair suggestions, it is incomplete. The Code Interface raises the bar for constraint plugin quality across the whole system.
 
 ---
 
