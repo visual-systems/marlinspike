@@ -21,51 +21,48 @@ The lisp semantic layer goes in a new `src/code/` directory, parallel to `src/ui
 
 ## Approach
 
-- [ ] **1. Create `src/code/spike-clojure.ts`**
-  - `graphToSpike(nodes: TreeNode[], edges: Edge[]): string` — serialise to Spike-Clojure `def` forms
-  - `spikeToGraph(src: string): { treeNodes: TreeNode[], edges: Edge[] }` — parse using `base_lisp.parse()`, map `def`/`defn` forms to nodes, vectors to children
-  - Keep it to `def` and leaf/composite only for now (the minimal scaffold)
-  - Export from `src/code/` index or directly from the file
+- [x] **1. Create `src/code/spike-clojure.ts`**
+  - `graphToSpike` and `spikeToGraph` implemented; stable symbol-name IDs; edges as `;` comments.
 
-- [ ] **2. Add `canvasView` toggle to `WorkspaceState` in `src/ui/workspace.ts`**
-  - `canvasView: "graph" | "code"` — switches canvas between visual and Spike-Clojure text view
-  - Persist in `loadState`/`saveState` (default: `"graph"`)
+- [x] **2. Canvas — pinch-to-zoom / two-finger pan**
+  - Non-passive `touchstart`/`touchmove`/`touchend` listeners; single-touch pan, two-touch pinch+pan.
+  - Wheel handler: `ctrlKey` → zoom at cursor; no `ctrlKey` → inverted two-finger pan.
+  - Cursor hidden while panning, restored via debounced timer.
 
-- [ ] **3. Canvas — code view panel (`src/ui/components/canvas.tsx`)**
-  - In the Canvas toolbar, add a "Code" toggle button (alongside existing mode/layout controls)
-  - When `canvasView === "code"`: render a `<pre>` overlay with `graphToSpike(focusedRootNodes, focusedEdges)` instead of the SVG
-  - Keep it read-only; the text updates live as workspace state changes
-  - Wire the toggle to `update((s) => ({ ...s, canvasView: … }))`
+- [x] **3. Code View panel (`src/ui/components/code-panel.tsx`)**
+  - Separate side-by-side panel (not a canvas overlay — that design was dropped).
+  - DIY tokeniser + transparent-textarea overlay for Spike-Clojure syntax highlighting.
+  - Editable; Cmd/Ctrl+Enter applies code to graph. Mirror-on-canvas button.
+  - Syntax highlighting also applied to `Spike-Clojure Syntax Candidates` stories.
 
-- [ ] **4. Canvas — fit-to-screen button (`src/ui/components/canvas.tsx`)**
-  - Compute bounding box of all positions in the current `layout` map using existing `boundingBox()` from `src/ui/lib/force.ts`
-  - Scale + translate so the bbox fills ~80% of the SVG's client rect
-  - Add a small "⊡" or "Fit" `SmallBtn` in the toolbar, calling `fitView()`
+- [x] **4. Inspector data → JSON code panel**
+  - `⊞` button in node/edge inspector opens a code panel pinned to the entity's `data` field.
+  - Live bidirectional sync via `entityDrafts` in `WorkspaceState` — no save needed to see edits.
+  - Title shows `Data: parent / child` path; language locked to JSON; Cmd+Enter saves.
 
-- [ ] **5. Canvas — pinch-to-zoom (`src/ui/components/canvas.tsx`)**
-  - Add `touchstart` / `touchmove` / `touchend` listeners on `containerRef` (non-passive)
-  - Track two-touch pinch: store initial distance and `view` snapshot on `touchstart`
-  - On `touchmove` with 2 touches: compute new scale relative to initial, pivot around midpoint; also handle single-touch pan
-  - Reuse same `setView` state as wheel zoom
+- [ ] **5. Canvas — fit-to-screen button**
+  - Not yet done. Compute bbox of current layout, scale + translate to fill ~80% of SVG viewport.
 
-- [ ] **6. Add a story for the code view (`src/ui/stories/canvas.stories.tsx`)**
-  - `CodeView` story — renders a canvas in `"code"` view so behaviour is visible in the storybook
+- [ ] **6. Story for Code View panel**
+  - Not yet done. Add a story to show the code panel with sample workspace content.
 
 ## Critical Files
 
 | File | Change |
 |---|---|
-| `src/code/spike-clojure.ts` | New — semantic layer (graphToSpike / spikeToGraph) |
-| `src/graph/base_lisp.ts` | Read-only dependency — `parse()` used by spikeToGraph |
-| `src/ui/workspace.ts` | Add `canvasView` field to `WorkspaceState`, `defaultState`, `loadState` |
-| `src/ui/components/canvas.tsx` | Pinch-to-zoom, fit-to-screen, code-view toggle + panel |
-| `src/ui/stories/canvas.stories.tsx` | Add `CodeView` story |
+| `src/code/spike-clojure.ts` | New — graphToSpike / spikeToGraph semantic layer |
+| `src/ui/components/canvas.tsx` | Pinch-to-zoom, two-finger pan, cursor hiding; fit-to-screen pending |
+| `src/ui/components/code-panel.tsx` | New — Spike-Clojure / JSON code editor panel |
+| `src/ui/components/inspector.tsx` | ⊞ button opens JSON code panel; bidirectional draft sync |
+| `src/ui/lib/spike-tokenise.ts` | New — shared tokeniser for Spike-Clojure and JSON highlighting |
+| `src/ui/workspace.ts` | Added `entityDrafts`, `codeEntityId/Kind` to Panel, `PANEL_TYPES` updated |
+| `src/ui/stories/candidate-spike-lisp-syntaxes.stories.tsx` | Code blocks use tokeniser for syntax highlighting |
 
 ## Deferred / Future Work
 
 - [ ] **Multi-word node labels** — `New Node` can't be a bare symbol in Clojure. Options: kebab-case convention (`new-node`), quoted strings (`"New Node"`), or auto-slugging on serialise with a display label stored separately. Need to decide on UX and update `graphToSpike`/`spikeToGraph` accordingly.
 
-- [ ] **Syntax highlighting** — see research below.
+- [x] **Syntax highlighting** — implemented as Option A (DIY tokeniser + overlay); see research below.
 
 - [ ] **Edge representation** — edges are currently emitted as `;` line comments. Need an idiomatic Clojure approach: `defn` argument lists and `let` bindings are the natural forms; map out exactly how dataflow edges translate to call-graph notation (see `docs/spike-clojure.md` §Callable nodes).
 
@@ -80,7 +77,7 @@ The lisp semantic layer goes in a new `src/code/` directory, parallel to `src/ui
 
 - [ ] **Graph overlays** — allow the same entity to be defined multiple times across separate overlay documents, with features unioned at load time (inspired by inductive datatypes). Primary use case: attaching IDs and metadata to code-view symbols in a separate overlay, keeping main `def` forms clean and human-readable. Needs design work on the overlay merge semantics and how overlays are addressed (URI? local file?).
 
-- [ ] **Rename "AI interface" → "Code Interface" in DESIGN.md** — the MCP/Spike-Lisp API is a general programmatic interface useful for tooling, scripting, and AI agents alike; the current name over-constrains how people think about it.
+- [x] **Rename "AI interface" → "Code Interface" in DESIGN.md** — done.
 
 ## Syntax Highlighting Research
 
@@ -172,8 +169,11 @@ Ref: [wooorm/starry-night](https://github.com/wooorm/starry-night)
 
 ## Verification
 
-- [ ] `NO_COLOR=1 deno task ci` passes (format, lint, type-check, tests)
-- [ ] Touch pinch gesture zooms the canvas on a touch device / DevTools touch emulation
-- [ ] "Fit" button centers and scales the graph
-- [ ] Code view toggle switches between SVG canvas and Spike-Clojure text
-- [ ] `graphToSpike` round-trips through `spikeToGraph` for the default workspace nodes (manual check or unit test)
+- [x] `NO_COLOR=1 deno task ci` passes (format, lint, type-check, tests)
+- [x] Touch pinch gesture zooms the canvas on a touch device / DevTools touch emulation
+- [x] Two-finger scroll pans the canvas; cursor hidden while panning
+- [x] Code view panel opens from `+ Code View` button; Spike-Clojure syntax highlighting works
+- [x] Inspector `⊞` button opens a JSON code panel synced bidirectionally with the data textarea
+- [x] `graphToSpike` round-trips through `spikeToGraph` (manual verified)
+- [ ] "Fit" button centers and scales the graph (not yet implemented)
+- [ ] Code View panel story added to storybook

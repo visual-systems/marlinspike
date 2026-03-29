@@ -2,108 +2,20 @@
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
 import {
+  findNode,
+  findParentOf,
   type Panel,
   type Tab,
+  updateNodeInTree,
   type Updater,
+  withNodeMutation,
   withPanel,
   type WorkspaceState,
 } from "../workspace.ts";
 import { graphToSpike, spikeToGraph } from "../../code/spike-clojure.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { IconBtn } from "./widgets.tsx";
-
-// ---------------------------------------------------------------------------
-// Spike-Clojure tokeniser
-// ---------------------------------------------------------------------------
-
-type TokenKind = "comment" | "string" | "atom" | "typeName" | "keyword" | "number" | "bracket";
-
-const TOKEN_COLORS: Record<TokenKind, string> = {
-  comment: "#6272a4",
-  string: "#f1fa8c",
-  atom: "#bd93f9",
-  typeName: "#8be9fd",
-  keyword: "#ff79c6",
-  number: "#bd93f9",
-  bracket: "#f8f8f2",
-};
-
-type Token = { text: string; kind: TokenKind | null };
-
-function tokenise(code: string): Token[] {
-  const tokens: Token[] = [];
-  let i = 0;
-  while (i < code.length) {
-    // whitespace / commas (EDN treats commas as whitespace)
-    if (/[\s,]/.test(code[i])) {
-      let j = i + 1;
-      while (j < code.length && /[\s,]/.test(code[j])) j++;
-      tokens.push({ text: code.slice(i, j), kind: null });
-      i = j;
-      continue;
-    }
-    // line comment
-    if (code[i] === ";") {
-      let j = i;
-      while (j < code.length && code[j] !== "\n") j++;
-      tokens.push({ text: code.slice(i, j), kind: "comment" });
-      i = j;
-      continue;
-    }
-    // string literal
-    if (code[i] === '"') {
-      let j = i + 1;
-      while (j < code.length) {
-        if (code[j] === "\\" && j + 1 < code.length) {
-          j += 2;
-          continue;
-        }
-        if (code[j] === '"') {
-          j++;
-          break;
-        }
-        j++;
-      }
-      tokens.push({ text: code.slice(i, j), kind: "string" });
-      i = j;
-      continue;
-    }
-    // keyword :foo
-    if (code[i] === ":") {
-      let j = i + 1;
-      while (j < code.length && !/[\s,()[\]{}"`;]/.test(code[j])) j++;
-      tokens.push({ text: code.slice(i, j), kind: "atom" });
-      i = j;
-      continue;
-    }
-    // tagged literal #tag
-    if (code[i] === "#") {
-      let j = i + 1;
-      while (j < code.length && !/[\s,()[\]{}"`;]/.test(code[j])) j++;
-      tokens.push({ text: code.slice(i, j), kind: "typeName" });
-      i = j;
-      continue;
-    }
-    // brackets
-    if ("()[]{}".includes(code[i])) {
-      tokens.push({ text: code[i], kind: "bracket" });
-      i++;
-      continue;
-    }
-    // symbol / number / special form
-    let j = i + 1;
-    while (j < code.length && !/[\s,()[\]{}"`;]/.test(code[j])) j++;
-    const word = code.slice(i, j);
-    let kind: TokenKind | null = null;
-    if (/^-?\d/.test(word)) kind = "number";
-    else if (["def", "defn", "fn", "let", "do", "if", "when", "case"].includes(word)) {
-      kind = "keyword";
-    } else if (["nil", "true", "false"].includes(word)) kind = "atom";
-    tokens.push({ text: word, kind });
-    i = j;
-  }
-  return tokens;
-}
+import { TOKEN_COLORS, tokenise, tokeniseJson } from "../lib/spike-tokenise.ts";
 
 // ---------------------------------------------------------------------------
 // Language registry
@@ -112,6 +24,32 @@ function tokenise(code: string): Token[] {
 const LANGUAGES: { value: string; label: string }[] = [
   { value: "spike-clojure", label: "Spike-Clojure" },
 ];
+
+function panelTitle(ws: WorkspaceState, panel: Panel): string {
+  const { codeEntityId, codeEntityKind } = panel;
+  if (!codeEntityId) return "Code View";
+  if (codeEntityKind === "node") {
+    const node = findNode(ws.treeNodes, codeEntityId);
+    if (!node) return "Data";
+    const parts = [node.label];
+    let cur = codeEntityId;
+    while (true) {
+      const parent = findParentOf(ws.treeNodes, cur);
+      if (!parent) break;
+      parts.unshift(parent.label);
+      cur = parent.id;
+    }
+    return "Data: " + parts.join(" / ");
+  }
+  if (codeEntityKind === "edge") {
+    const edge = ws.edges.find((e) => e.id === codeEntityId);
+    if (!edge) return "Data";
+    const from = findNode(ws.treeNodes, edge.fromId)?.label ?? edge.fromId;
+    const to = findNode(ws.treeNodes, edge.toId)?.label ?? edge.toId;
+    return `Data: ${from} → ${to}`;
+  }
+  return "Data";
+}
 
 const FONT = "'SF Mono', 'Fira Code', 'Cascadia Code', monospace";
 const FONT_SIZE = "11px";
@@ -136,7 +74,64 @@ export function CodePanel(
   const [parseError, setParseError] = useState<string | null>(null);
   const [displayCode, setDisplayCode] = useState("");
 
+  function deriveDoc(s: WorkspaceState): string {
+    const { codeEntityId, codeEntityKind } = panel;
+    if (codeEntityId) {
+      if (s.entityDrafts[codeEntityId] !== undefined) return s.entityDrafts[codeEntityId];
+      if (codeEntityKind === "node") {
+        const n = findNode(s.treeNodes, codeEntityId);
+        return JSON.stringify(n?.data ?? {}, null, 2);
+      }
+      if (codeEntityKind === "edge") {
+        const e = s.edges.find((e) => e.id === codeEntityId);
+        return JSON.stringify(e?.data ?? {}, null, 2);
+      }
+    }
+    return graphToSpike(s.treeNodes, s.edges);
+  }
+
   function applyCode(code: string) {
+    const { codeEntityId, codeEntityKind } = panel;
+    if (codeEntityId && codeEntityKind === "node") {
+      try {
+        const data = JSON.parse(code) as Record<string, unknown>;
+        setParseError(null);
+        update((s) => {
+          const { [codeEntityId]: _d, ...entityDrafts } = s.entityDrafts;
+          return withNodeMutation(
+            { ...s, entityDrafts },
+            (nodes) =>
+              updateNodeInTree(
+                nodes,
+                codeEntityId,
+                (n) => ({ ...n, data, version: n.version + 1 }),
+              ),
+          );
+        });
+      } catch {
+        setParseError("Invalid JSON");
+      }
+      return;
+    }
+    if (codeEntityId && codeEntityKind === "edge") {
+      try {
+        const data = JSON.parse(code) as Record<string, unknown>;
+        setParseError(null);
+        update((s) => {
+          const { [codeEntityId]: _d, ...entityDrafts } = s.entityDrafts;
+          return {
+            ...s,
+            entityDrafts,
+            edges: s.edges.map((e) =>
+              e.id === codeEntityId ? { ...e, data, version: e.version + 1 } : e
+            ),
+          };
+        });
+      } catch {
+        setParseError("Invalid JSON");
+      }
+      return;
+    }
     const { treeNodes, errors } = spikeToGraph(code);
     if (errors.length > 0) {
       setParseError(errors.join("; "));
@@ -163,8 +158,15 @@ export function CodePanel(
   }
 
   function handleInput(e: Event) {
-    setDisplayCode((e.currentTarget as HTMLTextAreaElement).value);
+    const value = (e.currentTarget as HTMLTextAreaElement).value;
+    setDisplayCode(value);
     syncScroll();
+    if (panel.codeEntityId) {
+      update((s) => ({
+        ...s,
+        entityDrafts: { ...s.entityDrafts, [panel.codeEntityId!]: value },
+      }));
+    }
   }
 
   function handleKeyDown(e: KeyboardEvent) {
@@ -178,7 +180,7 @@ export function CodePanel(
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    const doc = graphToSpike(ws.treeNodes, ws.edges);
+    const doc = deriveDoc(ws);
     el.value = doc;
     setDisplayCode(doc);
   }, []);
@@ -187,13 +189,13 @@ export function CodePanel(
   useEffect(() => {
     const el = textareaRef.current;
     if (!el || document.activeElement === el) return;
-    const newDoc = graphToSpike(ws.treeNodes, ws.edges);
+    const newDoc = deriveDoc(ws);
     if (el.value !== newDoc) {
       el.value = newDoc;
       setDisplayCode(newDoc);
     }
     setParseError(null);
-  }, [ws.treeNodes, ws.edges, ws.focusId, lang]);
+  }, [ws.treeNodes, ws.edges, ws.focusId, ws.entityDrafts, lang]);
 
   function mirrorOnCanvas() {
     const ids: string[] = [];
@@ -222,15 +224,18 @@ export function CodePanel(
     update((s) => withPanel(s, tab.id, panel.id, (p) => ({ ...p, codeLanguage: value })));
   }
 
-  const tokens = tokenise(displayCode);
+  const effectiveLang = panel.codeEntityId ? "json" : lang;
+  const tokens = effectiveLang === "json" ? tokeniseJson(displayCode) : tokenise(displayCode);
 
   return (
     <div style="display:flex; flex-direction:column; width:600px; min-width:300px; flex-shrink:0; border-right:1px solid #2a2a4a; background:#0d1117; overflow:hidden; height:100%;">
       {/* Title bar */}
       <div style="display:flex; align-items:center; justify-content:space-between; padding:4px 8px; font-size:11px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:#666; border-bottom:1px solid #2a2a4a; flex-shrink:0;">
-        <span>Code View</span>
+        <span>{panelTitle(ws, panel)}</span>
         <div style="display:flex; gap:2px; align-items:center;">
-          <IconBtn label="⬡" title="Mirror on canvas" onClick={mirrorOnCanvas} />
+          {!panel.codeEntityId && (
+            <IconBtn label="⬡" title="Mirror on canvas" onClick={mirrorOnCanvas} />
+          )}
           <IconBtn label="×" title="Close panel" onClick={closePanel} />
         </div>
       </div>
@@ -264,17 +269,19 @@ export function CodePanel(
           style={`position:absolute; inset:0; width:100%; height:100%; box-sizing:border-box; resize:none; border:none; outline:none; background:transparent; color:transparent; caret-color:#cdd6f4; font-family:${FONT}; font-size:${FONT_SIZE}; line-height:${LINE_HEIGHT}; padding:${PADDING}; overflow:auto;`}
         />
 
-        {/* Floating language selector */}
-        <div style="position:absolute; top:6px; right:8px; display:flex; align-items:center; gap:4px; pointer-events:auto; z-index:1;">
-          <span style="font-size:10px; color:#404466; user-select:none;">language</span>
-          <Dropdown
-            items={LANGUAGES}
-            selectedValue={lang}
-            placeholder="Language"
-            onSelect={setLanguage}
-            width={130}
-          />
-        </div>
+        {/* Floating language selector — hidden for entity (JSON) panels */}
+        {!panel.codeEntityId && (
+          <div style="position:absolute; top:6px; right:8px; display:flex; align-items:center; gap:4px; pointer-events:auto; z-index:1;">
+            <span style="font-size:10px; color:#404466; user-select:none;">language</span>
+            <Dropdown
+              items={LANGUAGES}
+              selectedValue={lang}
+              placeholder="Language"
+              onSelect={setLanguage}
+              width={130}
+            />
+          </div>
+        )}
       </div>
 
       {/* Parse error bar */}

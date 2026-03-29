@@ -11,6 +11,7 @@ import {
   type WorkspaceState,
 } from "../workspace.ts";
 import type { Edge } from "../workspace.ts";
+import { TOKEN_COLORS, tokenise } from "../lib/spike-tokenise.ts";
 
 /**
  * Candidate Spike-Clojure syntax examples.
@@ -66,10 +67,12 @@ function StoryCanvas({
 // ---------------------------------------------------------------------------
 
 function Code({ src }: { src: string }) {
+  const tokens = tokenise(src.trim());
   return (
-    <pre style="background:#0d1117; color:#e6edf3; padding:12px; border-radius:6px;
-             font-size:13px; line-height:1.6; margin:0; white-space:pre-wrap; overflow-x:auto;">
-      {src.trim()}
+    <pre style="background:#0d1117; color:#f8f8f2; padding:12px; border-radius:6px; font-size:13px; line-height:1.6; margin:0; white-space:pre-wrap; overflow-x:auto;">
+      {tokens.map((t, idx) =>
+        t.kind ? <span key={idx} style={`color:${TOKEN_COLORS[t.kind]}`}>{t.text}</span> : t.text
+      )}
     </pre>
   );
 }

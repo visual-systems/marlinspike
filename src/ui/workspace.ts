@@ -23,6 +23,9 @@ export interface Panel {
   inspectorSplit: number; // 0–1, fraction of body height given to inspector
   /** Code representation language; only used when type === "code". */
   codeLanguage?: string;
+  /** Entity whose data this panel is viewing/editing as JSON. */
+  codeEntityId?: string;
+  codeEntityKind?: "node" | "edge";
 }
 
 export interface Tab {
@@ -73,6 +76,8 @@ export interface WorkspaceState {
   canvasNodePositions: Record<string, { x: number; y: number; pinned?: boolean }>;
   canvasSelected: Selection;
   canvasAlgorithm: AlgorithmId;
+  /** Live unsaved edits keyed by entity ID. Shared between code panels and inspector. */
+  entityDrafts: Record<string, string>;
 }
 
 export interface TreeNode {
@@ -293,6 +298,7 @@ export function defaultState(): WorkspaceState {
     canvasNodePositions: {},
     canvasSelected: null,
     canvasAlgorithm: "SDF",
+    entityDrafts: {},
   };
 }
 
@@ -356,6 +362,8 @@ export function loadState(): WorkspaceState {
             selected: (p.selected as Selection | undefined) ?? null,
             inspectorSplit: (p.inspectorSplit as number | undefined) ?? 0.5,
             codeLanguage: (p.codeLanguage as string | undefined) ?? "spike-clojure",
+            codeEntityId: p.codeEntityId as string | undefined,
+            codeEntityKind: p.codeEntityKind as "node" | "edge" | undefined,
           }))
           : [{
             id: crypto.randomUUID(),
@@ -393,6 +401,7 @@ export function loadState(): WorkspaceState {
           | undefined) ?? {},
         canvasSelected: null,
         canvasAlgorithm: (parsed.canvasAlgorithm as AlgorithmId | undefined) ?? "SDF",
+        entityDrafts: {},
       };
     }
   } catch {

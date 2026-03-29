@@ -109,6 +109,14 @@ export function NodeInspector(
   const labelInputRef = useRef<HTMLInputElement | null>(null);
   const dataTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // Keep data textarea in sync with the shared draft (updated by code panel or this textarea)
+  useEffect(() => {
+    const el = dataTextareaRef.current;
+    if (!el || document.activeElement === el) return;
+    const newValue = ws.entityDrafts[node.id] ?? JSON.stringify(node.data, null, 2);
+    if (el.value !== newValue) el.value = newValue;
+  }, [ws.entityDrafts[node.id], node.data]);
+
   useEffect(() => {
     if (editingLabel) {
       labelInputRef.current?.focus();
@@ -169,14 +177,16 @@ export function NodeInspector(
 
   function saveData() {
     try {
-      const data = JSON.parse(dataTextareaRef.current?.value ?? "{}") as Record<string, unknown>;
-      update((s) =>
-        withNodeMutation(
-          s,
+      const raw = dataTextareaRef.current?.value ?? "{}";
+      const data = JSON.parse(raw) as Record<string, unknown>;
+      update((s) => {
+        const { [node.id]: _d, ...entityDrafts } = s.entityDrafts;
+        return withNodeMutation(
+          { ...s, entityDrafts },
           (nodes) =>
             updateNodeInTree(nodes, node.id, (n) => ({ ...n, data, version: n.version + 1 })),
-        )
-      );
+        );
+      });
     } catch {
       alert("Invalid JSON — changes not saved.");
     }
@@ -372,12 +382,43 @@ export function NodeInspector(
 
       {/* Data */}
       <div style="display:flex; flex-direction:column; gap:4px;">
-        <PropLabel text="Data" />
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <PropLabel text="Data" />
+          <IconBtn
+            label="⊞"
+            title="Open in code view"
+            onClick={() =>
+              update((s) => ({
+                ...s,
+                tabs: s.tabs.map((t) =>
+                  t.id === tab.id
+                    ? {
+                      ...t,
+                      panels: [...t.panels, {
+                        id: crypto.randomUUID(),
+                        type: "code" as const,
+                        expandedNodes: [],
+                        selected: null,
+                        inspectorSplit: 0.5,
+                        codeLanguage: "json",
+                        codeEntityId: node.id,
+                        codeEntityKind: "node" as const,
+                      }],
+                    }
+                    : t
+                ),
+              }))}
+          />
+        </div>
         <textarea
           ref={dataTextareaRef}
+          onInput={(e: Event) => {
+            const value = (e.currentTarget as HTMLTextAreaElement).value;
+            update((s) => ({ ...s, entityDrafts: { ...s.entityDrafts, [node.id]: value } }));
+          }}
           style="background:#0d0d20; border:1px solid #2a2a4a; color:#9090b0; font-size:11px; font-family:monospace; padding:5px; border-radius:3px; resize:vertical; min-height:60px; width:100%;"
         >
-          {JSON.stringify(node.data, null, 2)}
+          {ws.entityDrafts[node.id] ?? JSON.stringify(node.data, null, 2)}
         </textarea>
         <SmallBtn label="Save data" onClick={saveData} />
       </div>
@@ -503,8 +544,19 @@ export function EdgeInspector(
 
   useEffect(() => {
     if (labelInputRef.current) labelInputRef.current.value = edge.label;
-    if (dataTextareaRef.current) dataTextareaRef.current.value = JSON.stringify(edge.data, null, 2);
+    if (dataTextareaRef.current) {
+      dataTextareaRef.current.value = ws.entityDrafts[edge.id] ??
+        JSON.stringify(edge.data, null, 2);
+    }
   }, []);
+
+  // Keep data textarea in sync with the shared draft
+  useEffect(() => {
+    const el = dataTextareaRef.current;
+    if (!el || document.activeElement === el) return;
+    const newValue = ws.entityDrafts[edge.id] ?? JSON.stringify(edge.data, null, 2);
+    if (el.value !== newValue) el.value = newValue;
+  }, [ws.entityDrafts[edge.id], edge.data]);
 
   const fromNode = findNode(ws.treeNodes, edge.fromId);
   const toNode = findNode(ws.treeNodes, edge.toId);
@@ -538,14 +590,19 @@ export function EdgeInspector(
 
   function saveEdge() {
     try {
-      const data = JSON.parse(dataTextareaRef.current?.value ?? "{}") as Record<string, unknown>;
+      const raw = dataTextareaRef.current?.value ?? "{}";
+      const data = JSON.parse(raw) as Record<string, unknown>;
       const label = labelInputRef.current?.value ?? "";
-      update((s) => ({
-        ...s,
-        edges: s.edges.map((e) =>
-          e.id === edge.id ? { ...e, label, data, version: e.version + 1 } : e
-        ),
-      }));
+      update((s) => {
+        const { [edge.id]: _d, ...entityDrafts } = s.entityDrafts;
+        return {
+          ...s,
+          entityDrafts,
+          edges: s.edges.map((e) =>
+            e.id === edge.id ? { ...e, label, data, version: e.version + 1 } : e
+          ),
+        };
+      });
     } catch {
       alert("Invalid JSON — changes not saved.");
     }
@@ -602,9 +659,40 @@ export function EdgeInspector(
 
       {/* Data */}
       <div style="display:flex; flex-direction:column; gap:4px;">
-        <PropLabel text="Data" />
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <PropLabel text="Data" />
+          <IconBtn
+            label="⊞"
+            title="Open in code view"
+            onClick={() =>
+              update((s) => ({
+                ...s,
+                tabs: s.tabs.map((t) =>
+                  t.id === tab.id
+                    ? {
+                      ...t,
+                      panels: [...t.panels, {
+                        id: crypto.randomUUID(),
+                        type: "code" as const,
+                        expandedNodes: [],
+                        selected: null,
+                        inspectorSplit: 0.5,
+                        codeLanguage: "json",
+                        codeEntityId: edge.id,
+                        codeEntityKind: "edge" as const,
+                      }],
+                    }
+                    : t
+                ),
+              }))}
+          />
+        </div>
         <textarea
           ref={dataTextareaRef}
+          onInput={(e: Event) => {
+            const value = (e.currentTarget as HTMLTextAreaElement).value;
+            update((s) => ({ ...s, entityDrafts: { ...s.entityDrafts, [edge.id]: value } }));
+          }}
           style="background:#0d0d20; border:1px solid #2a2a4a; color:#9090b0; font-size:11px; font-family:monospace; padding:5px; border-radius:3px; resize:vertical; min-height:60px; width:100%;"
         />
       </div>
