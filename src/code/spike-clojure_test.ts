@@ -78,6 +78,22 @@ for (const fixture of FIXTURES) {
       assertEquals(errors, []);
       assertEquals(graphToSpike(treeNodes, edges), clj);
     });
+
+    if (fixture.clj) {
+      // Idiomatic hand-written Clojure may use different node names or
+      // structure than the fixture graph.  The meaningful check is stability:
+      // parse → emit → parse should give the same graph (no information is
+      // lost in the re-emit cycle, even if the first parse is partial).
+      Deno.test(`${fixture.label}: idiomatic clj parse stable`, () => {
+        const { treeNodes, edges, errors } = spikeToGraph(fixture.clj!);
+        assertEquals(errors, []);
+        const reClj = graphToSpike(treeNodes, edges);
+        const { treeNodes: t2, edges: e2, errors: err2 } = spikeToGraph(reClj);
+        assertEquals(err2, []);
+        assertEquals(treeNodes.map(stripNode), t2.map(stripNode));
+        assertEquals(edgeSet(edges), edgeSet(e2));
+      });
+    }
   }
 }
 
