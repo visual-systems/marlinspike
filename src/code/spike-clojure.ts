@@ -5,15 +5,124 @@
  * Built on top of `src/graph/base_lisp.ts` (the S-expression reader).
  * This module covers the semantic layer: mapping Clojure forms to graph concepts.
  *
- * Supported forms (initial scaffold — `def` only):
- *   (def name [child ...])  — structural container; children are node references
+ * Supported forms:
+ *   (def name [child ...])           — structural container; no edges
+ *   (defn name [] (let [...] body))  — dataflow container; edges encoded as
+ *                                      let-binding data flow
  *
- * Edges are emitted as line comments and are not parsed back (round-trip for
- * structural containment only in this version).
+ * Encoding heuristic (emitter):
+ *   A composite node with no edges among its children → def form.
+ *   A composite node with edges among its children → defn + let form.
+ *
+ * The emitter uses direct name references (node labels). The parser maps
+ * names back to IDs (currently id === label). This means labels must be
+ * unique within a scope for round-trips to preserve identity.
+ *
+ * Known shortcomings (see PLANS file):
+ *   - Root-level leaf nodes cannot be parsed back (emitted as comments).
+ *   - IDs are assumed to equal labels; label changes break identity.
+ *   - Edges across different root composites are not supported.
+ *   - defn parameter lists and port types are not yet handled.
  */
 
 import type { Edge, TreeNode } from "../ui/workspace.ts";
 import { parse } from "../graph/base_lisp.ts";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Kahn's topological sort. Returns IDs in dependency order. */
+function topoSort(ids: string[], edges: Edge[]): string[] {
+  const inDegree = new Map<string, number>(ids.map((id) => [id, 0]));
+  const adj = new Map<string, string[]>(ids.map((id) => [id, []]));
+  for (const e of edges) {
+    if (inDegree.has(e.fromId) && inDegree.has(e.toId)) {
+      inDegree.set(e.toId, inDegree.get(e.toId)! + 1);
+      adj.get(e.fromId)!.push(e.toId);
+    }
+  }
+  const queue = ids.filter((id) => inDegree.get(id) === 0);
+  const result: string[] = [];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    result.push(id);
+    for (const next of adj.get(id) ?? []) {
+      const d = inDegree.get(next)! - 1;
+      inDegree.set(next, d);
+      if (d === 0) queue.push(next);
+    }
+  }
+  return result;
+}
+
+/**
+ * Emit a composite node that has edges among its children as a defn + let form.
+ *
+ * The algorithm:
+ *   1. Topological sort of children.
+ *   2. Build let bindings for all nodes except the single terminal (if any).
+ *   3. Inline the terminal node call as the return expression.
+ *   4. If multiple terminals, collect them in a map return.
+ */
+function emitDefnForm(container: TreeNode, edges: Edge[]): string {
+  const nodes = container.children;
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+
+  // Binding name: lowercase of label, safe for use as a Clojure symbol
+  const binding = (id: string) => nodeById.get(id)!.label.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+
+  const sorted = topoSort(
+    nodes.map((n) => n.id),
+    edges,
+  );
+  const sourceIds = new Set(edges.map((e) => e.fromId));
+
+  // Terminal nodes: no outgoing edges within this composite
+  const terminalIds = sorted.filter((id) => !sourceIds.has(id));
+
+  // For each node, collect incoming arg binding names in edge order
+  const incomingArgs = new Map<string, string[]>();
+  for (const id of sorted) incomingArgs.set(id, []);
+  for (const e of edges) {
+    incomingArgs.get(e.toId)!.push(binding(e.fromId));
+  }
+
+  function callExpr(id: string): string {
+    const label = nodeById.get(id)!.label;
+    const args = incomingArgs.get(id) ?? [];
+    return args.length > 0 ? `(${label} ${args.join(" ")})` : `(${label})`;
+  }
+
+  // Let bindings: all nodes except a single terminal (inlined in return).
+  // When there are multiple terminals, all nodes stay in let and the return
+  // collects terminal binding names into a map.
+  const letIds = terminalIds.length === 1 ? sorted.filter((id) => id !== terminalIds[0]) : sorted;
+
+  // Return expression
+  const returnExpr = terminalIds.length === 1
+    ? callExpr(terminalIds[0])
+    : `{${terminalIds.map((id) => `:${nodeById.get(id)!.label} ${binding(id)}`).join(" ")}}`;
+
+  if (letIds.length === 0) {
+    return `(defn ${container.label} []\n  ${returnExpr})`;
+  }
+
+  // Format let bindings: first on same line as `[`, rest indented to align
+  const bindingLines = letIds.map((id) => {
+    const bname = binding(id);
+    // Only non-input nodes have incoming args from within the composite;
+    // input nodes (no incoming edges) are called with no args
+    return `${bname} ${callExpr(id)}`;
+  });
+
+  const indent = " ".repeat(8); // aligns under first binding name after `  (let [`
+  const letBlock = bindingLines
+    .map((b, i) => (i === 0 ? `[${b}` : `${indent}${b}`))
+    .join("\n") + "]";
+
+  return `(defn ${container.label} []\n  (let ${letBlock}\n    ${returnExpr}))`;
+}
 
 // ---------------------------------------------------------------------------
 // graphToSpike
@@ -23,14 +132,13 @@ import { parse } from "../graph/base_lisp.ts";
  * Serialise a list of root nodes (and their subtrees) plus edges to
  * Spike-Clojure text.
  *
- * Composite nodes become `(def label [children...])` forms, emitted
- * depth-first so child definitions precede their parents (matching the
- * idiomatic Clojure style of defining things before use).
+ * Composite nodes with edges among their children are emitted as
+ * `(defn name [] (let [...] body))` forms encoding the dataflow topology.
+ * Composite nodes with no such edges are emitted as `(def name [children...])`.
  *
- * Standalone root-level leaf nodes are emitted as line comments — they have
- * no `def` form in isolation.
- *
- * Edges are emitted as `; edge:` line comments at the end of the output.
+ * Root-level leaf nodes are emitted as line comments — round-trip lossy.
+ * Edges between nodes that are not co-children of a composite are not
+ * encoded (noted as a known shortcoming).
  */
 export function graphToSpike(nodes: TreeNode[], edges: Edge[]): string {
   const lines: string[] = [];
@@ -39,31 +147,37 @@ export function graphToSpike(nodes: TreeNode[], edges: Edge[]): string {
   function emitNode(node: TreeNode): void {
     if (emitted.has(node.id)) return;
     emitted.add(node.id);
-    // Depth-first: emit composite children before this node
-    for (const child of node.children) {
-      if (child.kind === "composite") emitNode(child);
+
+    if (node.kind === "leaf") {
+      lines.push(`; ${node.label}`);
+      return;
     }
-    if (node.kind === "composite") {
+
+    // Determine which edges are local to this node's direct children
+    const childIds = new Set(node.children.map((c) => c.id));
+    const localEdges = edges.filter(
+      (e) => childIds.has(e.fromId) && childIds.has(e.toId),
+    );
+
+    // Emit composite children first (depth-first), each separated by a blank line
+    for (const child of node.children) {
+      if (child.kind === "composite") {
+        emitNode(child);
+        lines.push("");
+      }
+    }
+
+    if (localEdges.length > 0) {
+      lines.push(emitDefnForm(node, localEdges));
+    } else {
       const refs = node.children.map((c) => c.label).join(" ");
       lines.push(`(def ${node.label} [${refs}])`);
     }
   }
 
   for (const node of nodes) {
-    if (node.kind === "composite") {
-      emitNode(node);
-    } else {
-      lines.push(`; ${node.label}`);
-    }
+    emitNode(node);
     lines.push("");
-  }
-
-  if (edges.length > 0) {
-    lines.push("; edges:");
-    for (const edge of edges) {
-      const label = edge.label ? ` (${edge.label})` : "";
-      lines.push(`; ${edge.fromId} -> ${edge.toId}${label}`);
-    }
   }
 
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
@@ -74,55 +188,79 @@ export function graphToSpike(nodes: TreeNode[], edges: Edge[]): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse Spike-Clojure source text into a list of root `TreeNode`s.
+ * Parse Spike-Clojure source text into root `TreeNode`s and `Edge`s.
  *
- * Each `(def name [child ...])` form becomes a composite node; any child
- * symbol that has no corresponding `def` becomes a leaf node.  Root nodes
- * are those defined by a `def` but not referenced as a child of another.
+ * Supported forms:
+ *   (def name [child ...])
+ *     → composite node; children are node references (leaf if not defined)
  *
- * Returns `{ treeNodes, errors }`.  On parse failure `treeNodes` is empty
- * and `errors` contains the problem descriptions.
+ *   (defn name [] (let [binding call ...] body))
+ *     → composite node; children inferred from let bindings and body call;
+ *       edges inferred from which bindings are passed as arguments
+ *
+ * Returns `{ treeNodes, edges, errors }`.
  */
 export function spikeToGraph(
   src: string,
-): { treeNodes: TreeNode[]; errors: string[] } {
+): { treeNodes: TreeNode[]; edges: Edge[]; errors: string[] } {
   const errors: string[] = [];
 
   let forms;
   try {
     forms = parse(src);
   } catch (e) {
-    return { treeNodes: [], errors: [String(e)] };
+    return { treeNodes: [], edges: [], errors: [String(e)] };
   }
 
-  // First pass: collect def forms → name → child name list
-  const defs = new Map<string, string[]>();
+  // Collect def and defn forms
+  const defs = new Map<string, string[]>(); // name → child label list
+  const defns = new Map<
+    string,
+    { nodes: string[]; edges: Array<{ from: string; to: string }> }
+  >();
+
   for (const form of forms) {
     if (form.type !== "list" || form.items.length < 3) continue;
-    const [head, nameForm, bodyForm] = form.items;
-    if (
-      head.type !== "symbol" || head.value !== "def" ||
-      nameForm.type !== "symbol"
-    ) continue;
-    const childNames: string[] = [];
-    if (bodyForm.type === "vector") {
-      for (const item of bodyForm.items) {
-        if (item.type === "symbol") childNames.push(item.value);
+    const [head, nameForm] = form.items;
+    if (head.type !== "symbol" || nameForm.type !== "symbol") continue;
+    const name = nameForm.value;
+
+    if (head.value === "def") {
+      // (def name [child ...])
+      const bodyForm = form.items[2];
+      const childNames: string[] = [];
+      if (bodyForm.type === "vector") {
+        for (const item of bodyForm.items) {
+          if (item.type === "symbol") childNames.push(item.value);
+        }
       }
+      defs.set(name, childNames);
+    } else if (head.value === "defn") {
+      // (defn name [params] (let [...] body))
+      // Find the let form — it's the last list item after the param vector
+      const letForm = form.items.slice(2).find(
+        (f) =>
+          f.type === "list" &&
+          f.items[0]?.type === "symbol" &&
+          f.items[0].value === "let",
+      );
+      if (!letForm || letForm.type !== "list") continue;
+
+      const result = parseLetForm(letForm.items.slice(1));
+      if (result.errors.length > 0) errors.push(...result.errors);
+      defns.set(name, result);
     }
-    defs.set(nameForm.value, childNames);
   }
 
-  if (defs.size === 0 && errors.length === 0) {
-    // Nothing parseable — return empty without error (e.g. blank/comment-only input)
-    return { treeNodes: [], errors: [] };
+  if (defs.size === 0 && defns.size === 0 && errors.length === 0) {
+    return { treeNodes: [], edges: [], errors: [] };
   }
 
-  // Second pass: build TreeNode tree, creating implicit leaf nodes as needed
-  const built = new Map<string, TreeNode>();
+  // Build TreeNodes from def forms
+  const builtDef = new Map<string, TreeNode>();
 
-  function makeNode(name: string, visited: Set<string>): TreeNode {
-    if (built.has(name)) return built.get(name)!;
+  function makeDefNode(name: string, visited: Set<string>): TreeNode {
+    if (builtDef.has(name)) return builtDef.get(name)!;
     if (visited.has(name)) {
       errors.push(`Cycle detected at "${name}"`);
       const stub: TreeNode = {
@@ -133,12 +271,12 @@ export function spikeToGraph(
         data: {},
         version: 1,
       };
-      built.set(name, stub);
+      builtDef.set(name, stub);
       return stub;
     }
     visited.add(name);
     const childNames = defs.get(name) ?? [];
-    const children = childNames.map((n) => makeNode(n, new Set(visited)));
+    const children = childNames.map((n) => makeDefNode(n, new Set(visited)));
     const node: TreeNode = {
       id: name,
       label: name,
@@ -147,20 +285,127 @@ export function spikeToGraph(
       data: {},
       version: 1,
     };
-    built.set(name, node);
+    builtDef.set(name, node);
     return node;
   }
 
-  for (const name of defs.keys()) makeNode(name, new Set());
+  for (const name of defs.keys()) makeDefNode(name, new Set());
 
-  // Root nodes: defined by a `def` but not referenced as a child of any other `def`
-  const allChildNames = new Set<string>();
-  for (const children of defs.values()) {
-    for (const c of children) allChildNames.add(c);
+  // Build TreeNodes from defn forms
+  const builtDefn = new Map<string, TreeNode>();
+  const allEdges: Edge[] = [];
+
+  for (const [name, { nodes: childLabels, edges: rawEdges }] of defns) {
+    const children: TreeNode[] = childLabels.map((label) => ({
+      id: label,
+      label,
+      kind: "leaf" as const,
+      children: [],
+      data: {},
+      version: 1,
+    }));
+    builtDefn.set(name, {
+      id: name,
+      label: name,
+      kind: "composite",
+      children,
+      data: {},
+      version: 1,
+    });
+    for (const { from, to } of rawEdges) {
+      allEdges.push({
+        id: `${from}-${to}`,
+        fromId: from,
+        toId: to,
+        label: "",
+        data: {},
+        version: 1,
+      });
+    }
   }
-  const treeNodes = [...defs.keys()]
-    .filter((name) => !allChildNames.has(name))
-    .map((name) => built.get(name)!);
 
-  return { treeNodes, errors };
+  // Root nodes: defined but not referenced as a child of any other def/defn
+  const allChildLabels = new Set<string>();
+  for (const children of defs.values()) {
+    for (const c of children) allChildLabels.add(c);
+  }
+  for (const { nodes } of defns.values()) {
+    for (const n of nodes) allChildLabels.add(n);
+  }
+
+  const defRoots = [...defs.keys()]
+    .filter((name) => !allChildLabels.has(name) && !defns.has(name))
+    .map((name) => builtDef.get(name)!);
+  const defnRoots = [...defns.keys()]
+    .filter((name) => !allChildLabels.has(name))
+    .map((name) => builtDefn.get(name)!);
+
+  return {
+    treeNodes: [...defRoots, ...defnRoots],
+    edges: allEdges,
+    errors,
+  };
+}
+
+/**
+ * Parse a `let` form's binding vector and body into nodes and edges.
+ *
+ * Binding vector: [binding1 call1 binding2 call2 ...]
+ * Body: the expression after the binding vector
+ *
+ * Returns node labels and edges (from-label → to-label).
+ */
+function parseLetForm(
+  letParts: import("../graph/base_lisp.ts").SExp[],
+): { nodes: string[]; edges: Array<{ from: string; to: string }>; errors: string[] } {
+  const errors: string[] = [];
+  const nodeLabels = new Set<string>();
+  const edges: Array<{ from: string; to: string }> = [];
+
+  if (letParts.length < 1 || letParts[0].type !== "vector") {
+    errors.push("let: expected binding vector");
+    return { nodes: [], edges: [], errors };
+  }
+
+  const bindingVec = letParts[0].items;
+  const body = letParts[1]; // may be undefined for empty let
+
+  // bindingVec alternates: [name sexp name sexp ...]
+  // binding name → node label that produced this value
+  const bindingToLabel = new Map<string, string>();
+
+  for (let i = 0; i + 1 < bindingVec.length; i += 2) {
+    const bname = bindingVec[i];
+    const callExpr = bindingVec[i + 1];
+    if (bname.type !== "symbol") continue;
+
+    if (callExpr.type === "list" && callExpr.items[0]?.type === "symbol") {
+      const nodeLabel = callExpr.items[0].value;
+      nodeLabels.add(nodeLabel);
+      bindingToLabel.set(bname.value, nodeLabel);
+
+      // Each arg that is a known binding creates an edge
+      for (const arg of callExpr.items.slice(1)) {
+        if (arg.type === "symbol" && bindingToLabel.has(arg.value)) {
+          edges.push({ from: bindingToLabel.get(arg.value)!, to: nodeLabel });
+        }
+      }
+    }
+  }
+
+  // Parse body expression — may introduce one more node + edges
+  if (body) {
+    if (body.type === "list" && body.items[0]?.type === "symbol") {
+      const nodeLabel = body.items[0].value;
+      nodeLabels.add(nodeLabel);
+      for (const arg of body.items.slice(1)) {
+        if (arg.type === "symbol" && bindingToLabel.has(arg.value)) {
+          edges.push({ from: bindingToLabel.get(arg.value)!, to: nodeLabel });
+        }
+      }
+    }
+    // map body `{:k v ...}` — terminals already captured via bindings
+  }
+
+  return { nodes: [...nodeLabels], edges, errors };
 }

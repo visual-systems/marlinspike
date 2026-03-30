@@ -132,7 +132,7 @@ export function CodePanel(
       }
       return;
     }
-    const { treeNodes, errors } = spikeToGraph(code);
+    const { treeNodes, edges, errors } = spikeToGraph(code);
     if (errors.length > 0) {
       setParseError(errors.join("; "));
       return;
@@ -142,6 +142,7 @@ export function CodePanel(
       update((s) => ({
         ...s,
         treeNodes,
+        edges,
         canvasExpandedNodes: s.canvasExpandedNodes.filter((id) =>
           treeNodes.some((n) => n.id === id)
         ),
