@@ -26,6 +26,7 @@
  */
 
 import type { Edge, TreeNode } from "../ui/workspace.ts";
+import type { SExp } from "../graph/base_lisp.ts";
 import { parse } from "../graph/base_lisp.ts";
 
 // ---------------------------------------------------------------------------
@@ -85,7 +86,7 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   const incomingArgs = new Map<string, string[]>();
   for (const id of sorted) incomingArgs.set(id, []);
   for (const e of edges) {
-    incomingArgs.get(e.toId)!.push(binding(e.fromId));
+    incomingArgs.get(e.toId)?.push(binding(e.fromId));
   }
 
   function callExpr(id: string): string {
@@ -237,16 +238,39 @@ export function spikeToGraph(
       defs.set(name, childNames);
     } else if (head.value === "defn") {
       // (defn name [params] (let [...] body))
-      // Find the let form — it's the last list item after the param vector
-      const letForm = form.items.slice(2).find(
+      // Also handles attr-map position: (defn name {:ports ...} [params] body)
+      const rest = form.items.slice(2);
+
+      // Extract param names from the first vector, stripping ^Type hints
+      const paramVec = rest.find((f) => f.type === "vector");
+      const paramNames: string[] = [];
+      if (paramVec && paramVec.type === "vector") {
+        for (const item of paramVec.items) {
+          if (item.type === "symbol" && !item.value.startsWith("^")) {
+            paramNames.push(item.value);
+          }
+        }
+      }
+
+      // Find let form, or fall back to a direct body call/map
+      const letForm = rest.find(
         (f) =>
           f.type === "list" &&
           f.items[0]?.type === "symbol" &&
           f.items[0].value === "let",
       );
-      if (!letForm || letForm.type !== "list") continue;
 
-      const result = parseLetForm(letForm.items.slice(1));
+      let letParts: SExp[];
+      if (letForm && letForm.type === "list") {
+        letParts = letForm.items.slice(1); // [bindingVec, body]
+      } else {
+        // No let — find the body expression (any list or map after the param vec)
+        const bodyForm = rest.find((f) => f.type === "list" || f.type === "map");
+        if (!bodyForm) continue;
+        letParts = [{ type: "vector", items: [] }, bodyForm];
+      }
+
+      const result = parseLetForm(letParts, paramNames);
       if (result.errors.length > 0) errors.push(...result.errors);
       defns.set(name, result);
     }
@@ -356,7 +380,8 @@ export function spikeToGraph(
  * Returns node labels and edges (from-label → to-label).
  */
 function parseLetForm(
-  letParts: import("../graph/base_lisp.ts").SExp[],
+  letParts: SExp[],
+  paramNames: string[] = [],
 ): { nodes: string[]; edges: Array<{ from: string; to: string }>; errors: string[] } {
   const errors: string[] = [];
   const nodeLabels = new Set<string>();
@@ -374,35 +399,62 @@ function parseLetForm(
   // binding name → node label that produced this value
   const bindingToLabel = new Map<string, string>();
 
+  // Seed with defn params — each becomes a leaf input node
+  for (const p of paramNames) {
+    nodeLabels.add(p);
+    bindingToLabel.set(p, p);
+  }
+
+  // Track added edges to avoid duplicates (which corrupt topoSort inDegrees).
+  const seenEdges = new Set<string>();
+
+  // Expand a call SExp into nodes/edges. Returns the node label that
+  // "produces" the value (the outermost function), or null if not a call.
+  // Inlined call arguments are recursively expanded first (bottom-up).
+  // Self-edges (same function appearing in its own args due to duplicate
+  // invocations) and duplicate edges are both skipped.
+  function expandCall(callExpr: SExp): string | null {
+    if (callExpr.type !== "list" || callExpr.items[0]?.type !== "symbol") return null;
+    const nodeLabel = callExpr.items[0].value;
+    nodeLabels.add(nodeLabel);
+    for (const arg of callExpr.items.slice(1)) {
+      const srcLabel = resolveArg(arg);
+      if (srcLabel !== null && srcLabel !== nodeLabel) {
+        const key = `${srcLabel}->${nodeLabel}`;
+        if (!seenEdges.has(key)) {
+          seenEdges.add(key);
+          edges.push({ from: srcLabel, to: nodeLabel });
+        }
+      }
+    }
+    return nodeLabel;
+  }
+
+  // Resolve an argument SExp to the node label it refers to:
+  //   - known binding symbol → the label bound to it
+  //   - nested call → recursively expand and return its outermost label
+  //   - anything else (literal, keyword, unknown symbol) → null
+  function resolveArg(arg: SExp): string | null {
+    if (arg.type === "symbol" && bindingToLabel.has(arg.value)) {
+      return bindingToLabel.get(arg.value)!;
+    }
+    if (arg.type === "list") return expandCall(arg);
+    return null;
+  }
+
   for (let i = 0; i + 1 < bindingVec.length; i += 2) {
     const bname = bindingVec[i];
     const callExpr = bindingVec[i + 1];
     if (bname.type !== "symbol") continue;
 
-    if (callExpr.type === "list" && callExpr.items[0]?.type === "symbol") {
-      const nodeLabel = callExpr.items[0].value;
-      nodeLabels.add(nodeLabel);
-      bindingToLabel.set(bname.value, nodeLabel);
-
-      // Each arg that is a known binding creates an edge
-      for (const arg of callExpr.items.slice(1)) {
-        if (arg.type === "symbol" && bindingToLabel.has(arg.value)) {
-          edges.push({ from: bindingToLabel.get(arg.value)!, to: nodeLabel });
-        }
-      }
-    }
+    const nodeLabel = expandCall(callExpr);
+    if (nodeLabel !== null) bindingToLabel.set(bname.value, nodeLabel);
   }
 
   // Parse body expression — may introduce one more node + edges
   if (body) {
-    if (body.type === "list" && body.items[0]?.type === "symbol") {
-      const nodeLabel = body.items[0].value;
-      nodeLabels.add(nodeLabel);
-      for (const arg of body.items.slice(1)) {
-        if (arg.type === "symbol" && bindingToLabel.has(arg.value)) {
-          edges.push({ from: bindingToLabel.get(arg.value)!, to: nodeLabel });
-        }
-      }
+    if (body.type === "list") {
+      expandCall(body);
     }
     // map body `{:k v ...}` — terminals already captured via bindings
   }
