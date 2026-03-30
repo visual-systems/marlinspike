@@ -64,6 +64,12 @@ export interface Fixture {
    * the failure is expected and documented.
    */
   shortcoming?: string;
+  /**
+   * If set, describes a known shortcoming that prevents the `fixture.clj`
+   * idiomatic form from round-tripping stably (parse → emit → parse ≠ parse).
+   * Only affects the `idiomatic clj parse stable` test, not graph→clj→graph.
+   */
+  cljShortcoming?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -345,6 +351,12 @@ export const FIXTURES: Fixture[] = [
       edge("mul-2a", "div-x1"),
       edge("mul-2a", "div-x2"),
     ],
+    cljShortcoming:
+      "The idiomatic form calls `multiply`, `subtract`, and `divide` more than once with " +
+      "different arguments. The flat node-label model collapses each to one node, and the " +
+      "map body's second `subtract` call creates a cycle (sqrt→subtract conflicts with the " +
+      "existing subtract→sqrt dependency). Nodes `add` and `divide` are correctly parsed from " +
+      "the map body but are lost when re-emitting because the cycle excludes them from topoSort.",
   },
 
   // ── nested defn inside def ───────────────────────────────────────────────

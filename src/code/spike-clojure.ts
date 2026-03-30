@@ -22,10 +22,11 @@
  *   - Root-level leaf nodes cannot be parsed back (emitted as comments).
  *   - IDs are assumed to equal labels; label changes break identity.
  *   - Edges across different root composites are not supported.
- *   - defn parameter lists and port types are not yet handled.
+ *   - Duplicate function invocations (e.g. two `multiply` calls) collapse to
+ *     one node; the second invocation's distinct wiring is lost.
  */
 
-import type { Edge, TreeNode } from "../ui/workspace.ts";
+import type { Edge, Port, TreeNode } from "../ui/workspace.ts";
 import type { SExp } from "../graph/base_lisp.ts";
 import { parse } from "../graph/base_lisp.ts";
 
@@ -61,28 +62,38 @@ function topoSort(ids: string[], edges: Edge[]): string[] {
  * Emit a composite node that has edges among its children as a defn + let form.
  *
  * The algorithm:
- *   1. Topological sort of children.
- *   2. Build let bindings for all nodes except the single terminal (if any).
- *   3. Inline the terminal node call as the return expression.
- *   4. If multiple terminals, collect them in a map return.
+ *   1. Input ports (direction "in") become defn params; excluded from let bindings.
+ *   2. Topological sort of non-param children.
+ *   3. Build let bindings for all non-param nodes except the single terminal (if any).
+ *   4. Inline the terminal node call as the return expression.
+ *   5. If multiple terminals, collect them in a map return.
  */
 function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   const nodes = container.children;
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
 
-  // Binding name: lowercase of label, safe for use as a Clojure symbol
-  const binding = (id: string) => nodeById.get(id)!.label.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  // Input ports are defn params: in scope as bindings, not in let block
+  const inputPorts = (container.ports ?? []).filter((p) => p.direction === "in");
+  const inputPortIds = new Set(inputPorts.map((p) => p.name));
 
-  const sorted = topoSort(
-    nodes.map((n) => n.id),
-    edges,
-  );
+  // Binding name for non-param nodes: lowercase label, safe as a Clojure symbol.
+  // Params use their original label unchanged (they're declared in the param
+  // vector and must match the binding references in let bodies exactly).
+  const binding = (id: string) => {
+    if (inputPortIds.has(id)) return nodeById.get(id)!.label;
+    return nodeById.get(id)!.label.toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  };
+
+  // Non-param nodes are the ones that go in the let bindings
+  const letNodes = nodes.filter((n) => !inputPortIds.has(n.id));
+
+  const sorted = topoSort(letNodes.map((n) => n.id), edges);
   const sourceIds = new Set(edges.map((e) => e.fromId));
 
   // Terminal nodes: no outgoing edges within this composite
   const terminalIds = sorted.filter((id) => !sourceIds.has(id));
 
-  // For each node, collect incoming arg binding names in edge order
+  // For each let-bound node, collect its incoming arg binding names in edge order
   const incomingArgs = new Map<string, string[]>();
   for (const id of sorted) incomingArgs.set(id, []);
   for (const e of edges) {
@@ -95,7 +106,10 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
     return args.length > 0 ? `(${label} ${args.join(" ")})` : `(${label})`;
   }
 
-  // Let bindings: all nodes except a single terminal (inlined in return).
+  // Param list with optional ^Type hints
+  const paramList = inputPorts.map((p) => p.type ? `^${p.type} ${p.name}` : p.name).join(" ");
+
+  // Let bindings: all non-param nodes except a single terminal (inlined in return).
   // When there are multiple terminals, all nodes stay in let and the return
   // collects terminal binding names into a map.
   const letIds = terminalIds.length === 1 ? sorted.filter((id) => id !== terminalIds[0]) : sorted;
@@ -106,23 +120,18 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
     : `{${terminalIds.map((id) => `:${nodeById.get(id)!.label} ${binding(id)}`).join(" ")}}`;
 
   if (letIds.length === 0) {
-    return `(defn ${container.label} []\n  ${returnExpr})`;
+    return `(defn ${container.label} [${paramList}]\n  ${returnExpr})`;
   }
 
   // Format let bindings: first on same line as `[`, rest indented to align
-  const bindingLines = letIds.map((id) => {
-    const bname = binding(id);
-    // Only non-input nodes have incoming args from within the composite;
-    // input nodes (no incoming edges) are called with no args
-    return `${bname} ${callExpr(id)}`;
-  });
+  const bindingLines = letIds.map((id) => `${binding(id)} ${callExpr(id)}`);
 
   const indent = " ".repeat(8); // aligns under first binding name after `  (let [`
   const letBlock = bindingLines
     .map((b, i) => (i === 0 ? `[${b}` : `${indent}${b}`))
     .join("\n") + "]";
 
-  return `(defn ${container.label} []\n  (let ${letBlock}\n    ${returnExpr}))`;
+  return `(defn ${container.label} [${paramList}]\n  (let ${letBlock}\n    ${returnExpr}))`;
 }
 
 // ---------------------------------------------------------------------------
@@ -195,9 +204,10 @@ export function graphToSpike(nodes: TreeNode[], edges: Edge[]): string {
  *   (def name [child ...])
  *     → composite node; children are node references (leaf if not defined)
  *
- *   (defn name [] (let [binding call ...] body))
+ *   (defn name [params] (let [binding call ...] body))
  *     → composite node; children inferred from let bindings and body call;
- *       edges inferred from which bindings are passed as arguments
+ *       edges inferred from which bindings are passed as arguments;
+ *       ^Type hints on params → input ports; {:ports ...} attr-map → output ports
  *
  * Returns `{ treeNodes, edges, errors }`.
  */
@@ -217,7 +227,7 @@ export function spikeToGraph(
   const defs = new Map<string, string[]>(); // name → child label list
   const defns = new Map<
     string,
-    { nodes: string[]; edges: Array<{ from: string; to: string }> }
+    { nodes: string[]; edges: Array<{ from: string; to: string }>; ports: Port[] }
   >();
 
   for (const form of forms) {
@@ -241,13 +251,46 @@ export function spikeToGraph(
       // Also handles attr-map position: (defn name {:ports ...} [params] body)
       const rest = form.items.slice(2);
 
-      // Extract param names from the first vector, stripping ^Type hints
+      // Extract typed params from the param vector (^Type hints become input ports)
       const paramVec = rest.find((f) => f.type === "vector");
       const paramNames: string[] = [];
+      const inputPorts: Port[] = [];
       if (paramVec && paramVec.type === "vector") {
+        let typeHint: string | undefined;
         for (const item of paramVec.items) {
-          if (item.type === "symbol" && !item.value.startsWith("^")) {
+          if (item.type === "symbol" && item.value.startsWith("^")) {
+            typeHint = item.value.slice(1);
+          } else if (item.type === "symbol") {
             paramNames.push(item.value);
+            inputPorts.push(
+              typeHint
+                ? { name: item.value, direction: "in", type: typeHint }
+                : { name: item.value, direction: "in" },
+            );
+            typeHint = undefined;
+          }
+        }
+      }
+
+      // Extract output ports from {:ports {:name type ...}} attr-map
+      const attrMap = rest.find((f) => f.type === "map");
+      const outputPorts: Port[] = [];
+      if (attrMap && attrMap.type === "map") {
+        const portsEntry = attrMap.entries.find(
+          ([k]) => k.type === "keyword" && k.value === "ports",
+        );
+        if (portsEntry) {
+          const portsMap = portsEntry[1];
+          if (portsMap.type === "map") {
+            for (const [k, v] of portsMap.entries) {
+              if (k.type === "keyword") {
+                outputPorts.push(
+                  v.type === "symbol"
+                    ? { name: k.value, direction: "out", type: v.value }
+                    : { name: k.value, direction: "out" },
+                );
+              }
+            }
           }
         }
       }
@@ -272,7 +315,7 @@ export function spikeToGraph(
 
       const result = parseLetForm(letParts, paramNames);
       if (result.errors.length > 0) errors.push(...result.errors);
-      defns.set(name, result);
+      defns.set(name, { ...result, ports: [...inputPorts, ...outputPorts] });
     }
   }
 
@@ -319,7 +362,7 @@ export function spikeToGraph(
   const builtDefn = new Map<string, TreeNode>();
   const allEdges: Edge[] = [];
 
-  for (const [name, { nodes: childLabels, edges: rawEdges }] of defns) {
+  for (const [name, { nodes: childLabels, edges: rawEdges, ports }] of defns) {
     const children: TreeNode[] = childLabels.map((label) => ({
       id: label,
       label,
@@ -333,6 +376,7 @@ export function spikeToGraph(
       label: name,
       kind: "composite",
       children,
+      ports: ports.length > 0 ? ports : undefined,
       data: {},
       version: 1,
     });
@@ -451,12 +495,16 @@ function parseLetForm(
     if (nodeLabel !== null) bindingToLabel.set(bname.value, nodeLabel);
   }
 
-  // Parse body expression — may introduce one more node + edges
+  // Parse body expression — may introduce more nodes + edges
   if (body) {
     if (body.type === "list") {
       expandCall(body);
+    } else if (body.type === "map") {
+      // Map body: {:k (call ...) ...} — expand call expressions in each value
+      for (const [, val] of body.entries) {
+        if (val.type === "list") expandCall(val);
+      }
     }
-    // map body `{:k v ...}` — terminals already captured via bindings
   }
 
   return { nodes: [...nodeLabels], edges, errors };
