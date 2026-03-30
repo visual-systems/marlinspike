@@ -80,12 +80,19 @@ export interface WorkspaceState {
   entityDrafts: Record<string, string>;
 }
 
+export interface Port {
+  name: string;
+  direction: "in" | "out" | "inout";
+  type?: string; // schema type identifier, e.g. "float", "io.http.request-response"
+}
+
 export interface TreeNode {
   id: string;
   label: string;
   uri?: string;
   kind: "leaf" | "composite";
   children: TreeNode[];
+  ports?: Port[]; // declared input/output ports; absent = no port contract
   data: Record<string, unknown>;
   version: number;
 }
