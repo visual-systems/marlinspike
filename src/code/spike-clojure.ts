@@ -452,11 +452,32 @@ function parseLetForm(
   // Track added edges to avoid duplicates (which corrupt topoSort inDegrees).
   const seenEdges = new Set<string>();
 
+  // Check whether adding fromLabel→toLabel would create a cycle in the
+  // edges accumulated so far. Uses DFS from toLabel; if fromLabel is
+  // reachable, the edge is a back-edge and must be skipped to keep the
+  // graph acyclic. This handles duplicate function-name calls in bodies
+  // (e.g. two calls to `subtract` with different args) without breaking
+  // topoSort for the rest of the graph.
+  function wouldCreateCycle(fromLabel: string, toLabel: string): boolean {
+    const visited = new Set<string>();
+    const stack = [toLabel];
+    while (stack.length > 0) {
+      const node = stack.pop()!;
+      if (node === fromLabel) return true;
+      if (visited.has(node)) continue;
+      visited.add(node);
+      for (const e of edges) {
+        if (e.from === node) stack.push(e.to);
+      }
+    }
+    return false;
+  }
+
   // Expand a call SExp into nodes/edges. Returns the node label that
   // "produces" the value (the outermost function), or null if not a call.
   // Inlined call arguments are recursively expanded first (bottom-up).
-  // Self-edges (same function appearing in its own args due to duplicate
-  // invocations) and duplicate edges are both skipped.
+  // Self-edges, duplicate edges, and back-edges (cycle-forming) are all
+  // skipped to keep the accumulated edge set a valid DAG.
   function expandCall(callExpr: SExp): string | null {
     if (callExpr.type !== "list" || callExpr.items[0]?.type !== "symbol") return null;
     const nodeLabel = callExpr.items[0].value;
@@ -465,7 +486,7 @@ function parseLetForm(
       const srcLabel = resolveArg(arg);
       if (srcLabel !== null && srcLabel !== nodeLabel) {
         const key = `${srcLabel}->${nodeLabel}`;
-        if (!seenEdges.has(key)) {
+        if (!seenEdges.has(key) && !wouldCreateCycle(srcLabel, nodeLabel)) {
           seenEdges.add(key);
           edges.push({ from: srcLabel, to: nodeLabel });
         }

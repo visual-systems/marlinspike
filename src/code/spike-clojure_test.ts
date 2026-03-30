@@ -216,6 +216,90 @@ Deno.test("inlined call: mixed binding and inlined — (f (g a) b) where a is a 
   );
 });
 
+// ---------------------------------------------------------------------------
+// Quadratic-roots parse precision tests
+//
+// These tests pin down exactly what spikeToGraph should produce when parsing
+// the idiomatic quadratic-roots fixture.clj — independently of round-trip
+// stability. They catch regressions in port parsing, map-body expansion, and
+// inlined call capture without being confused by known re-emit shortcomings.
+// ---------------------------------------------------------------------------
+
+const QR_FIXTURE = FIXTURES.find((f) => f.label.includes("quadratic-roots"))!;
+
+Deno.test("quadratic-roots clj: input ports captured from ^Type param hints", () => {
+  const { treeNodes, errors } = spikeToGraph(QR_FIXTURE.clj!);
+  assertEquals(errors, []);
+  const root = treeNodes[0];
+  const inPorts = (root.ports ?? []).filter((p) => p.direction === "in");
+  assertEquals(inPorts.map((p) => p.name), ["a", "b", "c"]);
+  assertEquals(inPorts.map((p) => p.type), ["float", "float", "float"]);
+});
+
+Deno.test("quadratic-roots clj: output ports captured from {:ports ...} attr-map", () => {
+  const { treeNodes, errors } = spikeToGraph(QR_FIXTURE.clj!);
+  assertEquals(errors, []);
+  const root = treeNodes[0];
+  const outPorts = (root.ports ?? []).filter((p) => p.direction === "out");
+  assertEquals(outPorts.map((p) => p.name).sort(), ["x1", "x2"]);
+  assertEquals(outPorts.map((p) => p.type).sort(), ["float", "float"]);
+});
+
+Deno.test("quadratic-roots clj: map body values expanded — add and divide are nodes", () => {
+  // {:x1 (divide (add neg-b sqrt-d) two-a) :x2 ...} — the call expressions
+  // inside the map body must be expanded, not silently dropped.
+  const { treeNodes, edges, errors } = spikeToGraph(QR_FIXTURE.clj!);
+  assertEquals(errors, []);
+  const childLabels = new Set(treeNodes[0].children.map((c) => c.label));
+  for (const expected of ["add", "divide"]) {
+    assertEquals(childLabels.has(expected), true, `${expected} should be a node`);
+  }
+  assertEquals(
+    edges.some((e) => e.fromId === "add" && e.toId === "divide"),
+    true,
+    "should have edge add→divide",
+  );
+});
+
+Deno.test("quadratic-roots clj: all nodes captured — full 10-node set", () => {
+  // Documents the complete expected parse output so any parser regression is
+  // immediately obvious.
+  const expected = new Set([
+    "a",
+    "b",
+    "c",
+    "negate",
+    "square",
+    "multiply",
+    "subtract",
+    "sqrt",
+    "add",
+    "divide",
+  ]);
+  const { treeNodes, errors } = spikeToGraph(QR_FIXTURE.clj!);
+  assertEquals(errors, []);
+  const actual = new Set(treeNodes[0].children.map((c) => c.label));
+  for (const n of expected) {
+    assertEquals(actual.has(n), true, `node "${n}" should be parsed`);
+  }
+  assertEquals(actual.size, expected.size, "no unexpected extra nodes");
+});
+
+// The back-edge check now prevents the subtract↔sqrt cycle, so all 10 nodes
+// survive the re-emit. This test documents that the fix holds.
+Deno.test("quadratic-roots re-emit: all nodes survive (cycle check prevents back-edge)", () => {
+  const { treeNodes, edges } = spikeToGraph(QR_FIXTURE.clj!);
+  const reClj = graphToSpike(treeNodes, edges);
+  const { treeNodes: t2 } = spikeToGraph(reClj);
+  const surviving = new Set(t2[0]?.children.map((c) => c.label) ?? []);
+
+  for (
+    const n of ["a", "b", "c", "negate", "square", "multiply", "subtract", "sqrt", "add", "divide"]
+  ) {
+    assertEquals(surviving.has(n), true, `"${n}" should survive re-emit`);
+  }
+});
+
 Deno.test("inlined call: quadratic-roots disc binding — (subtract (square b) ...) captures square", () => {
   // Simplified slice of quadratic-roots: the `disc` binding has an inlined
   // `square` call that the current parser drops entirely.
