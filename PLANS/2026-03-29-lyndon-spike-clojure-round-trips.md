@@ -95,7 +95,7 @@ literal loss that caused `b²−4ac` to round-trip as `b²−ac`.
 - [x] `NO_COLOR=1 deno task ci` passes (206 tests, 0 failures)
 - [x] All round-trip unit tests pass
 - [x] Quadratic formula `b²−4ac` evaluates correctly after round-trip
-- [ ] Stories render correctly (visual check)
+- [x] Stories render correctly (visual check)
 
 ## Deferred / Known Shortcomings
 
@@ -103,4 +103,6 @@ literal loss that caused `b²−4ac` to round-trip as `b²−ac`.
 - **IDs = labels**: Label uniqueness assumed; renames break identity. Deferred.
 - **Edges across different root composites**: Not supported. Deferred.
 - **Wire edges into code-panel.tsx**: `spikeToGraph` returns edges but the code panel doesn't use them yet. Will require iteration on the UI side.
+- **Numbered input ports for positional arguments**: Replace `data.argOrder` with proper input ports on nodes. Literals become port metadata, edges get `fromPort`/`toPort` fields, and the graph model fully describes call semantics without a side channel. Touches core graph model (`Edge`, `TreeNode`), canvas rendering, and serialiser — right eventual design but broader than this spike.
+- **Commutative/associative argument detection**: Functions like variadic `multiply` or `add` have order-independent (abelian monoidal) arguments — no positional information needs to be stored. Detecting this property could simplify the graph model for these cases, avoiding unnecessary port ordering.
 - **Lint-suggest-fix system**: A layer that detects errors/warnings in the Spike-Clojure output (e.g. conjunctive names that could be promoted to let bindings, missing edges, ambiguous names) and suggests or auto-applies known fixes and heuristic improvements.
