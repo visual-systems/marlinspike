@@ -40,11 +40,11 @@ The goal is: cross-highlighting between selections, live validity feedback so th
 - [x] **C3 — Paredit mode** (`src/ui/lib/editor-modes/paredit.ts`): Implements `EditorMode`. Handles:
   - Auto-close `(` → `()`
   - Auto-indent on Enter (newline + enclosing-form column + standard offset)
-  - `Cmd+Shift+]` — forward slurp
-  - `Cmd+Shift+[` — forward barf
-  - `Cmd+K` — kill to end of current form
-  - `Cmd+D` — kill current expression
-  - `Alt+Right` / `Alt+Left` — navigate by expression boundary
+  - `Ctrl+Shift+Right` — forward slurp
+  - `Ctrl+Shift+Left` — forward barf
+  - `Ctrl+K` — kill to end of current form
+  - `Ctrl+D` — kill current expression
+  - `Ctrl+Right` / `Ctrl+Left` — navigate by expression boundary
 - [x] **C4 — Mode selector in code panel**: Mode indicator chip in title bar. Default: `"paredit"`. Active mode's `keyDown` delegates from `handleKeyDown`. Structure supports future `"vim"`, `"default"` modes.
 
 ### New files
@@ -58,9 +58,17 @@ The goal is: cross-highlighting between selections, live validity feedback so th
 - `src/ui/components/code-panel.tsx` — main changes (A1–A3, B1–B2, C4)
 - `src/ui/stories/code-panel.stories.tsx` — add validity + sync stories
 
+### Phase D — Bug fixes & polish (discovered during implementation)
+
+- [x] **D1 — Canvas not re-rendering after code apply**: Hono JSX DOM does not re-render children when parent props change. Added `ws-updated` event + `useState` nudge in Canvas. Also fixed stale `focusId` / `canvasExpandedNodes` persisted in localStorage crashing Canvas on load and after apply.
+- [x] **D2 — Gesture listener leak**: Document-level mousemove/mouseup were re-registered per render, causing stale closures. Replaced with stable `useRef`-based delegation registered once in `useEffect`.
+- [x] **D3 — Remove redundant mirror button**: The "mirror on canvas" button duplicated the apply button's function. Removed from code-panel title bar.
+- [x] **D4 — Rebind paredit shortcuts**: Original bindings (`Cmd+Shift+]`/`[`, `Alt+Arrow`) were intercepted by browser/OS. Rebound to `Ctrl+Shift+Arrow` (slurp/barf) and `Ctrl+Arrow` (navigate).
+- [x] **D5 — Keybinding tooltip on mode chip**: Added `keybindings` property to `EditorMode` interface. Mode chip tooltip shows all shortcuts on hover.
+
 ## Open Questions
 
-- Mode selector: dropdown vs. cycle chip? (Lean: cycle chip — low visual weight)
+- Mode selector: dropdown vs. cycle chip? → Resolved: cycle chip
 - Validity check: 150ms debounce so we don't parse every keystroke
 
 ## Verification
@@ -83,6 +91,6 @@ The goal is: cross-highlighting between selections, live validity feedback so th
 - [ ] Move cursor to a node name → that node highlighted on canvas
 - [ ] Type `(` → auto-closed as `()`
 - [ ] Enter inside a form → auto-indented to correct level
-- [ ] Cmd+Shift+] slurps next sibling into current form
+- [ ] Ctrl+Shift+Right slurps next sibling into current form
 - [ ] Entity panel apply → auto-formats JSON with 2-space indent
 - [x] `NO_COLOR=1 deno task ci` passes
