@@ -419,32 +419,26 @@ export const FIXTURES: Fixture[] = [
       ]),
     ],
     edges: [edge("validate", "enrich"), edge("enrich", "respond")],
-    shortcoming:
-      "def referencing a defn-defined child: the parser creates the inner defn node correctly, " +
-      "but when building the outer def, the referenced 'processor' is looked up in the def table " +
-      "where it doesn't exist, so it becomes a leaf in the re-parsed tree instead of a composite.",
   },
 
-  // ── shortcomings ─────────────────────────────────────────────────────────
+  // ── root-level leaves ──────────────────────────────────────────────────
 
   {
-    label: "shortcoming: root-level leaf nodes lost on round-trip",
-    description:
-      "Standalone leaf nodes (no composite parent) are emitted as comments and not parsed back.",
+    label: "def: root-level leaf nodes",
+    description: "Standalone leaf nodes (no composite parent) emitted as bare (def name) forms.",
     nodes: [leaf("A"), leaf("B"), leaf("C")],
     edges: [],
-    shortcoming:
-      "Root-level leaf nodes are emitted as '; label' comments. Comments are stripped by the " +
-      "reader so they are not parsed back — the re-parsed graph is empty.",
   },
+
+  // ── by-design limitations ──────────────────────────────────────────────
+
   {
-    label: "shortcoming: root-level edges not emitted",
-    description: "Edges between root-level nodes (no composite parent) are silently dropped — " +
-      "there is no containing defn form to hold the let bindings.",
+    label: "by-design: root-level edges require a containing composite",
+    description: "Edges between root-level nodes have no containing defn form — " +
+      "this matches Clojure semantics where dataflow requires a function scope.",
     nodes: [leaf("A"), leaf("B"), leaf("C")],
     edges: [edge("A", "B"), edge("B", "C")],
-    shortcoming:
-      "Root-level nodes are emitted as comments; edges between them have no containing " +
-      "defn form so they are dropped. The re-parsed graph is empty.",
+    shortcoming: "By design: root-level edges require a containing composite (defn). " +
+      "Leaf nodes are emitted as bare (def name) but edges need let-binding scope.",
   },
 ];

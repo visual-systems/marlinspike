@@ -590,3 +590,54 @@ Deno.test("inlined call: quadratic-roots disc binding — (subtract (square b) .
     "should have edge square→disc",
   );
 });
+
+// ---------------------------------------------------------------------------
+// Bare (def name) — root-level leaf nodes
+// ---------------------------------------------------------------------------
+
+Deno.test("bare (def A) parses as a leaf node", () => {
+  const { treeNodes, edges, errors } = spikeToGraph("(def A)");
+  assertEquals(errors, []);
+  assertEquals(treeNodes.length, 1);
+  assertEquals(treeNodes[0].kind, "leaf");
+  assertEquals(treeNodes[0].label, "A");
+  assertEquals(edges.length, 0);
+});
+
+Deno.test("multiple bare defs parse as independent leaf nodes", () => {
+  const { treeNodes, errors } = spikeToGraph("(def A)\n(def B)\n(def C)");
+  assertEquals(errors, []);
+  assertEquals(treeNodes.length, 3);
+  assertEquals(treeNodes.map((n) => n.label), ["A", "B", "C"]);
+  assertEquals(treeNodes.every((n) => n.kind === "leaf"), true);
+});
+
+Deno.test("bare def round-trips: graph→clj→graph", () => {
+  const { treeNodes: t1, edges: e1 } = spikeToGraph("(def X)\n\n(def Y)");
+  const reClj = graphToSpike(t1, e1);
+  const { treeNodes: t2 } = spikeToGraph(reClj);
+  assertEquals(t2.length, 2);
+  assertEquals(t2.map((n) => n.label), ["X", "Y"]);
+  assertEquals(t2.every((n) => n.kind === "leaf"), true);
+});
+
+// ---------------------------------------------------------------------------
+// Nested defn inside def — def children resolve from defn table
+// ---------------------------------------------------------------------------
+
+Deno.test("def referencing a defn child resolves as composite, not leaf", () => {
+  const src = `(defn processor [input]
+  (let [v (validate input)]
+    (respond v)))
+
+(def service [ingress processor egress])`;
+  const { treeNodes, edges, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const service = treeNodes.find((n) => n.label === "service")!;
+  assertEquals(service.kind, "composite");
+  const proc = service.children.find((c) => c.label === "processor")!;
+  assertEquals(proc.kind, "composite", "processor should be composite, not leaf");
+  assertEquals(proc.children.length > 0, true, "processor should have children");
+  // Binding-name-as-identity: `v (validate input)` creates node "v" (fn=validate)
+  assertEquals(edges.some((e) => e.fromId === "v" && e.toId === "respond"), true);
+});

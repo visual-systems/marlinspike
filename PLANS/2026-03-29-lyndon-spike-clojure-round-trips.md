@@ -13,78 +13,94 @@ The spike explores which Clojure encoding mechanisms work for which graph topolo
 
 - Edges round-trip via proper Clojure forms (not comments)
 - Comprehensive unit tests for `clj→graph→clj` and `graph→clj→graph`
+- Semantic verification via evaluator (eval original vs eval round-tripped)
 - Stories demonstrating round-trips and known shortcomings
 - Shortcomings documented in Deferred as discovered
 
 ## Approach
 
-### 1. Add `defn` + `let` emitter & parser
-The primary encoding for edges: a `defn` with a `let` body where bindings capture the output of each called node. The data flow topology falls out of the binding references — no separate edge declarations needed.
-
-Emit rule: if a `def`-level graph has edges, emit it as `defn ... (let [...] ...)` instead of `def ... [...]`.
-
-Parse rule: walk `let` bindings; each `(NodeName arg1 arg2 ...)` creates edges from each arg-binding's source node to `NodeName`.
-
+### 1. Add `defn` + `let` emitter & parser ✅
 - [x] Extend `graphToSpike` to emit `defn`+`let` when edges are present
 - [x] Extend `spikeToGraph` to parse `defn`+`let` bodies into nodes + edges
 - [x] Handle chain, fan-out, fan-in, and diamond topologies
-- [x] File: `src/code/spike-clojure.ts`
 
-### 2. Write unit tests (`src/code/spike-clojure_test.ts`)
-- [x] `graph→clj→graph` round-trips: emit then re-parse, assert structural + edge equality
-- [x] `clj→graph→clj` round-trips: parse then re-emit, assert text equality
-- [x] Fixture cases:
-  - `def` only: leaf-only, nested composites — already works, confirm
-  - Chain: A → B → C (sequential `let`)
-  - Fan-out: A → B, A → C
-  - Fan-in: A → C, B → C
-  - Diamond: A → B, A → C, B → D, C → D
-  - Mixed: `def` container holding a `defn` with edges — deferred (see below)
+### 2. Binding-name-as-identity (Tier 1) ✅
+Let binding variable names become node labels; the function name is stored in `data.fn`.
+`(let [neg-b (negate b)] ...)` → node `neg-b`, fn `negate`. Fixes duplicate-call collapse.
 
-### 3. Add round-trip stories
-- [x] Add a `RoundTripGallery` story to `src/ui/stories/code-panel.stories.tsx`
-- [x] Fixtures extracted to `src/code/spike-clojure-fixtures.ts` — shared by tests and stories
-- [x] Show emitted Clojure alongside re-emitted Clojure with ✓/✗ stability badge
+### 3. Numeric literal preservation in let-bound calls ✅
+Literals in let-bound call arguments (e.g. `2.0` in `(multiply 2.0 a)`) are preserved
+via `data.argOrder` so the emitter reconstructs the full call including literals.
 
-### 4. Update call site
-- [x] `src/ui/components/code-panel.tsx`: use returned `edges` from `spikeToGraph`
+### 4. Inline-call hoisting in the emitter ✅
+Single-use anonymous nodes (no `data.fn`, outgoing edge count ≤ 1) are inlined directly
+as call arguments rather than emitted as separate let bindings. Avoids let-binding
+names shadowing function names (e.g. `square (square b)`).
 
-### 5. Document shortcomings as discovered
-- [ ] Track in Deferred below
+### 5. Conjunctive naming for duplicate inline calls (Tier 2) ✅
+When an inline call's function name already exists as a node, the parser generates a
+conjunctive name (`fn-arg1-arg2`) to create a distinct node. E.g. `(multiply 4.0 (multiply a c))`
+creates nodes `multiply` (for `a*c`) and `multiply-4-multiply` (for `4*a*c`) with
+`data.fn="multiply"` and `data.argOrder=["4", "multiply"]`. Fixes the nested inline call
+literal loss that caused `b²−4ac` to round-trip as `b²−ac`.
 
-## Encoding Heuristic Algorithm
+### 6. Write unit tests (`src/code/spike-clojure_test.ts`) ✅
+- [x] `graph→clj→graph` round-trips
+- [x] `clj→graph→clj` round-trips (stability)
+- [x] Fixture cases: chain, fan-out, fan-in, diamond, OIDC, quadratic, duplicate-call
+- [x] Numeric literal preservation tests (verify correct eval, not just structural)
+- [x] Binding-name and let-block structure tests
+- [x] Quadratic-roots: 14-node parse, all nodes survive re-emit, eval matches original
 
-The emitter uses an iterative refinement algorithm. The scoring metric is TBD — candidates include character count and form count; both will be explored during the spike. The algorithm is a pure function designed to be replaceable/pluggable.
+### 7. Add evaluator (`src/code/spike-clojure-eval.ts`) ✅
+- [x] `evaluateSpike` for semantic verification of round-trips
+- [x] Unit tests in `spike-clojure-eval_test.ts`
+- [x] Fixture-driven eval: `examples evaluate correctly` + `round-trip eval matches original`
 
-```
-encode(nodes, edges) → SExp
-  1. Start: build canonical verbose form
-       — nodes as separate top-level defs
-       — edges as explicit declarations after main sexp (e.g. `(wire A B)`)
-  2. Try: inline edges into `let` bindings inside the enclosing sexp
-       — where input/output relationships are coherent (single-path flow)
-       — keep if result scores better
-  3. Try: inline single-use `let` bindings as direct call arguments
-       — e.g. `(let [a (A x)] (B a))` → `(B (A x))`
-       — keep if result scores better
-  4. Repeat steps 2–3 until stable (no further improvement)
-  5. Return final form
-```
+### 8. Add round-trip stories ✅
+- [x] `RoundTripCard` in `code-panel.stories.tsx` with clj→graph→clj and graph→clj→graph sections
+- [x] Eval panel: shows inputs / orig / round-trip / ✓✗ per example
+- [x] Fixtures extracted to `spike-clojure-fixtures.ts` — shared by tests and stories
+
+### 9. Update call site _(deferred)_
+- Moved to Deferred — wiring edges into code-panel.tsx will require iteration
+
+### 10. Fix root-level leaves and nested defn resolution ✅
+- [x] Emit root-level leaf nodes as `(def name)` instead of comments
+- [x] Parse bare `(def name)` as leaf nodes
+- [x] Resolve `def` children from `defns` table (nested defn inside def)
+- [x] Reclassify root-level edges from shortcoming to by-design
+
+### 11. Document shortcomings
+- [x] Track in Deferred below
+
+## Key Files
+
+- `src/code/spike-clojure.ts` — serialiser (parser + emitter)
+- `src/code/spike-clojure_test.ts` — tests (206 passing)
+- `src/code/spike-clojure-eval.ts` — evaluator
+- `src/code/spike-clojure-eval_test.ts` — evaluator tests
+- `src/code/spike-clojure-fixtures.ts` — shared fixtures
+- `src/ui/stories/code-panel.stories.tsx` — round-trip stories
+- `src/ui/components/code-panel.tsx` — caller (edges not yet wired)
 
 ## Open Questions
 
-- **Name vs ID**: Code references entities by label/name for readability, but the graph model uses IDs. When labels are unique within a scope, labels *are* the IDs (current behaviour). If they diverge, the round-trip breaks identity. Deferred.
-- **`def` with edges**: Does having edges force `defn`? Explore during spike.
+- **Name vs ID**: Code references entities by label/name. If labels diverge from IDs, round-trip breaks. Explicit ID metadata (`^{:id "uuid"}`) is deferred.
+- **`def` with edges**: Having edges currently forces `defn`. This seems correct.
 - **How are edges labelled**: What's an idiomatic way to label and enrich edges?
 
 ## Verification
 
-- [x] `NO_COLOR=1 deno task ci` passes (120 tests, 0 failed)
+- [x] `NO_COLOR=1 deno task ci` passes (206 tests, 0 failures)
 - [x] All round-trip unit tests pass
+- [x] Quadratic formula `b²−4ac` evaluates correctly after round-trip
 - [ ] Stories render correctly (visual check)
 
-## Deferred
+## Deferred / Known Shortcomings
 
-- Root-level leaf nodes emit as `; leafLabel` comments and are not parsed back — structural information is lost.
-- IDs = labels: label uniqueness is assumed. Explicit ID metadata syntax (`^{:id "..."}`) is a future consideration.
-- `defn` with ports (`{:ports {...}}`) and typed args (`^Type`) are not yet handled in the serialiser.
+- **Root-level edges not supported (by design)**: Edges require a containing `defn`/`let` scope, matching Clojure semantics where dataflow lives inside a function.
+- **IDs = labels**: Label uniqueness assumed; renames break identity. Deferred.
+- **Edges across different root composites**: Not supported. Deferred.
+- **Wire edges into code-panel.tsx**: `spikeToGraph` returns edges but the code panel doesn't use them yet. Will require iteration on the UI side.
+- **Lint-suggest-fix system**: A layer that detects errors/warnings in the Spike-Clojure output (e.g. conjunctive names that could be promoted to let bindings, missing edges, ambiguous names) and suggests or auto-applies known fixes and heuristic improvements.

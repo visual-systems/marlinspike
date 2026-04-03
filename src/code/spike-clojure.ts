@@ -6,6 +6,7 @@
  * This module covers the semantic layer: mapping Clojure forms to graph concepts.
  *
  * Supported forms:
+ *   (def name)                       — standalone leaf node (no children)
  *   (def name [child ...])           — structural container; no edges
  *   (defn name [] (let [...] body))  — dataflow container; edges encoded as
  *                                      let-binding data flow
@@ -19,9 +20,9 @@
  * unique within a scope for round-trips to preserve identity.
  *
  * Known shortcomings (see PLANS file):
- *   - Root-level leaf nodes cannot be parsed back (emitted as comments).
  *   - IDs are assumed to equal labels; label changes break identity.
- *   - Edges across different root composites are not supported.
+ *   - Root-level edges are not supported (by design — edges require a
+ *     containing defn/let scope, matching Clojure semantics).
  *   - Conjunctive naming handles duplicate inline calls (e.g. nested
  *     `(multiply 4.0 (multiply a c))`) by generating unique node names.
  */
@@ -199,10 +200,10 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
  * Composite nodes with edges among their children are emitted as
  * `(defn name [] (let [...] body))` forms encoding the dataflow topology.
  * Composite nodes with no such edges are emitted as `(def name [children...])`.
+ * Root-level leaf nodes are emitted as bare `(def name)` forms.
  *
- * Root-level leaf nodes are emitted as line comments — round-trip lossy.
  * Edges between nodes that are not co-children of a composite are not
- * encoded (noted as a known shortcoming).
+ * encoded (by design — edges require a containing defn/let scope).
  */
 export function graphToSpike(nodes: TreeNode[], edges: Edge[]): string {
   const lines: string[] = [];
@@ -213,7 +214,7 @@ export function graphToSpike(nodes: TreeNode[], edges: Edge[]): string {
     emitted.add(node.id);
 
     if (node.kind === "leaf") {
-      lines.push(`; ${node.label}`);
+      lines.push(`(def ${node.label})`);
       return;
     }
 
@@ -255,6 +256,9 @@ export function graphToSpike(nodes: TreeNode[], edges: Edge[]): string {
  * Parse Spike-Clojure source text into root `TreeNode`s and `Edge`s.
  *
  * Supported forms:
+ *   (def name)
+ *     → standalone leaf node (no children, no value)
+ *
  *   (def name [child ...])
  *     → composite node; children are node references (leaf if not defined)
  *
@@ -291,16 +295,16 @@ export function spikeToGraph(
   >();
 
   for (const form of forms) {
-    if (form.type !== "list" || form.items.length < 3) continue;
+    if (form.type !== "list" || form.items.length < 2) continue;
     const [head, nameForm] = form.items;
     if (head.type !== "symbol" || nameForm.type !== "symbol") continue;
     const name = nameForm.value;
 
     if (head.value === "def") {
-      // (def name [child ...])
-      const bodyForm = form.items[2];
+      // (def name [child ...]) or bare (def name) for leaf nodes
+      const bodyForm = form.items[2]; // undefined for bare (def name)
       const childNames: string[] = [];
-      if (bodyForm.type === "vector") {
+      if (bodyForm && bodyForm.type === "vector") {
         for (const item of bodyForm.items) {
           if (item.type === "symbol") childNames.push(item.value);
         }
@@ -383,42 +387,7 @@ export function spikeToGraph(
     return { treeNodes: [], edges: [], errors: [] };
   }
 
-  // Build TreeNodes from def forms
-  const builtDef = new Map<string, TreeNode>();
-
-  function makeDefNode(name: string, visited: Set<string>): TreeNode {
-    if (builtDef.has(name)) return builtDef.get(name)!;
-    if (visited.has(name)) {
-      errors.push(`Cycle detected at "${name}"`);
-      const stub: TreeNode = {
-        id: name,
-        label: name,
-        kind: "leaf",
-        children: [],
-        data: {},
-        version: 1,
-      };
-      builtDef.set(name, stub);
-      return stub;
-    }
-    visited.add(name);
-    const childNames = defs.get(name) ?? [];
-    const children = childNames.map((n) => makeDefNode(n, new Set(visited)));
-    const node: TreeNode = {
-      id: name,
-      label: name,
-      kind: children.length > 0 ? "composite" : "leaf",
-      children,
-      data: {},
-      version: 1,
-    };
-    builtDef.set(name, node);
-    return node;
-  }
-
-  for (const name of defs.keys()) makeDefNode(name, new Set());
-
-  // Build TreeNodes from defn forms
+  // Build TreeNodes from defn forms first, so def nodes can reference them
   const builtDefn = new Map<string, TreeNode>();
   const allEdges: Edge[] = [];
 
@@ -461,6 +430,43 @@ export function spikeToGraph(
       });
     }
   }
+
+  // Build TreeNodes from def forms (after defn, so children can resolve defn nodes)
+  const builtDef = new Map<string, TreeNode>();
+
+  function makeDefNode(name: string, visited: Set<string>): TreeNode {
+    if (builtDef.has(name)) return builtDef.get(name)!;
+    // If this name was defined as a defn, use the already-built composite node
+    if (builtDefn.has(name)) return builtDefn.get(name)!;
+    if (visited.has(name)) {
+      errors.push(`Cycle detected at "${name}"`);
+      const stub: TreeNode = {
+        id: name,
+        label: name,
+        kind: "leaf",
+        children: [],
+        data: {},
+        version: 1,
+      };
+      builtDef.set(name, stub);
+      return stub;
+    }
+    visited.add(name);
+    const childNames = defs.get(name) ?? [];
+    const children = childNames.map((n) => makeDefNode(n, new Set(visited)));
+    const node: TreeNode = {
+      id: name,
+      label: name,
+      kind: children.length > 0 ? "composite" : "leaf",
+      children,
+      data: {},
+      version: 1,
+    };
+    builtDef.set(name, node);
+    return node;
+  }
+
+  for (const name of defs.keys()) makeDefNode(name, new Set());
 
   // Root nodes: defined but not referenced as a child of any other def/defn
   const allChildLabels = new Set<string>();
