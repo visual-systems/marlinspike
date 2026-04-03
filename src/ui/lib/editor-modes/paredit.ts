@@ -160,6 +160,16 @@ function killExpression(text: string, cursor: number): { text: string; cursor: n
 
 export const pareditMode: EditorMode = {
   name: "paredit",
+  keybindings: [
+    ["( [ {", "Auto-close pair"],
+    ["Enter", "Auto-indent"],
+    ["^⇧→", "Forward slurp"],
+    ["^⇧←", "Forward barf"],
+    ["^K", "Kill to end of form"],
+    ["^D", "Kill expression"],
+    ["^→", "Next expression"],
+    ["^←", "Previous expression"],
+  ],
 
   keyDown(e: KeyboardEvent, ctx: EditorContext): boolean {
     const { text, cursor, selectionEnd } = ctx;

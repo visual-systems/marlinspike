@@ -34,6 +34,8 @@ export interface EditorContext {
 export interface EditorMode {
   /** Human-readable name shown in the mode chip. */
   readonly name: string;
+  /** Optional keybinding summary shown in the mode chip tooltip. Each entry is [key, description]. */
+  readonly keybindings?: ReadonlyArray<readonly [key: string, description: string]>;
   /**
    * Handle a keydown event. Return `true` if the event was consumed
    * (preventing default browser behaviour and further processing).

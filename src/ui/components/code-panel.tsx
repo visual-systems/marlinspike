@@ -492,8 +492,11 @@ export function CodePanel(
           {!panel.codeEntityId && (
             <button
               type="button"
-              title={`Editor mode: ${MODE_LABELS[modeId]}. Click to cycle.`}
-              onClick={() => setModeId(nextModeId(modeId))}
+              title={`${MODE_LABELS[modeId]} mode\n${
+                (activeMode.keybindings ?? []).map(([k, d]) => `${k}  ${d}`).join("\n")
+              }\n\nClick to cycle.`}
+              onClick={() =>
+                setModeId(nextModeId(modeId))}
               style="background:none; border:1px solid #252538; border-radius:3px; color:#404466; font-size:10px; cursor:pointer; padding:1px 5px; letter-spacing:0.04em; flex-shrink:0; text-transform:none; font-weight:normal;"
             >
               {MODE_LABELS[modeId]}
