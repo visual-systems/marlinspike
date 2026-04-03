@@ -10,6 +10,7 @@
  */
 
 import type { Edge, TreeNode } from "../ui/workspace.ts";
+import type { NumericFnEnv } from "./spike-clojure-eval.ts";
 
 // ---------------------------------------------------------------------------
 // Primitive builders
@@ -70,6 +71,20 @@ export interface Fixture {
    * Only affects the `idiomatic clj parse stable` test, not graph→clj→graph.
    */
   cljShortcoming?: string;
+  /**
+   * Concrete input/output examples for evaluating this fixture's `clj` form.
+   * Keys in `inputs` must match the defn's parameter names.
+   * Keys in `expected` must match the defn's output map keys.
+   */
+  examples?: Array<{ inputs: Record<string, number>; expected: Record<string, number> }>;
+  /** Functions needed to evaluate the `examples`. Provided as a numeric env. */
+  evalFns?: NumericFnEnv;
+  /**
+   * If set, describes a known semantic loss in the round-trip: evaluating the
+   * original and the round-tripped form with the same inputs produces different
+   * results. The eval-comparison test confirms the mismatch is present.
+   */
+  evalShortcoming?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -351,6 +366,39 @@ export const FIXTURES: Fixture[] = [
       edge("mul-2a", "div-x1"),
       edge("mul-2a", "div-x2"),
     ],
+    examples: [
+      // x² - 5x + 6 = 0  →  x = 3, x = 2
+      { inputs: { a: 1, b: -5, c: 6 }, expected: { x1: 3, x2: 2 } },
+      // x² - 3x + 2 = 0  →  x = 2, x = 1
+      { inputs: { a: 1, b: -3, c: 2 }, expected: { x1: 2, x2: 1 } },
+      // 2x² - 4x + 2 = 0  →  double root x = 1
+      { inputs: { a: 2, b: -4, c: 2 }, expected: { x1: 1, x2: 1 } },
+    ],
+    evalFns: {
+      negate: (x) => -x,
+      square: (x) => x * x,
+      multiply: (a, b) => a * b,
+      subtract: (a, b) => a - b,
+      sqrt: (x) => Math.sqrt(x),
+      add: (a, b) => a + b,
+      divide: (a, b) => a / b,
+    },
+  },
+
+  // ── minimal repro: duplicate function call ───────────────────────────────
+
+  {
+    label: "defn: duplicate fn call — (double a) and (double b)",
+    description:
+      "Minimal repro for the duplicate-call collapse bug: same function called twice in separate let bindings with different args.",
+    clj: `(defn f [a b]
+  (let [x (double a)
+        y (double b)]
+    {:x x :y y}))`,
+    nodes: [composite("f", [leaf("a"), leaf("b"), leaf("double")])],
+    edges: [edge("a", "double"), edge("b", "double")],
+    examples: [{ inputs: { a: 3, b: 4 }, expected: { x: 6, y: 8 } }],
+    evalFns: { double: (x) => x * 2 },
   },
 
   // ── nested defn inside def ───────────────────────────────────────────────

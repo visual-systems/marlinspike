@@ -22,8 +22,8 @@
  *   - Root-level leaf nodes cannot be parsed back (emitted as comments).
  *   - IDs are assumed to equal labels; label changes break identity.
  *   - Edges across different root composites are not supported.
- *   - Duplicate function invocations (e.g. two `multiply` calls) collapse to
- *     one node; the second invocation's distinct wiring is lost.
+ *   - Conjunctive naming handles duplicate inline calls (e.g. nested
+ *     `(multiply 4.0 (multiply a c))`) by generating unique node names.
  */
 
 import type { Edge, Port, TreeNode } from "../ui/workspace.ts";
@@ -64,9 +64,10 @@ function topoSort(ids: string[], edges: Edge[]): string[] {
  * The algorithm:
  *   1. Input ports (direction "in") become defn params; excluded from let bindings.
  *   2. Topological sort of non-param children.
- *   3. Build let bindings for all non-param nodes except the single terminal (if any).
- *   4. Inline the terminal node call as the return expression.
- *   5. If multiple terminals, collect them in a map return.
+ *   3. Nodes that were explicitly named in the source (data.fn or data.argOrder set)
+ *      OR are fan-out nodes (multiple outgoing edges) become let bindings.
+ *      All other nodes are inlined directly as call arguments where they are used.
+ *   4. Build the return expression, inlining single-use anonymous nodes recursively.
  */
 function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   const nodes = container.children;
@@ -76,13 +77,9 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   const inputPorts = (container.ports ?? []).filter((p) => p.direction === "in");
   const inputPortIds = new Set(inputPorts.map((p) => p.name));
 
-  // Binding name for non-param nodes: lowercase label, safe as a Clojure symbol.
-  // Params use their original label unchanged (they're declared in the param
-  // vector and must match the binding references in let bodies exactly).
-  const binding = (id: string) => {
-    if (inputPortIds.has(id)) return nodeById.get(id)!.label;
-    return nodeById.get(id)!.label.toLowerCase().replace(/[^a-z0-9-]/g, "-");
-  };
+  // Binding name for a node: always the node label.
+  // Under binding-name-as-identity, the label IS the let variable name.
+  const binding = (id: string) => nodeById.get(id)!.label;
 
   // Non-param nodes are the ones that go in the let bindings
   const letNodes = nodes.filter((n) => !inputPortIds.has(n.id));
@@ -93,34 +90,91 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   // Terminal nodes: no outgoing edges within this composite
   const terminalIds = sorted.filter((id) => !sourceIds.has(id));
 
-  // For each let-bound node, collect its incoming arg binding names in edge order
+  // Count outgoing edges per node (to detect fan-out)
+  const outgoingCounts = new Map<string, number>();
+  for (const e of edges) {
+    outgoingCounts.set(e.fromId, (outgoingCounts.get(e.fromId) ?? 0) + 1);
+  }
+
+  // A node is inline-able when it was NOT explicitly renamed in the original source
+  // (data.fn undefined means label === function name) and is used by at most one
+  // downstream node. Input-port nodes are never inline-able (they appear in the
+  // param list). Fan-out nodes must be bound in a let to avoid recomputing.
+  //
+  // Note: data.argOrder (literal preservation) is intentionally NOT checked here.
+  // Map-key nodes and let-bound nodes where the binding name equals the function
+  // name both lack data.fn. Inlining them is always safe because the binding name
+  // carries no extra identity beyond the function name.
+  function isInlineable(id: string): boolean {
+    if (inputPortIds.has(id)) return false;
+    const node = nodeById.get(id);
+    if (!node) return false;
+    if (node.data.fn !== undefined) return false; // explicitly renamed — must keep binding
+    return (outgoingCounts.get(id) ?? 0) <= 1;
+  }
+
+  // For each node, collect its incoming arg labels in edge order (fallback when
+  // no data.argOrder is stored, e.g. inline-call nodes and user-constructed graphs).
   const incomingArgs = new Map<string, string[]>();
   for (const id of sorted) incomingArgs.set(id, []);
   for (const e of edges) {
     incomingArgs.get(e.toId)?.push(binding(e.fromId));
   }
 
+  // Build the call expression for a node, recursively inlining inline-able args.
+  // Uses data.argOrder (preserves literal values) when available, otherwise falls
+  // back to edge-derived incomingArgs.
   function callExpr(id: string): string {
-    const label = nodeById.get(id)!.label;
-    const args = incomingArgs.get(id) ?? [];
-    return args.length > 0 ? `(${label} ${args.join(" ")})` : `(${label})`;
+    const node = nodeById.get(id)!;
+    const fn = (node.data.fn as string | undefined) ?? node.label;
+    const argOrder = node.data.argOrder as string[] | undefined;
+    const rawArgs = argOrder ?? incomingArgs.get(id) ?? [];
+    const args = rawArgs.map((a) => nodeById.has(a) && isInlineable(a) ? callExpr(a) : a);
+    return args.length > 0 ? `(${fn} ${args.join(" ")})` : `(${fn})`;
   }
 
   // Param list with optional ^Type hints
   const paramList = inputPorts.map((p) => p.type ? `^${p.type} ${p.name}` : p.name).join(" ");
 
-  // Let bindings: all non-param nodes except a single terminal (inlined in return).
-  // When there are multiple terminals, all nodes stay in let and the return
-  // collects terminal binding names into a map.
-  const letIds = terminalIds.length === 1 ? sorted.filter((id) => id !== terminalIds[0]) : sorted;
+  // Output ports attr-map: emit if any output ports are declared
+  const outputPorts = (container.ports ?? []).filter((p) => p.direction === "out");
+  const attrMap = outputPorts.length > 0
+    ? `\n  {:ports {${outputPorts.map((p) => `:${p.name} ${p.type ?? "any"}`).join(" ")}}}`
+    : "";
+
+  // When all terminal nodes are named by output ports (map-key identity from
+  // the parser), inline each terminal call directly in the map return rather
+  // than binding it in a let. This produces {:x1 (divide ...) :x2 (divide ...)}
+  // instead of {:x1 x1 :x2 x2} and preserves distinct output slots.
+  const portNameSet = new Set(outputPorts.map((p) => p.name));
+  const portsMatchTerminals = outputPorts.length > 0 &&
+    terminalIds.length > 0 &&
+    terminalIds.every((id) => portNameSet.has(id));
+
+  // Let bindings: exclude terminals and inline-able nodes (which are folded
+  // directly into their single consumer's call expression).
+  const letIds =
+    (portsMatchTerminals
+      ? sorted.filter((id) => !portNameSet.has(id))
+      : terminalIds.length === 1
+      ? sorted.filter((id) => id !== terminalIds[0])
+      : sorted).filter((id) => !isInlineable(id));
+
+  const letIdSet = new Set(letIds);
+
+  // For the return expression: nodes in the let block are referenced by their
+  // binding name; nodes not in the let block are inlined as call expressions.
+  const returnRef = (id: string) => letIdSet.has(id) ? binding(id) : callExpr(id);
 
   // Return expression
-  const returnExpr = terminalIds.length === 1
+  const returnExpr = portsMatchTerminals
+    ? `{${outputPorts.map((p) => `:${p.name} ${callExpr(p.name)}`).join(" ")}}`
+    : terminalIds.length === 1
     ? callExpr(terminalIds[0])
-    : `{${terminalIds.map((id) => `:${nodeById.get(id)!.label} ${binding(id)}`).join(" ")}}`;
+    : `{${terminalIds.map((id) => `:${nodeById.get(id)!.label} ${returnRef(id)}`).join(" ")}}`;
 
   if (letIds.length === 0) {
-    return `(defn ${container.label} [${paramList}]\n  ${returnExpr})`;
+    return `(defn ${container.label}${attrMap}\n  [${paramList}]\n  ${returnExpr})`;
   }
 
   // Format let bindings: first on same line as `[`, rest indented to align
@@ -131,7 +185,7 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
     .map((b, i) => (i === 0 ? `[${b}` : `${indent}${b}`))
     .join("\n") + "]";
 
-  return `(defn ${container.label} [${paramList}]\n  (let ${letBlock}\n    ${returnExpr}))`;
+  return `(defn ${container.label}${attrMap}\n  [${paramList}]\n  (let ${letBlock}\n    ${returnExpr}))`;
 }
 
 // ---------------------------------------------------------------------------
@@ -227,7 +281,13 @@ export function spikeToGraph(
   const defs = new Map<string, string[]>(); // name → child label list
   const defns = new Map<
     string,
-    { nodes: string[]; edges: Array<{ from: string; to: string }>; ports: Port[] }
+    {
+      nodes: string[];
+      edges: Array<{ from: string; to: string }>;
+      ports: Port[];
+      nodeFunctions: Map<string, string>;
+      nodeArgOrders: Map<string, string[]>;
+    }
   >();
 
   for (const form of forms) {
@@ -362,13 +422,23 @@ export function spikeToGraph(
   const builtDefn = new Map<string, TreeNode>();
   const allEdges: Edge[] = [];
 
-  for (const [name, { nodes: childLabels, edges: rawEdges, ports }] of defns) {
+  for (
+    const [name, { nodes: childLabels, edges: rawEdges, ports, nodeFunctions, nodeArgOrders }]
+      of defns
+  ) {
     const children: TreeNode[] = childLabels.map((label) => ({
       id: label,
       label,
       kind: "leaf" as const,
       children: [],
-      data: {},
+      data: {
+        // fn: actual function name when node label differs from function name
+        // (e.g. node "neg-b" calls "negate"; node "x1" calls "divide")
+        ...(nodeFunctions.has(label) ? { fn: nodeFunctions.get(label)! } : {}),
+        // argOrder: preserved arg list (symbolic labels + literal reprs) so the
+        // emitter can reconstruct the exact call including literal values.
+        ...(nodeArgOrders.has(label) ? { argOrder: nodeArgOrders.get(label)! } : {}),
+      },
       version: 1,
     }));
     builtDefn.set(name, {
@@ -426,14 +496,25 @@ export function spikeToGraph(
 function parseLetForm(
   letParts: SExp[],
   paramNames: string[] = [],
-): { nodes: string[]; edges: Array<{ from: string; to: string }>; errors: string[] } {
+): {
+  nodes: string[];
+  edges: Array<{ from: string; to: string }>;
+  errors: string[];
+  nodeFunctions: Map<string, string>;
+  nodeArgOrders: Map<string, string[]>;
+} {
   const errors: string[] = [];
   const nodeLabels = new Set<string>();
   const edges: Array<{ from: string; to: string }> = [];
+  // Maps node label → function name when they differ (e.g. node "x1" calls "divide")
+  const nodeFunctions = new Map<string, string>();
+  // Maps node label → ordered arg list (symbolic labels + literal reprs).
+  // Stored for let-bound nodes and conjunctive-named inline nodes.
+  const nodeArgOrders = new Map<string, string[]>();
 
   if (letParts.length < 1 || letParts[0].type !== "vector") {
     errors.push("let: expected binding vector");
-    return { nodes: [], edges: [], errors };
+    return { nodes: [], edges: [], errors, nodeFunctions, nodeArgOrders: new Map() };
   }
 
   const bindingVec = letParts[0].items;
@@ -478,19 +559,65 @@ function parseLetForm(
   // Inlined call arguments are recursively expanded first (bottom-up).
   // Self-edges, duplicate edges, and back-edges (cycle-forming) are all
   // skipped to keep the accumulated edge set a valid DAG.
-  function expandCall(callExpr: SExp): string | null {
+  //
+  // nameOverride: when set (e.g. a map key), the node is identified by that
+  // name rather than the function name, and the function name is stored in
+  // nodeFunctions for the emitter to use.
+  function expandCall(callExpr: SExp, nameOverride?: string): string | null {
     if (callExpr.type !== "list" || callExpr.items[0]?.type !== "symbol") return null;
-    const nodeLabel = callExpr.items[0].value;
-    nodeLabels.add(nodeLabel);
+    const funcLabel = callExpr.items[0].value;
+
+    // First pass: resolve all arguments to determine their labels/literals.
+    // Nested calls are recursively expanded, creating their own nodes and edges.
+    const resolvedArgs: Array<{ label: string | null; literal: string | null }> = [];
     for (const arg of callExpr.items.slice(1)) {
-      const srcLabel = resolveArg(arg);
-      if (srcLabel !== null && srcLabel !== nodeLabel) {
-        const key = `${srcLabel}->${nodeLabel}`;
-        if (!seenEdges.has(key) && !wouldCreateCycle(srcLabel, nodeLabel)) {
-          seenEdges.add(key);
-          edges.push({ from: srcLabel, to: nodeLabel });
-        }
+      if (arg.type === "number") {
+        resolvedArgs.push({ label: null, literal: String(arg.value) });
+      } else if (arg.type === "string") {
+        resolvedArgs.push({ label: null, literal: JSON.stringify(arg.value) });
+      } else {
+        const srcLabel = resolveArg(arg);
+        resolvedArgs.push({ label: srcLabel, literal: null });
       }
+    }
+
+    // Determine node label. When no nameOverride is given and the function name
+    // already exists as a node, generate a conjunctive name (fn-arg1-arg2) to
+    // avoid collapsing distinct inline calls into a single node. The conjunctive
+    // name becomes the node's identity and data.fn stores the real function name.
+    let effectiveOverride = nameOverride;
+    if (effectiveOverride === undefined && nodeLabels.has(funcLabel)) {
+      const parts = resolvedArgs
+        .map((a) => a.label ?? a.literal)
+        .filter((x): x is string => x !== null);
+      if (parts.length > 0) {
+        effectiveOverride = `${funcLabel}-${parts.join("-")}`;
+      }
+    }
+
+    const nodeLabel = effectiveOverride ?? funcLabel;
+    nodeLabels.add(nodeLabel);
+    if (effectiveOverride && effectiveOverride !== funcLabel) {
+      nodeFunctions.set(nodeLabel, funcLabel);
+    }
+
+    // Second pass: build argList and add edges from resolved args to this node.
+    const argList: string[] = [];
+    for (const a of resolvedArgs) {
+      if (a.literal !== null) {
+        argList.push(a.literal);
+      } else if (a.label !== null && a.label !== nodeLabel) {
+        const key = `${a.label}->${nodeLabel}`;
+        if (!seenEdges.has(key) && !wouldCreateCycle(a.label, nodeLabel)) {
+          seenEdges.add(key);
+          edges.push({ from: a.label, to: nodeLabel });
+        }
+        argList.push(a.label);
+      }
+    }
+
+    if (effectiveOverride !== undefined) {
+      nodeArgOrders.set(nodeLabel, argList);
     }
     return nodeLabel;
   }
@@ -512,8 +639,12 @@ function parseLetForm(
     const callExpr = bindingVec[i + 1];
     if (bname.type !== "symbol") continue;
 
-    const nodeLabel = expandCall(callExpr);
-    if (nodeLabel !== null) bindingToLabel.set(bname.value, nodeLabel);
+    // Pass the binding variable name as the node identity: (let [neg-b (negate b)] ...)
+    // creates node "neg-b" with data.fn="negate", not node "negate".
+    const nodeLabel = expandCall(callExpr, bname.value);
+    if (nodeLabel !== null) {
+      bindingToLabel.set(bname.value, nodeLabel);
+    }
   }
 
   // Parse body expression — may introduce more nodes + edges
@@ -521,12 +652,17 @@ function parseLetForm(
     if (body.type === "list") {
       expandCall(body);
     } else if (body.type === "map") {
-      // Map body: {:k (call ...) ...} — expand call expressions in each value
-      for (const [, val] of body.entries) {
-        if (val.type === "list") expandCall(val);
+      // Map body: {:k (call ...) ...} — expand each call using the map key as
+      // the node's identity. This preserves distinct terminal nodes even when
+      // the same function (e.g. `divide`) is called multiple times.
+      for (const [key, val] of body.entries) {
+        if (val.type === "list") {
+          const nameOverride = key.type === "keyword" ? key.value : undefined;
+          expandCall(val, nameOverride);
+        }
       }
     }
   }
 
-  return { nodes: [...nodeLabels], edges, errors };
+  return { nodes: [...nodeLabels], edges, errors, nodeFunctions, nodeArgOrders };
 }

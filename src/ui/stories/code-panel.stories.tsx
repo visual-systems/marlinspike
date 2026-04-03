@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
 import { CodePanel } from "../components/code-panel.tsx";
 import { defaultCodePanel, defaultState, type Updater, type WorkspaceState } from "../workspace.ts";
 import { FIXTURES } from "../../code/spike-clojure-fixtures.ts";
+import { evaluateSpike, numericEnv } from "../../code/spike-clojure-eval.ts";
 import { graphToSpike, spikeToGraph } from "../../code/spike-clojure.ts";
 import { TOKEN_COLORS, tokenise } from "../lib/spike-tokenise.ts";
 
@@ -211,7 +212,12 @@ function graphJson(
 ) {
   return JSON.stringify(
     {
-      nodes: nodes.map((n) => ({ id: n.id, kind: n.kind, children: n.children.map((c) => c.id) })),
+      nodes: nodes.map((n) => ({
+        id: n.id,
+        kind: n.kind,
+        ...(n.ports && n.ports.length > 0 ? { ports: n.ports } : {}),
+        children: n.children.map((c) => c.id),
+      })),
       edges: edges.map((e) => ({ from: e.fromId, to: e.toId })),
     },
     null,
@@ -225,20 +231,42 @@ function stableGraphJson(
   nodes: Parameters<typeof graphToSpike>[0],
   edges: Parameters<typeof graphToSpike>[1],
 ): string {
-  function sortNode(n: { id: string; kind: string; children: typeof nodes }): unknown {
+  function sortNode(
+    n: { id: string; kind: string; ports?: typeof nodes[0]["ports"]; children: typeof nodes },
+  ): unknown {
+    const sorted = n.children
+      .map((c) =>
+        sortNode(
+          c as {
+            id: string;
+            kind: string;
+            ports?: typeof nodes[0]["ports"];
+            children: typeof nodes;
+          },
+        )
+      )
+      .sort((a, b) =>
+        String((a as { id: string }).id).localeCompare(String((b as { id: string }).id))
+      );
     return {
       id: n.id,
       kind: n.kind,
-      children: n.children
-        .map((c) => sortNode(c as { id: string; kind: string; children: typeof nodes }))
-        .sort((a, b) =>
-          String((a as { id: string }).id).localeCompare(String((b as { id: string }).id))
-        ),
+      ...(n.ports && n.ports.length > 0 ? { ports: n.ports } : {}),
+      children: sorted,
     };
   }
   return JSON.stringify(
     {
-      nodes: nodes.map((n) => sortNode(n as { id: string; kind: string; children: typeof nodes })),
+      nodes: nodes.map((n) =>
+        sortNode(
+          n as {
+            id: string;
+            kind: string;
+            ports?: typeof nodes[0]["ports"];
+            children: typeof nodes;
+          },
+        )
+      ),
       edges: [...edges.map((e) => ({ from: e.fromId, to: e.toId }))]
         .sort((a, b) => `${a.from}->${a.to}`.localeCompare(`${b.from}->${b.to}`)),
     },
@@ -272,6 +300,39 @@ function RoundTripCard({ fixture }: { fixture: (typeof FIXTURES)[number] }) {
     ? spikeToGraph(cljStart)
     : { treeNodes: [], edges: [], errors: [] };
   const reClj = errs3.length === 0 && showSectionB ? graphToSpike(g3, e3) : null;
+  // Eval comparison: run each example against original and round-tripped CLJ
+  type EvalExample = {
+    inputs: Record<string, number>;
+    origResult: unknown;
+    rtResult: unknown;
+    match: boolean;
+    origError?: string;
+    rtError?: string;
+  };
+  const evalExamples: EvalExample[] = [];
+  if (fixture.examples && fixture.evalFns && showSectionB && reClj !== null) {
+    const fns = numericEnv(fixture.evalFns);
+    for (const ex of fixture.examples) {
+      let origResult: unknown = null;
+      let rtResult: unknown = null;
+      let origError: string | undefined;
+      let rtError: string | undefined;
+      try {
+        origResult = evaluateSpike(cljStart, ex.inputs, fns);
+      } catch (e) {
+        origError = String(e);
+      }
+      try {
+        rtResult = evaluateSpike(reClj, ex.inputs, fns);
+      } catch (e) {
+        rtError = String(e);
+      }
+      const match = !origError && !rtError &&
+        JSON.stringify(origResult) === JSON.stringify(rtResult);
+      evalExamples.push({ inputs: ex.inputs, origResult, rtResult, match, origError, rtError });
+    }
+  }
+
   // Check: graph stability (clj→graph is used as normalisation; round-trip
   // parse→emit→parse must give the same graph).
   const cljMatch = showSectionB &&
@@ -328,6 +389,75 @@ function RoundTripCard({ fixture }: { fixture: (typeof FIXTURES)[number] }) {
                 </span>
               )}
             </div>
+            {evalExamples.length > 0 && (
+              <div style="padding:8px 14px; border-top:1px solid #21262d20;">
+                <div style="font-size:10px; color:#444; text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px;">
+                  eval &nbsp;
+                  {fixture.evalShortcoming
+                    ? (
+                      <span style="background:#2a1f00; color:#d29922; font-size:11px; padding:2px 7px; border-radius:4px; letter-spacing:0; text-transform:none;">
+                        ⚠ known shortcoming
+                      </span>
+                    )
+                    : evalExamples.every((e) => e.match)
+                    ? (
+                      <span style="background:#1a3a1a; color:#56d364; font-size:11px; padding:2px 7px; border-radius:4px; letter-spacing:0; text-transform:none;">
+                        ✓ results match
+                      </span>
+                    )
+                    : (
+                      <span style="background:#3a1a1a; color:#f85149; font-size:11px; padding:2px 7px; border-radius:4px; letter-spacing:0; text-transform:none;">
+                        ✗ results differ
+                      </span>
+                    )}
+                </div>
+                <table style="font-size:11px; border-collapse:collapse; width:100%;">
+                  <thead>
+                    <tr style="color:#555;">
+                      <th style="text-align:left; padding:2px 8px 4px 0; font-weight:normal;">
+                        inputs
+                      </th>
+                      <th style="text-align:left; padding:2px 8px 4px 0; font-weight:normal;">
+                        orig
+                      </th>
+                      <th style="text-align:left; padding:2px 8px 4px 0; font-weight:normal;">
+                        round-trip
+                      </th>
+                      <th style="text-align:left; padding:2px 0 4px 0; font-weight:normal;"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {evalExamples.map((e, i) => (
+                      <tr key={i} style="color:#adbac7;">
+                        <td style="padding:2px 8px 2px 0; font-family:monospace;">
+                          {JSON.stringify(e.inputs)}
+                        </td>
+                        <td style="padding:2px 8px 2px 0; font-family:monospace;">
+                          {e.origError
+                            ? <span style="color:#f85149;">{e.origError}</span>
+                            : JSON.stringify(e.origResult)}
+                        </td>
+                        <td style="padding:2px 8px 2px 0; font-family:monospace;">
+                          {e.rtError
+                            ? <span style="color:#f85149;">{e.rtError}</span>
+                            : JSON.stringify(e.rtResult)}
+                        </td>
+                        <td style="padding:2px 0;">
+                          {e.match
+                            ? <span style="color:#56d364;">✓</span>
+                            : <span style="color:#f85149;">✗</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {fixture.evalShortcoming && (
+                  <div style="font-size:10px; color:#555; margin-top:4px; font-style:italic;">
+                    {fixture.evalShortcoming}
+                  </div>
+                )}
+              </div>
+            )}
             <div style={SECTION_GRID}>
               <div>
                 <div style={PANEL_LABEL}>① clj</div>
