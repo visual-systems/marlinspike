@@ -37,6 +37,13 @@ function App() {
 
   const update: Updater = (fn) => setWs((prev) => fn(prev));
 
+  // Notify child components after Hono finishes its render cycle.
+  // Hono's JSX DOM does not re-render child components on prop changes,
+  // so we use a post-render event to nudge them.
+  useEffect(() => {
+    globalThis.dispatchEvent(new Event("ws-updated"));
+  }, [ws]);
+
   const showListEditor = (config: ListEditorConfig) => setListEditor(config);
 
   return (
