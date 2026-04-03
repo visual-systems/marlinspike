@@ -308,9 +308,7 @@ export function CodePanel(
     dbg("applyCode full-graph", { nodeCount: treeNodes.length, edgeCount: edges.length });
     if (treeNodes.length > 0) {
       update((s) => {
-        const nextExpanded = s.canvasExpandedNodes.filter((id) =>
-          treeNodes.some((n) => n.id === id)
-        );
+        const nextExpanded = s.canvasExpandedNodes.filter((id) => findNode(treeNodes, id) !== null);
         dbg("applyCode update", {
           prevExpandedCount: s.canvasExpandedNodes.length,
           nextExpandedCount: nextExpanded.length,
