@@ -16,7 +16,6 @@ import { graphToSpike, spikeToGraph } from "../../code/spike-clojure.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { IconBtn } from "./widgets.tsx";
 import { TOKEN_COLORS, tokenise, tokeniseJson } from "../lib/spike-tokenise.ts";
-import { dbg } from "../lib/debug.ts";
 import type { EditorContext } from "../lib/editor-modes/types.ts";
 import {
   defaultMode,
@@ -233,11 +232,6 @@ export function CodePanel(
   }
 
   function applyCode(code: string) {
-    dbg("applyCode start", {
-      codeEntityId: panel.codeEntityId,
-      codeEntityKind: panel.codeEntityKind,
-      codeLen: code.length,
-    });
     const el = textareaRef.current;
     const { codeEntityId, codeEntityKind } = panel;
 
@@ -305,38 +299,10 @@ export function CodePanel(
       setDisplayCode(canonical);
     }
     setValidity({ state: "valid-applied" });
-    // Count all nodes recursively
-    function countAll(nodes: typeof treeNodes): number {
-      return nodes.reduce((n, t) => n + 1 + countAll(t.children), 0);
-    }
-    dbg("applyCode full-graph", {
-      topLevelCount: treeNodes.length,
-      totalNodeCount: countAll(treeNodes),
-      edgeCount: edges.length,
-      topLevelLabels: treeNodes.map((n) => n.label),
-      codeLen: code.length,
-      canonicalLen: canonical.length,
-      roundTripMatch: code.trim() === canonical.trim(),
-    });
     if (treeNodes.length > 0) {
       update((s) => {
         const nextExpanded = s.canvasExpandedNodes.filter((id) => findNode(treeNodes, id) !== null);
-        // Clear focusId if it no longer exists in the new tree
         const focusStillValid = s.focusId ? findNode(treeNodes, s.focusId) !== null : true;
-        const focusLookupResult = s.focusId ? findNode(treeNodes, s.focusId) : null;
-        dbg("applyCode update", {
-          focusId: s.focusId,
-          focusStillValid,
-          focusLookupResult: focusLookupResult
-            ? { id: focusLookupResult.id, label: focusLookupResult.label }
-            : null,
-          prevTopLevel: s.treeNodes.map((n) => n.label),
-          nextTopLevel: treeNodes.map((n) => n.label),
-          prevTotalNodes: countAll(s.treeNodes),
-          nextTotalNodes: countAll(treeNodes),
-          prevEdges: s.edges.length,
-          nextEdges: edges.length,
-        });
         return {
           ...s,
           treeNodes,
@@ -346,7 +312,6 @@ export function CodePanel(
         };
       });
     }
-    dbg("applyCode done");
   }
 
   function syncScroll() {
@@ -403,12 +368,10 @@ export function CodePanel(
     const el = e.currentTarget as HTMLTextAreaElement;
     const pos = el.selectionStart;
     const label = identifierAtPos(el.value, pos);
-    dbg("handleCursorMove", { pos, label, suppress: suppressCanvasSyncRef.current });
     if (!label) return;
     const nodeId = findNodeIdByLabel(ws.treeNodes, label);
     if (!nodeId) return;
     if (ws.canvasSelected?.type === "node" && ws.canvasSelected.id === nodeId) return;
-    dbg("handleCursorMove → update canvasSelected", { nodeId });
     update((s) => ({ ...s, canvasSelected: { type: "node" as const, id: nodeId } }));
   }
 

@@ -1,7 +1,6 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
-import { dbg } from "../lib/debug.ts";
 import {
   collectSubtreeIds,
   type Edge,
@@ -737,14 +736,12 @@ export function Canvas(
     onExecute?: () => void;
   },
 ) {
-  // PROBE: force re-render when parent state changes, working around Hono's
-  // JSX DOM not re-rendering child components on prop changes.
+  // Force re-render when parent state changes — Hono's JSX DOM does not
+  // re-render child components on prop changes, so we listen for a post-render
+  // event dispatched by App after setWs.
   const [, nudge] = useState(0);
   useEffect(() => {
-    const handler = () => {
-      dbg("Canvas nudge — ws-updated event received");
-      nudge((n) => n + 1);
-    };
+    const handler = () => nudge((n) => n + 1);
     globalThis.addEventListener("ws-updated", handler);
     return () => globalThis.removeEventListener("ws-updated", handler);
   }, []);
@@ -755,13 +752,6 @@ export function Canvas(
   const [view, setView] = useState<View>({ scale: 1, tx: 400, ty: 300 });
   const focusedRootNodes = getFocusedRootNodes(ws);
   const focusNode = ws.focusId ? findNode(ws.treeNodes, ws.focusId) : null;
-  if (ws.focusId && !focusNode) {
-    dbg("Canvas WARN — focusId not found in treeNodes!", {
-      focusId: ws.focusId,
-      topLevelIds: ws.treeNodes.map((n) => n.id),
-      topLevelLabels: ws.treeNodes.map((n) => n.label),
-    });
-  }
   const focusedEdges = focusNode
     ? (() => {
       const ids = collectSubtreeIds(focusNode);
@@ -795,30 +785,8 @@ export function Canvas(
   modeRef.current = mode;
 
   // Sync layout when tree, edges, expanded nodes, algorithm, or focus change
-  // Only log when data actually changes (avoids 100s of duplicate logs from RAF)
-  const prevRenderKeyRef = useRef("");
-  const renderKey =
-    `${ws.treeNodes.length}|${ws.edges.length}|${ws.canvasExpandedNodes.length}|${ws.focusId}`;
-  if (renderKey !== prevRenderKeyRef.current) {
-    prevRenderKeyRef.current = renderKey;
-    dbg("Canvas render (data changed)", {
-      treeNodeCount: ws.treeNodes.length,
-      edgeCount: ws.edges.length,
-      expandedCount: ws.canvasExpandedNodes.length,
-      focusId: ws.focusId ?? null,
-    });
-  }
   useEffect(() => {
-    dbg("layout sync effect fired", {
-      treeNodeCount: ws.treeNodes.length,
-      edgeCount: ws.edges.length,
-      expandedCount: ws.canvasExpandedNodes.length,
-    });
     const rootNodes = getFocusedRootNodes(ws);
-    dbg(
-      "layout sync — rootNodes",
-      rootNodes.map((n) => ({ id: n.id, label: n.label, kind: n.kind })),
-    );
     const focusNodeSync = ws.focusId ? findNode(ws.treeNodes, ws.focusId) : null;
     const edges = focusNodeSync
       ? (() => {
@@ -826,24 +794,16 @@ export function Canvas(
         return ws.edges.filter((e) => ids.has(e.fromId) && ids.has(e.toId));
       })()
       : ws.edges;
-    setLayout((prev) => {
-      const next = syncLayout(
+    setLayout((prev) =>
+      syncLayout(
         prev,
         rootNodes,
         ws.canvasExpandedNodes,
         ws.canvasNodePositions,
         edges,
         makeCanvasAlgorithm(ws.canvasAlgorithm),
-      );
-      dbg("layout sync result", {
-        prevLevels: [...prev.keys()],
-        nextLevels: [...next.keys()],
-        nextNodeCounts: Object.fromEntries(
-          [...next.entries()].map(([k, v]) => [k || "(root)", v.nodes.length]),
-        ),
-      });
-      return next;
-    });
+      )
+    );
   }, [ws.treeNodes, ws.canvasExpandedNodes, ws.edges, ws.canvasAlgorithm, ws.focusId]);
 
   // ResizeObserver — initialise view centre on first size observation
@@ -1051,7 +1011,6 @@ export function Canvas(
     // If all mouse buttons are released (e.g. mouse left the window before mouseup),
     // treat it as a mouseup to prevent stale listener accumulation.
     if (e.buttons === 0) {
-      dbg("onDocMouseMove: buttons=0, recovering missed mouseup");
       gestureHandlersRef.current!.onUp();
       return;
     }
@@ -1089,14 +1048,12 @@ export function Canvas(
       const sdx = e.clientX - pan.startX;
       const sdy = e.clientY - pan.startY;
       if (sdx * sdx + sdy * sdy > DRAG_THRESHOLD_SQ) pan.hasMoved = true;
-      dbg("onDocMouseMove pan", { sdx, sdy });
       setView((v) => ({ ...v, tx: pan.origTx + sdx, ty: pan.origTy + sdy }));
     }
   };
 
   gestureHandlersRef.current.onUp = function onDocMouseUp() {
     if (!dragRef.current && !panRef.current) return;
-    dbg("onDocMouseUp", { drag: !!dragRef.current, pan: !!panRef.current });
     if (dragRef.current) {
       if (!dragRef.current.hasMoved) dragRef.current.onClickFn?.();
       dragRef.current = null;
@@ -1106,7 +1063,6 @@ export function Canvas(
     }
     panRef.current = null;
     document.body.style.cursor = "";
-    dbg("onDocMouseUp done");
   };
 
   // Register document-level gesture listeners ONCE — stable references that
@@ -1175,14 +1131,6 @@ export function Canvas(
     const newNode: TreeNode = { id, label: "", kind: "leaf", children: [], data: {}, version: 1 };
     // When focused, "root canvas level" maps to inside the focused node
     const effectiveParentId = parentId ?? ws.focusId ?? null;
-    dbg("addNode", {
-      parentId,
-      focusId: ws.focusId,
-      effectiveParentId,
-      localX: Math.round(localX),
-      localY: Math.round(localY),
-      treeNodeCount: ws.treeNodes.length,
-    });
     if (effectiveParentId === null) {
       update((s) => ({
         ...s,
@@ -1231,7 +1179,6 @@ export function Canvas(
       addNode(null, x, y);
       return;
     }
-    dbg("onSvgMouseDown → pan start", { x: e.clientX, y: e.clientY });
     panRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -1333,16 +1280,6 @@ export function Canvas(
   const expandedSet = new Set(ws.canvasExpandedNodes);
   // IDs are globally unique — a single selectedId covers both node and edge selection
   const selectedId = ws.canvasSelected?.id ?? null;
-  if (
-    renderKey !== prevRenderKeyRef.current ||
-    focusedRootNodes.length !== (layout.get("")?.nodes.length ?? 0)
-  ) {
-    dbg("Canvas SVG data", {
-      focusedRootNodeCount: focusedRootNodes.length,
-      focusedRootLabels: focusedRootNodes.map((n) => n.label),
-      layoutRootNodeCount: layout.get("")?.nodes.length ?? 0,
-    });
-  }
   const hasSelection = ws.canvasSelected != null;
 
   const interaction: InteractionState = {
