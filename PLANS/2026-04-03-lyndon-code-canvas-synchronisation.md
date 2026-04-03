@@ -24,20 +24,20 @@ The goal is: cross-highlighting between selections, live validity feedback so th
 
 ### Phase A — Validity status + apply UI
 
-- [ ] **A1 — Live validity indicator**: Track tri-state `"valid-applied"` / `"valid-unapplied"` / `"invalid"` from `spikeToGraph` errors (debounced ~150ms). Display coloured status dot in title bar. Reuse `errors` from `spikeToGraph` — same logic as the "stable/mismatch" badge in `code-panel.stories.tsx`.
-- [ ] **A2 — GUI apply button**: `IconBtn` in title bar (circle/✓ icon). Style reflects validity state: enabled+green when valid-unapplied, grey when valid-applied, disabled when invalid.
-- [ ] **A3 — Canonical format on apply**: After successful parse, set textarea to `graphToSpike(newNodes, newEdges)`. Also auto-format entity/JSON panels on apply (`JSON.stringify` 2-space indent). Keep Cmd+Enter as keyboard shortcut.
+- [x] **A1 — Live validity indicator**: Track tri-state `"valid-applied"` / `"valid-unapplied"` / `"invalid"` from `spikeToGraph` errors (debounced ~150ms). Display coloured status dot in title bar. Reuse `errors` from `spikeToGraph` — same logic as the "stable/mismatch" badge in `code-panel.stories.tsx`.
+- [x] **A2 — GUI apply button**: `IconBtn` in title bar (circle/✓ icon). Style reflects validity state: enabled+green when valid-unapplied, grey when valid-applied, disabled when invalid.
+- [x] **A3 — Canonical format on apply**: After successful parse, set textarea to `graphToSpike(newNodes, newEdges)`. Also auto-format entity/JSON panels on apply (`JSON.stringify` 2-space indent). Keep Cmd+Enter as keyboard shortcut.
 
 ### Phase B — Cross-highlighting
 
-- [ ] **B1 — Canvas → code highlight**: `useEffect` on `ws.canvasSelected`. Node selection → regex-search for label in text (prefer `def`/`defn` occurrence), set `textarea.selectionStart/End`, scroll. Set `suppressCanvasSync` ref during programmatic selection.
-- [ ] **B2 — Code → canvas highlight**: On `mouseup`/`keyup`, get cursor pos, find identifier token via tokeniser, match to node label in `ws.treeNodes`, update `canvasSelected`. Skip when `suppressCanvasSync` is set.
+- [x] **B1 — Canvas → code highlight**: `useEffect` on `ws.canvasSelected`. Node selection → regex-search for label in text (prefer `def`/`defn` occurrence), set `textarea.selectionStart/End`, scroll. Set `suppressCanvasSync` ref during programmatic selection.
+- [x] **B2 — Code → canvas highlight**: On `mouseup`/`keyup`, get cursor pos, find identifier token via tokeniser, match to node label in `ws.treeNodes`, update `canvasSelected`. Skip when `suppressCanvasSync` is set.
 
 ### Phase C — Modular editing mode system
 
-- [ ] **C1 — Mode interface** (`src/ui/lib/editor-modes/types.ts`): `EditorMode` with `name: string` and `keyDown(e, ctx): boolean` (true = consumed). `EditorContext` with textarea ref, text, cursor pos, `applyText(newText, newCursor)`.
-- [ ] **C2 — S-expression utilities** (`src/ui/lib/sexp.ts`): `findFormAt(text, pos)`, `findNextSibling(text, pos)`, `findEnclosingForm(text, pos)` — all returning `{start, end}` char offsets. Unit tests.
-- [ ] **C3 — Paredit mode** (`src/ui/lib/editor-modes/paredit.ts`): Implements `EditorMode`. Handles:
+- [x] **C1 — Mode interface** (`src/ui/lib/editor-modes/types.ts`): `EditorMode` with `name: string` and `keyDown(e, ctx): boolean` (true = consumed). `EditorContext` with textarea ref, text, cursor pos, `applyText(newText, newCursor)`.
+- [x] **C2 — S-expression utilities** (`src/ui/lib/sexp.ts`): `findFormAt(text, pos)`, `findNextSibling(text, pos)`, `findEnclosingForm(text, pos)` — all returning `{start, end}` char offsets. Unit tests.
+- [x] **C3 — Paredit mode** (`src/ui/lib/editor-modes/paredit.ts`): Implements `EditorMode`. Handles:
   - Auto-close `(` → `()`
   - Auto-indent on Enter (newline + enclosing-form column + standard offset)
   - `Cmd+Shift+]` — forward slurp
@@ -45,7 +45,7 @@ The goal is: cross-highlighting between selections, live validity feedback so th
   - `Cmd+K` — kill to end of current form
   - `Cmd+D` — kill current expression
   - `Alt+Right` / `Alt+Left` — navigate by expression boundary
-- [ ] **C4 — Mode selector in code panel**: Mode indicator chip in title bar. Default: `"paredit"`. Active mode's `keyDown` delegates from `handleKeyDown`. Structure supports future `"vim"`, `"default"` modes.
+- [x] **C4 — Mode selector in code panel**: Mode indicator chip in title bar. Default: `"paredit"`. Active mode's `keyDown` delegates from `handleKeyDown`. Structure supports future `"vim"`, `"default"` modes.
 
 ### New files
 
@@ -66,14 +66,14 @@ The goal is: cross-highlighting between selections, live validity feedback so th
 ## Verification
 
 ### Unit tests
-- [ ] `src/ui/lib/sexp_test.ts` — `findFormAt`, `findNextSibling`, `findEnclosingForm` covering edge cases (top-level, nested, cursor at boundary, empty text)
-- [ ] `src/ui/lib/editor-modes/paredit_test.ts` — slurp/barf/kill/navigate operations via `applyText` mock
+- [x] `src/ui/lib/sexp_test.ts` — `findFormAt`, `findNextSibling`, `findEnclosingForm` covering edge cases (top-level, nested, cursor at boundary, empty text)
+- [x] `src/ui/lib/editor-modes/paredit_test.ts` — slurp/barf/kill/navigate operations via `applyText` mock
 
 ### Stories (`src/ui/stories/code-panel.stories.tsx`)
-- [ ] `ValidityStates` — three instances showing invalid / valid-unapplied / valid-applied status dots
-- [ ] `CanonicalFormat` — shows before/after canonical normalisation on apply
-- [ ] `PareditOps` — interactive demo of slurp, barf, kill, navigate
-- [ ] `ModeSwitcher` — shows the mode chip cycling between modes
+- [x] `ValidityStates` — three instances showing invalid / valid-unapplied / valid-applied status dots
+- [x] `CanonicalFormat` — shows before/after canonical normalisation on apply
+- [x] `PareditOps` — interactive demo of slurp, barf, kill, navigate
+- [x] `ModeSwitcher` — shows the mode chip cycling between modes
 
 ### End-to-end checks
 - [ ] Type invalid code → status dot red, apply button disabled
@@ -85,4 +85,4 @@ The goal is: cross-highlighting between selections, live validity feedback so th
 - [ ] Enter inside a form → auto-indented to correct level
 - [ ] Cmd+Shift+] slurps next sibling into current form
 - [ ] Entity panel apply → auto-formats JSON with 2-space indent
-- [ ] `NO_COLOR=1 deno task ci` passes
+- [x] `NO_COLOR=1 deno task ci` passes
