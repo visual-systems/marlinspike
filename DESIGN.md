@@ -297,6 +297,16 @@ This is a deliberate design choice, not a limitation:
 - The relationship is: **enforce-valid ⊆ sketch-valid ⊆ UI-representable**. A graph that satisfies all enforced constraints is always a valid sketch; a valid sketch is always representable in the UI. The reverse does not hold.
 - There is no separate "formal type" that the UI must be converted into. The UI *is* the authoring model; constraints are what distinguish a finished graph from a work-in-progress.
 
+#### Port representation in `TreeNode`
+
+`TreeNode` carries an optional `ports` field (`Port[]`) with each port's name, direction (`in`/`out`/`inout`), and optional type identifier. This is a deliberate native-field choice over the alternative of storing ports inside `data`.
+
+**The tension:** ports could instead live in `data` — keeping `TreeNode` lean and delegating all port logic to constraint plugins. This is more extensible in principle: port semantics would be defined by schemas, not hardcoded into the UI type. A future user-defined "ports-like" concept could slot in without a schema change.
+
+**Why native `ports` now:** port information needs to be accessible at the UI layer for immediate, schema-free use — rendering port labels, inferring edge compatibility on drag-to-wire, and serialising to/from Spike-Clojure `^Type` hints. Routing that through `data` + a constraint plugin would require the UI to know which `data` key is "the ports key", which is just a looser version of the same coupling. The `ports` field is optional, so nodes without port contracts are not burdened by it. This keeps simple graphs simple.
+
+**Future extensibility:** the constraint system can extend port semantics by reading `ports` and applying additional rules (e.g. enforcing compatibility, validating schema types). User-defined port-like concepts that don't map to `Port` can still live in `data`. If a richer port model is needed later, `Port` can be extended or a separate mechanism introduced; the optional field causes no breakage.
+
 ### 5.4 Protocol
 
 The constraint system is modelled closely on the **Language Server Protocol (LSP)**. The IDE is the client; constraint plugins are servers. The IDE has no domain knowledge — it only knows how to route events and display responses.
