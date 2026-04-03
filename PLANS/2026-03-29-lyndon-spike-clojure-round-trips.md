@@ -5,9 +5,9 @@
 
 ## Context
 
-`src/code/spike-clojure.ts` currently round-trips structural containment (`def` forms) but has no edge round-trip. Edges must **not** be encoded in comments — comments are for humans only. Instead, edges should be expressed as proper Clojure forms, favouring terse and readable encoding with direct name references (not IDs).
+`src/code/spike-clojure.ts` provides bidirectional serialisation between the graph data model and Spike-Clojure source text. Structural containment uses `(def name [children...])` and `(def name)` for leaves. Dataflow (edges) is encoded as `(defn name [params] (let [bindings...] body))` — edges fall out of binding references naturally.
 
-The spike explores which Clojure encoding mechanisms work for which graph topologies, builds round-trip tests and stories, and documents shortcomings as it goes.
+The spike explored which Clojure encoding mechanisms work for which graph topologies, built round-trip tests and an evaluator for semantic verification, and documented design constraints as they emerged.
 
 ## Goal
 
