@@ -6,14 +6,14 @@
 // Operations mirror common paredit/parinfer conventions.
 //
 // Keybindings (macOS — Cmd = ⌘, Ctrl = ^, Alt = ⌥):
-//   ( [ {         Auto-close: inserts matching close paren
-//   Enter         Auto-indent: newline at correct column
-//   Cmd+Shift+]   Forward slurp: extend current form to swallow next sibling
-//   Cmd+Shift+[   Forward barf:  eject last element from current form
-//   Ctrl+K        Kill to end of current form (or kill line)
-//   Ctrl+D        Kill expression under cursor
-//   Alt+Right     Move cursor to end of next expression
-//   Alt+Left      Move cursor to start of previous expression
+//   ( [ {              Auto-close: inserts matching close paren
+//   Enter              Auto-indent: newline at correct column
+//   Ctrl+Shift+Right   Forward slurp: extend current form to swallow next sibling
+//   Ctrl+Shift+Left    Forward barf:  eject last element from current form
+//   Ctrl+K             Kill to end of current form (or kill line)
+//   Ctrl+D             Kill expression under cursor
+//   Ctrl+Right         Move cursor to end of next expression
+//   Ctrl+Left          Move cursor to start of previous expression
 // ---------------------------------------------------------------------------
 
 import {
@@ -191,10 +191,9 @@ export const pareditMode: EditorMode = {
     }
 
     // -----------------------------------------------------------------------
-    // Forward slurp: Cmd+Shift+]
+    // Forward slurp: Ctrl+Shift+Right
     // -----------------------------------------------------------------------
-    if (cmd && e.shiftKey && e.key === "}") {
-      // Note: Shift+] produces "}" on US keyboards
+    if (e.ctrlKey && !e.metaKey && e.shiftKey && e.key === "ArrowRight") {
       e.preventDefault();
       const result = forwardSlurp(text, cursor);
       if (result) ctx.applyText(result.text, result.cursor);
@@ -202,10 +201,9 @@ export const pareditMode: EditorMode = {
     }
 
     // -----------------------------------------------------------------------
-    // Forward barf: Cmd+Shift+[
+    // Forward barf: Ctrl+Shift+Left
     // -----------------------------------------------------------------------
-    if (cmd && e.shiftKey && e.key === "{") {
-      // Note: Shift+[ produces "{" on US keyboards
+    if (e.ctrlKey && !e.metaKey && e.shiftKey && e.key === "ArrowLeft") {
       e.preventDefault();
       const result = forwardBarf(text, cursor);
       if (result) ctx.applyText(result.text, result.cursor);
@@ -233,15 +231,15 @@ export const pareditMode: EditorMode = {
     }
 
     // -----------------------------------------------------------------------
-    // Navigate by expression: Alt+Right / Alt+Left
+    // Navigate by expression: Ctrl+Right / Ctrl+Left
     // -----------------------------------------------------------------------
-    if (alt && !cmd && e.key === "ArrowRight") {
+    if (e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === "ArrowRight") {
       e.preventDefault();
       const next = findNextSibling(text, cursor);
       if (next) ctx.applyText(text, next.end);
       return true;
     }
-    if (alt && !cmd && e.key === "ArrowLeft") {
+    if (e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === "ArrowLeft") {
       e.preventDefault();
       const prev = findPrevSibling(text, cursor);
       if (prev) ctx.applyText(text, prev.start);

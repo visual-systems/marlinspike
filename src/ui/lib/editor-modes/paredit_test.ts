@@ -117,7 +117,7 @@ Deno.test("paredit: Cmd+Enter is NOT consumed (applyCode handles it)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Forward slurp
+// Forward slurp (Ctrl+Shift+Right)
 // ---------------------------------------------------------------------------
 
 Deno.test("paredit: forward slurp — swallows next sibling", () => {
@@ -126,7 +126,7 @@ Deno.test("paredit: forward slurp — swallows next sibling", () => {
   // cursor inside (b c), slurp d
   const text = "(a (b c) d)";
   const c = ctx(text, 5); // inside (b c)
-  const { consumed, applied } = fire(c, "}", { cmd: true, shift: true });
+  const { consumed, applied } = fire(c, "ArrowRight", { ctrl: true, shift: true });
   assertEquals(consumed, true);
   assertEquals(applied?.text, "(a (b c d))");
 });
@@ -134,13 +134,13 @@ Deno.test("paredit: forward slurp — swallows next sibling", () => {
 Deno.test("paredit: forward slurp — no next sibling → no change", () => {
   const text = "(a b c)";
   const c = ctx(text, 3); // last elements, no sibling after the form
-  const { consumed, applied } = fire(c, "}", { cmd: true, shift: true });
+  const { consumed, applied } = fire(c, "ArrowRight", { ctrl: true, shift: true });
   assertEquals(consumed, true);
   assertEquals(applied, null); // applyText not called
 });
 
 // ---------------------------------------------------------------------------
-// Forward barf
+// Forward barf (Ctrl+Shift+Left)
 // ---------------------------------------------------------------------------
 
 Deno.test("paredit: forward barf — ejects last element", () => {
@@ -148,7 +148,7 @@ Deno.test("paredit: forward barf — ejects last element", () => {
   //   0123456
   const text = "(a b c)";
   const c = ctx(text, 3); // inside the form
-  const { consumed, applied } = fire(c, "{", { cmd: true, shift: true });
+  const { consumed, applied } = fire(c, "ArrowLeft", { ctrl: true, shift: true });
   assertEquals(consumed, true);
   assertEquals(applied?.text, "(a b) c");
 });
@@ -156,7 +156,7 @@ Deno.test("paredit: forward barf — ejects last element", () => {
 Deno.test("paredit: forward barf — empty form → no change", () => {
   const text = "()";
   const c = ctx(text, 1);
-  const { consumed, applied } = fire(c, "{", { cmd: true, shift: true });
+  const { consumed, applied } = fire(c, "ArrowLeft", { ctrl: true, shift: true });
   assertEquals(consumed, true);
   assertEquals(applied, null);
 });
@@ -199,33 +199,33 @@ Deno.test("paredit: Ctrl+D kills expression at cursor", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Navigate by expression (Alt+Right / Alt+Left)
+// Navigate by expression (Ctrl+Right / Ctrl+Left)
 // ---------------------------------------------------------------------------
 
-Deno.test("paredit: Alt+Right moves to end of next sibling", () => {
+Deno.test("paredit: Ctrl+Right moves to end of next sibling", () => {
   //  "(a b c)"  cursor at 1 ('a') → end of next sibling 'b' = 4
   const text = "(a b c)";
   const c = ctx(text, 1);
-  const { consumed, applied } = fire(c, "ArrowRight", { alt: true });
+  const { consumed, applied } = fire(c, "ArrowRight", { ctrl: true });
   assertEquals(consumed, true);
   assertEquals(applied?.cursor, 4); // end of 'b'
   assertEquals(applied?.text, text); // text unchanged
 });
 
-Deno.test("paredit: Alt+Left moves to start of previous sibling", () => {
+Deno.test("paredit: Ctrl+Left moves to start of previous sibling", () => {
   //  "(a b c)"  cursor at 5 ('c') → start of prev sibling 'b' = 3
   const text = "(a b c)";
   const c = ctx(text, 5);
-  const { consumed, applied } = fire(c, "ArrowLeft", { alt: true });
+  const { consumed, applied } = fire(c, "ArrowLeft", { ctrl: true });
   assertEquals(consumed, true);
   assertEquals(applied?.cursor, 3);
   assertEquals(applied?.text, text);
 });
 
-Deno.test("paredit: Alt+Right at last element → no move", () => {
+Deno.test("paredit: Ctrl+Right at last element → no move", () => {
   const text = "(a b c)";
   const c = ctx(text, 5); // 'c'
-  const { consumed, applied } = fire(c, "ArrowRight", { alt: true });
+  const { consumed, applied } = fire(c, "ArrowRight", { ctrl: true });
   assertEquals(consumed, true);
   assertEquals(applied, null); // no next sibling, applyText not called
 });

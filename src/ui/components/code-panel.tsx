@@ -434,20 +434,6 @@ export function CodePanel(
     }, 50);
   }, [ws.canvasSelected]);
 
-  function mirrorOnCanvas() {
-    const ids: string[] = [];
-    function collect(nodes: typeof ws.treeNodes) {
-      for (const n of nodes) {
-        if (n.kind === "composite" && n.children.length > 0) {
-          ids.push(n.id);
-          collect(n.children);
-        }
-      }
-    }
-    collect(ws.treeNodes);
-    update((s) => ({ ...s, canvasExpandedNodes: ids }));
-  }
-
   function closePanel() {
     update((s) => ({
       ...s,
@@ -512,9 +498,6 @@ export function CodePanel(
             >
               {MODE_LABELS[modeId]}
             </button>
-          )}
-          {!panel.codeEntityId && (
-            <IconBtn label="⬡" title="Mirror on canvas" onClick={mirrorOnCanvas} />
           )}
           <IconBtn label="×" title="Close panel" onClick={closePanel} />
         </div>
