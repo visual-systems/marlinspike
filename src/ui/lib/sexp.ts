@@ -136,7 +136,7 @@ export function findEnclosingForm(text: string, pos: number): Range | null {
       i++;
     } else if (ch === ")" || ch === "]" || ch === "}") {
       const open = stack.pop();
-      if (open !== undefined && open <= pos && pos <= i) {
+      if (open !== undefined && open < pos && pos <= i) {
         // `pos` is inside this pair
         return { start: open, end: i + 1 };
       }

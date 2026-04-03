@@ -41,6 +41,18 @@ Deno.test("findEnclosingForm — cursor at closing paren", () => {
   assertEquals(findEnclosingForm(text, 4), { start: 0, end: 5 });
 });
 
+Deno.test("findEnclosingForm — cursor at opening paren is not inside", () => {
+  const text = "(a b c)";
+  // pos=0 is '(' itself — cursor is before the form, not inside it
+  assertEquals(findEnclosingForm(text, 0), null);
+});
+
+Deno.test("findEnclosingForm — cursor at nested opening paren", () => {
+  const text = "(a (b c) d)";
+  // pos=3 is '(' of inner form — not inside inner, but inside outer
+  assertEquals(findEnclosingForm(text, 3), { start: 0, end: 11 });
+});
+
 Deno.test("findEnclosingForm — empty text", () => {
   assertEquals(findEnclosingForm("", 0), null);
 });
