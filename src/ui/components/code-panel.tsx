@@ -305,15 +305,45 @@ export function CodePanel(
       setDisplayCode(canonical);
     }
     setValidity({ state: "valid-applied" });
-    dbg("applyCode full-graph", { nodeCount: treeNodes.length, edgeCount: edges.length });
+    // Count all nodes recursively
+    function countAll(nodes: typeof treeNodes): number {
+      return nodes.reduce((n, t) => n + 1 + countAll(t.children), 0);
+    }
+    dbg("applyCode full-graph", {
+      topLevelCount: treeNodes.length,
+      totalNodeCount: countAll(treeNodes),
+      edgeCount: edges.length,
+      topLevelLabels: treeNodes.map((n) => n.label),
+      codeLen: code.length,
+      canonicalLen: canonical.length,
+      roundTripMatch: code.trim() === canonical.trim(),
+    });
     if (treeNodes.length > 0) {
       update((s) => {
         const nextExpanded = s.canvasExpandedNodes.filter((id) => findNode(treeNodes, id) !== null);
+        // Clear focusId if it no longer exists in the new tree
+        const focusStillValid = s.focusId ? findNode(treeNodes, s.focusId) !== null : true;
+        const focusLookupResult = s.focusId ? findNode(treeNodes, s.focusId) : null;
         dbg("applyCode update", {
-          prevExpandedCount: s.canvasExpandedNodes.length,
-          nextExpandedCount: nextExpanded.length,
+          focusId: s.focusId,
+          focusStillValid,
+          focusLookupResult: focusLookupResult
+            ? { id: focusLookupResult.id, label: focusLookupResult.label }
+            : null,
+          prevTopLevel: s.treeNodes.map((n) => n.label),
+          nextTopLevel: treeNodes.map((n) => n.label),
+          prevTotalNodes: countAll(s.treeNodes),
+          nextTotalNodes: countAll(treeNodes),
+          prevEdges: s.edges.length,
+          nextEdges: edges.length,
         });
-        return { ...s, treeNodes, edges, canvasExpandedNodes: nextExpanded };
+        return {
+          ...s,
+          treeNodes,
+          edges,
+          canvasExpandedNodes: nextExpanded,
+          focusId: focusStillValid ? s.focusId : null,
+        };
       });
     }
     dbg("applyCode done");

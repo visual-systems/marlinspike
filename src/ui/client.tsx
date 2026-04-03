@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { render, useEffect, useMemo, useRef, useState } from "@hono/hono/jsx/dom";
+import { dbg } from "./lib/debug.ts";
 import { Dropdown, DROPDOWN_WIDTH } from "./components/index.ts";
 import { FocusDropdown } from "./components/focus-dropdown.tsx";
 import { SmallBtn } from "./components/widgets.tsx";
@@ -27,7 +28,17 @@ import {
 // ---------------------------------------------------------------------------
 
 function App() {
-  const [ws, setWs] = useState<WorkspaceState>(loadState);
+  const [ws, setWs] = useState<WorkspaceState>(() => {
+    const s = loadState();
+    dbg("App init — loadState", {
+      treeNodeCount: s.treeNodes.length,
+      edgeCount: s.edges.length,
+      focusId: s.focusId ?? null,
+      expandedCount: s.canvasExpandedNodes.length,
+      topLevelLabels: s.treeNodes.map((n: { label: string }) => n.label),
+    });
+    return s;
+  });
   const [listEditor, setListEditor] = useState<ListEditorConfig | null>(null);
 
   // Persist to localStorage on every state change
@@ -35,7 +46,25 @@ function App() {
     localStorage.setItem(STATE_KEY, JSON.stringify(ws));
   }, [ws]);
 
-  const update: Updater = (fn) => setWs((prev) => fn(prev));
+  const update: Updater = (fn) =>
+    setWs((prev) => {
+      const next = fn(prev);
+      dbg("App setWs", {
+        same: prev === next,
+        prevTreeNodeCount: prev.treeNodes.length,
+        nextTreeNodeCount: next.treeNodes.length,
+      });
+      return next;
+    });
+
+  // Notify child components after Hono finishes its render cycle.
+  // Hono's JSX DOM does not re-render child components on prop changes,
+  // so we use a post-render event to nudge them.
+  useEffect(() => {
+    dbg("App useEffect — dispatching ws-updated");
+    globalThis.dispatchEvent(new Event("ws-updated"));
+  }, [ws]);
+  dbg("App render", { treeNodeCount: ws.treeNodes.length });
 
   const showListEditor = (config: ListEditorConfig) => setListEditor(config);
 
@@ -485,6 +514,7 @@ function ConnectedGraphsBtn({ ws, update }: { ws: WorkspaceState; update: Update
 // ---------------------------------------------------------------------------
 
 function WorkspaceArea({ ws, update }: { ws: WorkspaceState; update: Updater }) {
+  dbg("WorkspaceArea render", { treeNodeCount: ws.treeNodes.length, edgeCount: ws.edges.length });
   const tab = getActiveTab(ws);
 
   const diagnostics = useMemo(

@@ -383,11 +383,18 @@ export function loadState(): WorkspaceState {
       });
       if (tabs.length === 0) return defaultState();
       const rawNodes = parsed.treeNodes as Record<string, unknown>[] | undefined;
+      const treeNodes = rawNodes ? rawNodes.map(parseNode) : defaultTreeNodes();
       const ds = defaultState();
+      // Validate focusId — clear if the referenced node no longer exists
+      const rawFocusId = (parsed.focusId as string | null | undefined) ?? null;
+      const focusId = rawFocusId && findNode(treeNodes, rawFocusId) ? rawFocusId : null;
+      // Validate canvasExpandedNodes — drop IDs that no longer exist
+      const rawExpanded = (parsed.canvasExpandedNodes as string[] | undefined) ?? [];
+      const canvasExpandedNodes = rawExpanded.filter((id) => findNode(treeNodes, id) !== null);
       return {
         tabs,
         activeTabId: (parsed.activeTabId as string | undefined) ?? tabs[0].id,
-        treeNodes: rawNodes ? rawNodes.map(parseNode) : defaultTreeNodes(),
+        treeNodes,
         edges: (parsed.edges as Edge[] | undefined) ?? [],
         constraints: ((parsed.constraints as Record<string, unknown>[] | undefined) ?? []).map(
           parseConstraint,
@@ -401,8 +408,8 @@ export function loadState(): WorkspaceState {
         activeWorkflow: (parsed.activeWorkflow as string | null | undefined) ?? null,
         connectedGraphs: (parsed.connectedGraphs as ConnectedGraph[] | undefined) ??
           ds.connectedGraphs,
-        focusId: (parsed.focusId as string | null | undefined) ?? null,
-        canvasExpandedNodes: (parsed.canvasExpandedNodes as string[] | undefined) ?? [],
+        focusId,
+        canvasExpandedNodes,
         canvasNodePositions: (parsed.canvasNodePositions as
           | Record<string, { x: number; y: number; pinned?: boolean }>
           | undefined) ?? {},
