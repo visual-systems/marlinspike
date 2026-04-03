@@ -84,13 +84,13 @@ The goal is: cross-highlighting between selections, live validity feedback so th
 - [x] `ModeSwitcher` — shows the mode chip cycling between modes
 
 ### End-to-end checks
-- [ ] Type invalid code → status dot red, apply button disabled
-- [ ] Type valid code differing from canvas → status dot amber, apply button enabled
-- [ ] Apply (button or Cmd+Enter) → code normalised to canonical form, status dot green
-- [ ] Click a node on canvas → code panel scrolls to and selects that node's label
-- [ ] Move cursor to a node name → that node highlighted on canvas
-- [ ] Type `(` → auto-closed as `()`
-- [ ] Enter inside a form → auto-indented to correct level
-- [ ] Ctrl+Shift+Right slurps next sibling into current form
-- [ ] Entity panel apply → auto-formats JSON with 2-space indent
+- [x] Type invalid code → status dot red, apply button disabled
+- [x] Type valid code differing from canvas → status dot amber, apply button enabled
+- [x] Apply (button or Cmd+Enter) → code normalised to canonical form, status dot green
+- [x] Click a node on canvas → code panel scrolls to and selects that node's label
+- [x] Move cursor to a node name → that node highlighted on canvas
+- [x] Type `(` → auto-closed as `()`
+- [x] Enter inside a form → auto-indented to correct level
+- [x] Ctrl+Shift+Right slurps next sibling into current form
+- [x] Entity panel apply → auto-formats JSON with 2-space indent
 - [x] `NO_COLOR=1 deno task ci` passes
