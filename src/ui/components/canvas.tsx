@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
+import { dbg } from "../lib/debug.ts";
 import {
   collectSubtreeIds,
   type Edge,
@@ -775,6 +776,11 @@ export function Canvas(
 
   // Sync layout when tree, edges, expanded nodes, algorithm, or focus change
   useEffect(() => {
+    dbg("layout sync effect — treeNodes/edges changed", {
+      nodeCount: ws.treeNodes.length,
+      edgeCount: ws.edges.length,
+      expandedCount: ws.canvasExpandedNodes.length,
+    });
     const rootNodes = getFocusedRootNodes(ws);
     const edges = ws.focusId
       ? (() => {
@@ -782,16 +788,18 @@ export function Canvas(
         return ws.edges.filter((e) => ids.has(e.fromId) && ids.has(e.toId));
       })()
       : ws.edges;
-    setLayout((prev) =>
-      syncLayout(
+    setLayout((prev) => {
+      const next = syncLayout(
         prev,
         rootNodes,
         ws.canvasExpandedNodes,
         ws.canvasNodePositions,
         edges,
         makeCanvasAlgorithm(ws.canvasAlgorithm),
-      )
-    );
+      );
+      dbg("layout sync result — levels:", [...next.keys()]);
+      return next;
+    });
   }, [ws.treeNodes, ws.canvasExpandedNodes, ws.edges, ws.canvasAlgorithm, ws.focusId]);
 
   // ResizeObserver — initialise view centre on first size observation
@@ -1021,11 +1029,13 @@ export function Canvas(
       const sdx = e.clientX - pan.startX;
       const sdy = e.clientY - pan.startY;
       if (sdx * sdx + sdy * sdy > DRAG_THRESHOLD_SQ) pan.hasMoved = true;
+      dbg("onDocMouseMove pan", { sdx, sdy });
       setView((v) => ({ ...v, tx: pan.origTx + sdx, ty: pan.origTy + sdy }));
     }
   }
 
   function onDocMouseUp() {
+    dbg("onDocMouseUp", { drag: !!dragRef.current, pan: !!panRef.current });
     if (dragRef.current) {
       if (!dragRef.current.hasMoved) dragRef.current.onClickFn?.();
       dragRef.current = null;
@@ -1037,6 +1047,7 @@ export function Canvas(
     document.body.style.cursor = "";
     document.removeEventListener("mousemove", onDocMouseMove as EventListener);
     document.removeEventListener("mouseup", onDocMouseUp);
+    dbg("onDocMouseUp done — listeners removed");
   }
 
   function startDrag(
@@ -1138,6 +1149,7 @@ export function Canvas(
       addNode(null, x, y);
       return;
     }
+    dbg("onSvgMouseDown → pan start", { x: e.clientX, y: e.clientY });
     panRef.current = {
       startX: e.clientX,
       startY: e.clientY,

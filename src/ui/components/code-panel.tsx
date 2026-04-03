@@ -16,6 +16,7 @@ import { graphToSpike, spikeToGraph } from "../../code/spike-clojure.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { IconBtn } from "./widgets.tsx";
 import { TOKEN_COLORS, tokenise, tokeniseJson } from "../lib/spike-tokenise.ts";
+import { dbg } from "../lib/debug.ts";
 import type { EditorContext } from "../lib/editor-modes/types.ts";
 import {
   defaultMode,
@@ -232,6 +233,11 @@ export function CodePanel(
   }
 
   function applyCode(code: string) {
+    dbg("applyCode start", {
+      codeEntityId: panel.codeEntityId,
+      codeEntityKind: panel.codeEntityKind,
+      codeLen: code.length,
+    });
     const el = textareaRef.current;
     const { codeEntityId, codeEntityKind } = panel;
 
@@ -299,16 +305,20 @@ export function CodePanel(
       setDisplayCode(canonical);
     }
     setValidity({ state: "valid-applied" });
+    dbg("applyCode full-graph", { nodeCount: treeNodes.length, edgeCount: edges.length });
     if (treeNodes.length > 0) {
-      update((s) => ({
-        ...s,
-        treeNodes,
-        edges,
-        canvasExpandedNodes: s.canvasExpandedNodes.filter((id) =>
+      update((s) => {
+        const nextExpanded = s.canvasExpandedNodes.filter((id) =>
           treeNodes.some((n) => n.id === id)
-        ),
-      }));
+        );
+        dbg("applyCode update", {
+          prevExpandedCount: s.canvasExpandedNodes.length,
+          nextExpandedCount: nextExpanded.length,
+        });
+        return { ...s, treeNodes, edges, canvasExpandedNodes: nextExpanded };
+      });
     }
+    dbg("applyCode done");
   }
 
   function syncScroll() {
@@ -365,10 +375,12 @@ export function CodePanel(
     const el = e.currentTarget as HTMLTextAreaElement;
     const pos = el.selectionStart;
     const label = identifierAtPos(el.value, pos);
+    dbg("handleCursorMove", { pos, label, suppress: suppressCanvasSyncRef.current });
     if (!label) return;
     const nodeId = findNodeIdByLabel(ws.treeNodes, label);
     if (!nodeId) return;
     if (ws.canvasSelected?.type === "node" && ws.canvasSelected.id === nodeId) return;
+    dbg("handleCursorMove → update canvasSelected", { nodeId });
     update((s) => ({ ...s, canvasSelected: { type: "node" as const, id: nodeId } }));
   }
 
