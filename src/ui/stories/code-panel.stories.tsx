@@ -500,3 +500,155 @@ export function RoundTripGallery() {
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// New stories: validity states, canonical format, paredit ops, mode switcher
+// ---------------------------------------------------------------------------
+
+import { computeValidity } from "../components/code-panel.tsx";
+import { defaultTreeNodes } from "../workspace.ts";
+
+// ---------------------------------------------------------------------------
+// ValidityStates — shows all three dot states side by side
+// ---------------------------------------------------------------------------
+
+const VALID_APPLIED_CODE = `(def acme-backend
+  [auth-service
+   frontend])`;
+
+const VALID_UNAPPLIED_CODE = `(def acme-backend
+  [auth-service
+   frontend
+   new-service])`;
+
+const INVALID_CODE = `(defn broken [x]
+  (let [a (A x]
+    a))`;
+
+export function ValidityStates() {
+  const base = defaultState();
+  const ws: WorkspaceState = { ...base, treeNodes: defaultTreeNodes(), edges: [] };
+
+  const vApplied = computeValidity(
+    VALID_APPLIED_CODE,
+    undefined,
+    undefined,
+    ws.treeNodes,
+    ws.edges,
+  );
+  const vUnapplied = computeValidity(
+    VALID_UNAPPLIED_CODE,
+    undefined,
+    undefined,
+    ws.treeNodes,
+    ws.edges,
+  );
+  const vInvalid = computeValidity(INVALID_CODE, undefined, undefined, ws.treeNodes, ws.edges);
+
+  const DOT = (state: string) => {
+    const color = state === "valid-applied"
+      ? "#56d364"
+      : state === "valid-unapplied"
+      ? "#d29922"
+      : "#f85149";
+    return (
+      <div style={`display:flex; align-items:center; gap:8px; padding:8px 0;`}>
+        <div style={`width:10px;height:10px;border-radius:50%;background:${color};`} />
+        <span style="font-size:12px; color:#adb5bd;">{state}</span>
+      </div>
+    );
+  };
+
+  return (
+    <div style="background:#0d1117; padding:24px; font-family:monospace; color:#e0e0e0; min-height:200px;">
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:#555; margin-bottom:12px;">
+        Validity states
+      </div>
+      {DOT(vApplied.state)}
+      {DOT(vUnapplied.state)}
+      {DOT(vInvalid.state)}
+      <div style="margin-top:16px; font-size:11px; color:#555;">
+        These dots appear in the code panel title bar as you type.
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CanonicalFormat — shows before/after canonical normalisation
+// ---------------------------------------------------------------------------
+
+export function CanonicalFormat() {
+  const NON_CANONICAL = `(defn pipeline   [input]
+  (let [a   (A input)
+        b (B a)] (C b)))`;
+
+  const { treeNodes, edges } = spikeToGraph(NON_CANONICAL);
+  const canonical = graphToSpike(treeNodes, edges);
+  const stable = spikeToGraph(canonical);
+  const reCanonical = graphToSpike(stable.treeNodes, stable.edges);
+
+  return (
+    <div style="background:#0d1117; padding:24px; font-family:monospace; display:flex; gap:24px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:280px;">
+        <div style="font-size:10px; text-transform:uppercase; color:#555; margin-bottom:6px;">
+          Before apply (user typed)
+        </div>
+        <pre style="background:#161b22; color:#adbac7; padding:12px; border-radius:6px; font-size:11px; line-height:1.6; white-space:pre-wrap; margin:0;">
+          {NON_CANONICAL}
+        </pre>
+      </div>
+      <div style="flex:1; min-width:280px;">
+        <div style="font-size:10px; text-transform:uppercase; color:#555; margin-bottom:6px;">
+          After apply (canonical form)
+        </div>
+        <pre style="background:#161b22; color:#56d364; padding:12px; border-radius:6px; font-size:11px; line-height:1.6; white-space:pre-wrap; margin:0;">
+          {canonical}
+        </pre>
+      </div>
+      <div style="width:100%; font-size:11px; color:#555; padding-top:4px;">
+        Stable: {canonical === reCanonical ? "✓ canonical form is stable" : "✗ not stable"}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PareditOps — interactive demo panel with a "default" mode code snippet
+// ---------------------------------------------------------------------------
+
+export function PareditOps() {
+  return (
+    <PanelWithCode
+      code={`; Paredit mode active — try these keybindings:
+; (  →  auto-closes as ()
+; Enter inside a form  →  auto-indents
+; Ctrl+K  →  kill to end of form
+; Ctrl+D  →  kill expression at cursor
+; Alt+Right / Alt+Left  →  navigate by expression
+; Cmd+Shift+]  →  forward slurp
+; Cmd+Shift+[  →  forward barf
+
+(defn pipeline [input]
+  (let [a (A input)
+        b (B a)]
+    (C b)))`}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ModeSwitcher — shows the mode chip in the panel title bar
+// ---------------------------------------------------------------------------
+
+export function ModeSwitcher() {
+  return (
+    <PanelWithCode
+      code={`; The mode chip in the title bar cycles between:
+;   paredit  →  structural editing keybindings active
+;   default  →  plain textarea, no structural editing
+
+(def my-graph [A B C])`}
+    />
+  );
+}
