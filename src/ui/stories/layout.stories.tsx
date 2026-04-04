@@ -4,14 +4,17 @@ import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
 import { type BBox, boundingBox, centerNodes, type ForceNode, maxVelocity } from "../lib/force.ts";
 import {
   type AlgorithmId,
+  createFIELD,
   createJANK,
   createSDF,
   createTOPOGRID,
+  DEFAULT_FIELD_CONFIG,
   DEFAULT_JANK_CONFIG,
   DEFAULT_SDF_CONFIG,
   DEFAULT_TOPOGRID_CONFIG,
   type LayoutAlgorithm,
 } from "../lib/algorithms/index.ts";
+import { topoCharge } from "../lib/topo-charge.ts";
 import {
   connectedComponents,
   isCircleNode,
@@ -75,7 +78,30 @@ interface SdfAlgConfig {
   showSdfs: boolean;
 }
 
-type AlgorithmConfig = JankAlgConfig | TopogridAlgConfig | SdfAlgConfig;
+interface FieldAlgConfig {
+  id: "FIELD";
+  leafR: number;
+  repulsionStrength: number;
+  restGap: number;
+  maxRepulsionDist: number;
+  sdfGradientEps: number;
+  springK: number;
+  springRestLength: number;
+  edgeClearance: number;
+  edgeRepulsionK: number;
+  componentRepulsionK: number;
+  damping: number;
+  maxVelocity: number;
+  circleThreshold: number;
+  spread: number;
+  settleV: number;
+  fieldStrength: number;
+  fieldDirection: [number, number];
+  showComponents: boolean;
+  showSdfs: boolean;
+}
+
+type AlgorithmConfig = JankAlgConfig | TopogridAlgConfig | SdfAlgConfig | FieldAlgConfig;
 
 const DEFAULT_JANK_STORY: JankAlgConfig = {
   id: "JANK",
@@ -117,15 +143,49 @@ const DEFAULT_SDF_STORY: SdfAlgConfig = {
   showSdfs: false,
 };
 
+const DEFAULT_FIELD_STORY: FieldAlgConfig = {
+  id: "FIELD",
+  leafR: 26,
+  repulsionStrength: DEFAULT_FIELD_CONFIG.repulsionStrength,
+  restGap: DEFAULT_FIELD_CONFIG.restGap,
+  maxRepulsionDist: DEFAULT_FIELD_CONFIG.maxRepulsionDist,
+  sdfGradientEps: DEFAULT_FIELD_CONFIG.sdfGradientEps,
+  springK: DEFAULT_FIELD_CONFIG.springK,
+  springRestLength: DEFAULT_FIELD_CONFIG.springRestLength,
+  edgeClearance: DEFAULT_FIELD_CONFIG.edgeClearance,
+  edgeRepulsionK: DEFAULT_FIELD_CONFIG.edgeRepulsionK,
+  componentRepulsionK: DEFAULT_FIELD_CONFIG.componentRepulsionK,
+  damping: DEFAULT_FIELD_CONFIG.damping,
+  maxVelocity: DEFAULT_FIELD_CONFIG.maxVelocity,
+  circleThreshold: DEFAULT_FIELD_CONFIG.circleThreshold,
+  spread: DEFAULT_FIELD_CONFIG.spread,
+  settleV: DEFAULT_FIELD_CONFIG.settleV,
+  fieldStrength: DEFAULT_FIELD_CONFIG.fieldStrength,
+  fieldDirection: DEFAULT_FIELD_CONFIG.fieldDirection,
+  showComponents: false,
+  showSdfs: false,
+};
+
 function defaultAlgConfig(id: AlgorithmId): AlgorithmConfig {
   if (id === "JANK") return DEFAULT_JANK_STORY;
   if (id === "TOPOGRID") return DEFAULT_TOPOGRID_STORY;
+  if (id === "FIELD") return DEFAULT_FIELD_STORY;
   return DEFAULT_SDF_STORY;
 }
 
 function makeAlgorithm(cfg: AlgorithmConfig): LayoutAlgorithm {
   if (cfg.id === "TOPOGRID") {
     return createTOPOGRID({ hSpacing: cfg.hSpacing, vSpacing: cfg.vSpacing });
+  }
+  if (cfg.id === "FIELD") {
+    const {
+      id: _id,
+      leafR: _r,
+      showComponents: _sc,
+      showSdfs: _ss,
+      ...fieldParams
+    } = cfg;
+    return createFIELD({ ...fieldParams, maxTicks: Infinity });
   }
   if (cfg.id === "SDF") {
     const { id: _id, leafR: _r, showComponents: _sc, showSdfs: _ss, ...sdfParams } = cfg;
@@ -428,7 +488,10 @@ function initSim(
     levelEdges: { a: string; b: string }[],
   ): void {
     const ids = nodes.map((n) => n.id);
-    const forceNodes = algorithm.initNodes(ids, levelEdges, d, d, new Map());
+    const rawNodes = algorithm.initNodes(ids, levelEdges, d, d, new Map());
+    // Attach topological charge for FIELD algorithm
+    const charges = topoCharge(ids, levelEdges);
+    const forceNodes = rawNodes.map((fn) => ({ ...fn, charge: charges.get(fn.id) }));
     map.set(parentId, { nodes: forceNodes, ticks: 0, bbox: null });
     for (const node of nodes) {
       if (node.children?.length) {
@@ -909,6 +972,7 @@ export function Configurator() {
             <option value="JANK" selected={algCfg.id === "JANK"}>JANK</option>
             <option value="TOPOGRID" selected={algCfg.id === "TOPOGRID"}>TOPOGRID</option>
             <option value="SDF" selected={algCfg.id === "SDF"}>SDF</option>
+            <option value="FIELD" selected={algCfg.id === "FIELD"}>FIELD</option>
           </select>
         </div>
 

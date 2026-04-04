@@ -20,10 +20,15 @@ import type { DiagnosticMap } from "../../graph/diagnostics.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { SmallBtn } from "./widgets.tsx";
 import { type BBox, boundingBox, centerNodes, type ForceNode } from "../lib/force.ts";
+import { circlePortPositions, rectPortPositions } from "../lib/port-layout.ts";
+import { topoCharge } from "../lib/topo-charge.ts";
+import { NodePorts } from "./port-rendering.tsx";
 import {
+  createFIELD,
   createJANK,
   createSDF,
   createTOPOGRID,
+  DEFAULT_FIELD_CONFIG,
   DEFAULT_JANK_CONFIG,
   DEFAULT_SDF_CONFIG,
   type LayoutAlgorithm,
@@ -308,13 +313,17 @@ function buildLevel(
   const defaults = new Map(Object.entries(pinnedPositions));
   const rawPositions = algorithm.initNodes(ids, levelEdges, LEAF_W, LEAF_H, defaults);
 
+  // Compute topological charge for FIELD algorithm (static per topology)
+  const charges = topoCharge(ids, levelEdges);
+
   const nodes: ForceNode[] = rawPositions.map((fn): ForceNode => {
     const existing = prevMap.get(fn.id);
     const isExpanded = expandedSet.has(fn.id);
     const w = isExpanded ? (existing?.w ?? LEAF_W * 3) : LEAF_W;
     const h = isExpanded ? (existing?.h ?? LEAF_H * 3) : LEAF_H;
-    if (existing && algorithm.preservesPositions) return { ...existing, w, h };
-    return { ...fn, w, h };
+    const charge = charges.get(fn.id);
+    if (existing && algorithm.preservesPositions) return { ...existing, w, h, charge };
+    return { ...fn, w, h, charge };
   });
 
   return { nodes, settled: false, ticks: 0, bbox: null };
@@ -440,6 +449,7 @@ function stepLayout(
 function makeCanvasAlgorithm(id: WorkspaceState["canvasAlgorithm"]): LayoutAlgorithm {
   if (id === "TOPOGRID") return createTOPOGRID({ hSpacing: 160, vSpacing: 130 });
   if (id === "SDF") return createSDF(DEFAULT_SDF_CONFIG);
+  if (id === "FIELD") return createFIELD(DEFAULT_FIELD_CONFIG);
   return createJANK(DEFAULT_JANK_CONFIG);
 }
 
@@ -1527,6 +1537,14 @@ function renderLevel(
                   style="pointer-events:none;"
                 />
               )}
+              {node.ports && node.ports.length > 0 && (
+                <g transform={`translate(${rx + rw / 2}, ${ry + rh / 2})`}>
+                  <NodePorts
+                    ports={rectPortPositions(node.ports, rw / 2, rh / 2, LABEL_H)}
+                    showLabels
+                  />
+                </g>
+              )}
               {renderLevel(
                 node.children,
                 node.id,
@@ -1667,6 +1685,12 @@ function renderLevel(
                 stroke="#0d0d1e"
                 stroke-width={1}
                 style="pointer-events:none;"
+              />
+            )}
+            {node.ports && node.ports.length > 0 && (
+              <NodePorts
+                ports={circlePortPositions(node.ports, r)}
+                showLabels={false}
               />
             )}
             <text

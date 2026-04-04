@@ -14,6 +14,8 @@ export interface ForceNode {
   w: number;
   /** Effective body height for repulsion calculations */
   h: number;
+  /** Topological charge in [-1, +1] for directional field layout. Optional. */
+  charge?: number;
 }
 
 // ---------------------------------------------------------------------------

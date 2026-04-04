@@ -547,7 +547,9 @@ Deno.test("duplicate-call: emit — round-trip reproduces original let structure
   // Each binding round-trips correctly with its own call
   assertEquals(reClj.includes("x (double a)"), true, `got: ${reClj}`);
   assertEquals(reClj.includes("y (double b)"), true, `got: ${reClj}`);
-  assertEquals(reClj.includes("{:x x :y y}"), true, `got: ${reClj}`);
+  // Multi-entry maps get one key per line
+  assertEquals(reClj.includes(":x x"), true, `got: ${reClj}`);
+  assertEquals(reClj.includes(":y y"), true, `got: ${reClj}`);
 });
 
 Deno.test("duplicate-call: eval — round-trip result matches original", () => {
