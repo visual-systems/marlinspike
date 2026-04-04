@@ -4,7 +4,7 @@
 
 <!-- <img width="455" height="281" alt="image" src="https://github.com/user-attachments/assets/7ecf15e2-264b-481d-a7c0-17e136833168" /> -->
 
-<img width="700" alt="image" src="https://github.com/user-attachments/assets/70e0e36a-04d5-4b77-b0d6-e3f7cb29e191" />
+<img width="900" alt="image" src="https://github.com/user-attachments/assets/70e0e36a-04d5-4b77-b0d6-e3f7cb29e191" />
 
 
 Visual Systems Implementation - IDE and Language Interfaces.
