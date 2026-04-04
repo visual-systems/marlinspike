@@ -7,6 +7,8 @@
 
 Nodes can declare input/output ports (`TreeNode.ports: Port[]`) serialized to/from Spike-Clojure, but ports have zero visual presence on the canvas. The force-directed layout (SDF) has no concept of dataflow direction — a chain A→B→C may settle in any orientation.
 
+Ports map to child nodes by label — e.g. a port named "a" corresponds to the child node labeled "a". In an expanded composite, port-nodes should sit at the boundary (inputs on the left edge, outputs on the right) so the visual layout reflects the dataflow interface. Early attempts used soft anchor springs to pull port-nodes toward boundary positions, but this created a feedback loop: anchor pull → bounding box growth → port positions move further out. The solution is hard-pinning: port-nodes are placed directly at their boundary positions each tick, acting as fixed points that interior nodes settle around via normal edge springs.
+
 ## Goal
 
 0. **Inspector updates** - Have ports sections in the inspector for graphs - works similar to edges sections, but can select immediate child nodes as ports.
