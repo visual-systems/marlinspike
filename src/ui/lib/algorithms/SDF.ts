@@ -49,8 +49,8 @@ export const DEFAULT_SDF_CONFIG: SdfConfig = {
   settleV: 0.3,
   maxTicks: 800,
   // Port anchors
-  anchorK: 0.03,
-  anchorRampTicks: 80,
+  anchorK: 0.1,
+  anchorRampTicks: 50,
 };
 
 // ---------------------------------------------------------------------------

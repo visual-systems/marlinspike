@@ -174,17 +174,17 @@ not just FIELD.
 - [x] `topo-charge_test.ts` — chain assigns -1..+1, diamond produces correct rank ordering, single node → charge 0, disconnected nodes → all charge 0
 
 ### End-to-end checks
-- [ ] Nodes with ports show colored dots (input left, output right)
-- [ ] Expanded composites show port dots + labels along edges
-- [ ] Hovering a port shows name + type
-- [ ] Inspector shows "Ports In" and "Ports Out" sections for nodes with ports
-- [ ] Nodes without ports render unchanged
-- [ ] FIELD algorithm: A→B→C chain settles left-to-right
-- [ ] FIELD algorithm: diamond A→B,C→D has clear LTR flow
-- [ ] FIELD algorithm: fan-out A→B,C,D spreads targets to the right
-- [ ] Pinned layouts are not disturbed
-- [ ] SDF/JANK/TOPOGRID algorithms unaffected by new ForceNode fields
+- [x] Nodes with ports show colored dots (input left, output right)
+- [x] Expanded composites show port dots + labels along edges
+- [x] Hovering a port shows name + type
+- [x] Inspector shows "Ports In" and "Ports Out" sections for nodes with ports
+- [x] Nodes without ports render unchanged
+- [x] FIELD algorithm: A→B→C chain settles left-to-right
+- [x] FIELD algorithm: diamond A→B,C→D has clear LTR flow
+- [x] FIELD algorithm: fan-out A→B,C,D spreads targets to the right
+- [x] Pinned layouts are not disturbed
+- [x] SDF/JANK/TOPOGRID algorithms unaffected by new ForceNode fields
 - [ ] Port-nodes settle near their boundary positions (anchor springs)
 - [ ] Anchor ramp: early ticks show topology-driven layout, late ticks show port-anchored layout
-- [ ] Edge bending: edges route around non-incident nodes
+- [x] Edge bending: edges route around non-incident nodes
 - [x] `NO_COLOR=1 deno task ci` passes

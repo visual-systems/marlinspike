@@ -337,12 +337,13 @@ function postOrderExpanded(treeNodes: TreeNode[], expanded: Set<string>): string
 }
 
 /**
- * Attach port anchor targets to ForceNodes that correspond to declared ports.
- * Looks up the parent composite's ports, computes their boundary positions from
- * the parent's current size in its own parent level, and sets the `anchor` field
- * on matching child ForceNodes.
+ * Pin port-nodes at their boundary positions on the parent composite.
+ * Instead of using soft anchor springs (which create a tug-of-war with edge
+ * topology), port-nodes are hard-placed at the boundary each tick. Interior
+ * nodes feel edge springs from these fixed port-nodes, naturally settling near
+ * their connected ports without distorting the layout.
  */
-function attachPortAnchors(
+function pinPortNodes(
   nodes: ForceNode[],
   parentNode: TreeNode,
   layout: LayoutMap,
@@ -363,21 +364,23 @@ function attachPortAnchors(
 
   // Map port name → child node ID (ports reference children by label)
   const childByLabel = new Map(parentNode.children.map((c) => [c.label, c.id]));
-  const anchorMap = new Map<string, { x: number; y: number }>();
+  const pinMap = new Map<string, { x: number; y: number }>();
   for (const pp of portPositions) {
     const childId = childByLabel.get(pp.portName);
     if (childId) {
       // Port positions are relative to the rect center; child level is centered
-      // at (0, 0) but the rect center is offset by -LABEL_H/2 in y. Shift anchor
+      // at (0, 0) but the rect center is offset by -LABEL_H/2 in y. Shift
       // y by +LABEL_H/2 to convert to child level coordinate space.
-      anchorMap.set(childId, { x: pp.x, y: pp.y + LABEL_H / 2 });
+      pinMap.set(childId, { x: pp.x, y: pp.y + LABEL_H / 2 });
     }
   }
 
-  if (anchorMap.size === 0) return nodes;
+  if (pinMap.size === 0) return nodes;
   return nodes.map((fn) => {
-    const anchor = anchorMap.get(fn.id);
-    return anchor ? { ...fn, anchor } : fn;
+    const pin = pinMap.get(fn.id);
+    if (!pin) return fn;
+    // Set anchor as a marker so boundingBox excludes port-nodes
+    return { ...fn, x: pin.x, y: pin.y, vx: 0, vy: 0, pinned: true, anchor: pin };
   });
 }
 
@@ -492,10 +495,10 @@ function stepLayout(
     const childIds = node.children.map((c) => c.id);
     const levelEdges = getEdgesAtLevel(edges, childIds);
 
-    // Attach port anchors: pull port-nodes toward their boundary positions
-    const nodesWithAnchors = attachPortAnchors(level.nodes, node, next, treeNodes);
+    // Pin port-nodes at their boundary positions before ticking
+    const nodesWithPins = pinPortNodes(level.nodes, node, next, treeNodes);
 
-    const { nodes: ticked, settled } = algorithm.tick(nodesWithAnchors, levelEdges, level.ticks);
+    const { nodes: ticked, settled } = algorithm.tick(nodesWithPins, levelEdges, level.ticks);
     const centered = centerNodes(ticked);
     const bb = boundingBox(centered, GROUP_PADDING);
     next.set(nodeId, { nodes: centered, settled, ticks: level.ticks + 1, bbox: bb });

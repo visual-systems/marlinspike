@@ -153,11 +153,15 @@ export interface BBox {
 }
 
 export function boundingBox(nodes: ForceNode[], padding: number): BBox {
-  if (nodes.length === 0) {
+  // Exclude anchored nodes (port-nodes) from the bounding box so that
+  // anchor springs pulling them to the boundary don't inflate the rect.
+  const interior = nodes.filter((n) => !n.anchor);
+  const effective = interior.length > 0 ? interior : nodes;
+  if (effective.length === 0) {
     return { minX: -40, minY: -30, maxX: 40, maxY: 30, w: 80 + padding * 2, h: 60 + padding * 2 };
   }
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const n of nodes) {
+  for (const n of effective) {
     minX = Math.min(minX, n.x - n.w / 2);
     minY = Math.min(minY, n.y - n.h / 2);
     maxX = Math.max(maxX, n.x + n.w / 2);
@@ -181,13 +185,16 @@ export function boundingBox(nodes: ForceNode[], padding: number): BBox {
 // bounding box drawn by the renderer using bb.minX/minY.  Both derive from the
 // same boundingBox() call once nodes are centred — single source of truth.
 //
-// Skipped when any node is pinned to avoid silently moving user-locked positions.
+// Skipped when any user-pinned node is present (pinned without anchor marker)
+// to avoid silently moving user-locked positions. Port-nodes (pinned + anchor)
+// are safe to shift because pinPortNodes re-places them every tick.
 // Never applied to the root level (those nodes are positioned in canvas space).
 // ---------------------------------------------------------------------------
 
 export function centerNodes(nodes: ForceNode[]): ForceNode[] {
-  if (nodes.length === 0 || nodes.some((n) => n.pinned)) return nodes;
-  // Use zero-padding bbox to find the content centre
+  if (nodes.length === 0 || nodes.some((n) => n.pinned && !n.anchor)) return nodes;
+  // Center based on interior (non-anchored) nodes only, so port-nodes
+  // pulling toward the boundary don't shift the center.
   const raw = boundingBox(nodes, 0);
   const ox = (raw.minX + raw.maxX) / 2;
   const oy = (raw.minY + raw.maxY) / 2;

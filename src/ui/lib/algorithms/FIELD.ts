@@ -56,8 +56,8 @@ export const DEFAULT_FIELD_CONFIG: FieldConfig = {
   fieldStrength: 3,
   fieldDirection: [1, 0],
   // Port anchors
-  anchorK: 0.03,
-  anchorRampTicks: 80,
+  anchorK: 0.1,
+  anchorRampTicks: 50,
 };
 
 // ---------------------------------------------------------------------------
