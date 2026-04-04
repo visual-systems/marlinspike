@@ -82,6 +82,53 @@ Edges remain node-to-node (no `fromPort`/`toPort` wiring yet).
   - Pinned nodes are respected
   - Adjust `fieldStrength` default
 
+### Phase C — Port anchor springs and edge bending
+
+Port-nodes (child nodes that correspond to a declared port on their parent composite)
+should be physically attracted toward their port's boundary position. This makes the
+port-node relationship visible in the layout and naturally reinforces LTR flow. The
+feature is algorithm-agnostic — it applies to any force-based algorithm (SDF, FIELD),
+not just FIELD.
+
+**Design:**
+- Each port on a composite's boundary has a known position (from `rectPortPositions`)
+- The child node matching that port gets a spring pulling it toward the anchor
+- The spring ramps up over time: `anchorStrength * min(1, ticks / rampTicks)`
+  - Early ticks: topology forces dominate, graph finds its structural shape
+  - Later ticks: port-nodes migrate toward their boundary positions
+- Complements FIELD charge: charge gives global LTR flow to all nodes, anchors give
+  precise positioning to port-nodes specifically
+
+**Implementation:**
+
+- [ ] **C1 — Extend ForceNode with anchor target** (`src/ui/lib/force.ts`):
+  - Add optional `anchor?: { x: number; y: number }` field to `ForceNode`
+  - Represents the target position (port boundary point) relative to the level origin
+  - Existing algorithms ignore it (backward compatible)
+
+- [ ] **C2 — Attach anchors in buildLevel** (`src/ui/components/canvas.tsx`):
+  - When building a child level for an expanded composite, look up the parent's ports
+  - For each port, compute the boundary position via `rectPortPositions` (using the parent's current w/h)
+  - Attach `anchor: { x, y }` to the matching child ForceNode
+  - Anchors are recomputed on each `buildLevel` / size change (they depend on parent dimensions)
+
+- [ ] **C3 — Port anchor spring force** (`src/ui/lib/sdf-force.ts` or new module):
+  - New force: for each node with an `anchor`, apply a spring toward anchor position
+  - Strength ramps: `baseAnchorK * min(1, ticks / anchorRampTicks)`
+  - Config: `anchorK` (spring constant), `anchorRampTicks` (ramp duration)
+  - Applied in `tickSdfLevel` so all SDF-based algorithms (SDF, FIELD) get it for free
+
+- [ ] **C4 — Edge bending in canvas renderer**:
+  - Port `bentEdgePoints` logic from layout stories into the main canvas edge renderer
+  - When an edge's straight line passes too close to a non-incident node, bend it around
+  - Reduces visual clutter, especially in FIELD where parallel edges are common
+  - Pure rendering change — no layout impact
+
+- [ ] **C5 — Tuning and stories**:
+  - Add FIELD datasets with ports to layout stories to visualise anchor spring behavior
+  - Tune `anchorK`, `anchorRampTicks` defaults empirically
+  - Verify: port-nodes end up near boundary, non-port nodes unaffected, pinning respected
+
 ### Bug fixes discovered during verification
 
 - [x] **Port persistence** (`src/ui/workspace.ts`): `parseNode` was missing `ports` field — ports silently dropped on page refresh, corrupting defn forms into empty param lists
@@ -111,6 +158,9 @@ Edges remain node-to-node (no `fromPort`/`toPort` wiring yet).
 - Exact `fieldStrength` value — needs empirical tuning
 - Should FIELD be the new default, or opt-in alongside SDF? Lean: make it default once stable
 - Future: compass widget for rotating the field direction
+- Anchor spring vs charge interaction: does anchor make charge redundant for port-nodes, or do they complement well? Lean: both — charge gives direction to non-port nodes, anchors give precision to port nodes
+- Should anchor positions update dynamically as the parent resizes during layout, or only on buildLevel? Dynamic is more correct but adds complexity
+- Edge bending clearance threshold — may need per-algorithm tuning
 
 ## Verification
 
@@ -129,4 +179,7 @@ Edges remain node-to-node (no `fromPort`/`toPort` wiring yet).
 - [ ] FIELD algorithm: fan-out A→B,C,D spreads targets to the right
 - [ ] Pinned layouts are not disturbed
 - [ ] SDF/JANK/TOPOGRID algorithms unaffected by new ForceNode fields
+- [ ] Port-nodes settle near their boundary positions (anchor springs)
+- [ ] Anchor ramp: early ticks show topology-driven layout, late ticks show port-anchored layout
+- [ ] Edge bending: edges route around non-incident nodes
 - [x] `NO_COLOR=1 deno task ci` passes
