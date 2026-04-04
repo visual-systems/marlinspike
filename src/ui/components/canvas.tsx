@@ -647,6 +647,7 @@ function CanvasTopBar(
           { value: "JANK", label: "JANK" },
           { value: "TOPOGRID", label: "TOPOGRID" },
           { value: "SDF", label: "SDF" },
+          { value: "FIELD", label: "FIELD" },
         ]}
         selectedValue={ws.canvasAlgorithm}
         placeholder="layout"
