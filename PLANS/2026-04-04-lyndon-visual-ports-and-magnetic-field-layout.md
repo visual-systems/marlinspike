@@ -75,7 +75,7 @@ Edges remain node-to-node (no `fromPort`/`toPort` wiring yet).
   - In `buildLevel()` / `syncLayout()` (canvas.tsx): compute `topoCharge` for the level's edges, attach `charge` to each `ForceNode`
   - This happens at level build time, not per-tick (charges are static for a given graph topology)
 
-- [ ] **B6 — Tuning and verification**:
+- [x] **B6 — Tuning and verification**:
   - Chain A→B→C settles left-to-right
   - Diamond/fan patterns produce readable LTR flow
   - Disconnected components don't drift apart (inter-component forces still active from SDF base)
