@@ -184,7 +184,7 @@ not just FIELD.
 - [x] FIELD algorithm: fan-out A→B,C,D spreads targets to the right
 - [x] Pinned layouts are not disturbed
 - [x] SDF/JANK/TOPOGRID algorithms unaffected by new ForceNode fields
-- [ ] Port-nodes settle near their boundary positions (anchor springs)
-- [ ] Anchor ramp: early ticks show topology-driven layout, late ticks show port-anchored layout
+- [x] Port-nodes settle near their boundary positions (anchor springs)
+- [x] Anchor ramp: early ticks show topology-driven layout, late ticks show port-anchored layout
 - [x] Edge bending: edges route around non-incident nodes
 - [x] `NO_COLOR=1 deno task ci` passes
