@@ -20,10 +20,16 @@ import type { DiagnosticMap } from "../../graph/diagnostics.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { SmallBtn } from "./widgets.tsx";
 import { type BBox, boundingBox, centerNodes, type ForceNode } from "../lib/force.ts";
+import { circlePortPositions, rectPortPositions } from "../lib/port-layout.ts";
+import { lineClosestPoint, lineSdfDist } from "../lib/sdf-force.ts";
+import { topoCharge } from "../lib/topo-charge.ts";
+import { NodePorts } from "./port-rendering.tsx";
 import {
+  createFIELD,
   createJANK,
   createSDF,
   createTOPOGRID,
+  DEFAULT_FIELD_CONFIG,
   DEFAULT_JANK_CONFIG,
   DEFAULT_SDF_CONFIG,
   type LayoutAlgorithm,
@@ -125,6 +131,46 @@ function surfacePoint(from: ForceNode, to: ForceNode, gap = 0): { x: number; y: 
   const ty = Math.abs(uy) > 0.001 ? (from.h / 2) / Math.abs(uy) : Infinity;
   const t = Math.min(tx, ty);
   return { x: from.x + ux * (t + gap), y: from.y + uy * (t + gap) };
+}
+
+/**
+ * Find a bend midpoint for a straight edge if a non-incident node obstructs it.
+ * Returns undefined for a straight line, or {x, y} of the quadratic bezier control point.
+ */
+function edgeBendPoint(
+  src: { x: number; y: number },
+  dst: { x: number; y: number },
+  levelNodes: ForceNode[],
+  edgeNodeIds: [string, string],
+  clearance: number,
+): { x: number; y: number } | undefined {
+  let bestDist = clearance;
+  let bestT = 0.5;
+  let bestGx = 0;
+  let bestGy = 0;
+  let bestBendMag = 0;
+
+  for (const n of levelNodes) {
+    if (n.id === edgeNodeIds[0] || n.id === edgeNodeIds[1]) continue;
+    const d = lineSdfDist(n.x, n.y, src.x, src.y, dst.x, dst.y);
+    if (d >= clearance || d >= bestDist) continue;
+    const { t, cx, cy } = lineClosestPoint(n.x, n.y, src.x, src.y, dst.x, dst.y);
+    const ex = cx - n.x;
+    const ey = cy - n.y;
+    const len = Math.sqrt(ex * ex + ey * ey);
+    if (len < 1e-9) continue;
+    bestDist = d;
+    bestT = t;
+    bestGx = ex / len;
+    bestGy = ey / len;
+    bestBendMag = clearance - d;
+  }
+
+  if (bestBendMag === 0) return undefined;
+  return {
+    x: src.x + bestT * (dst.x - src.x) + bestGx * bestBendMag,
+    y: src.y + bestT * (dst.y - src.y) + bestGy * bestBendMag,
+  };
 }
 
 /**
@@ -291,6 +337,54 @@ function postOrderExpanded(treeNodes: TreeNode[], expanded: Set<string>): string
 }
 
 /**
+ * Pin port-nodes at their boundary positions on the parent composite.
+ * Instead of using soft anchor springs (which create a tug-of-war with edge
+ * topology), port-nodes are hard-placed at the boundary each tick. Interior
+ * nodes feel edge springs from these fixed port-nodes, naturally settling near
+ * their connected ports without distorting the layout.
+ */
+function pinPortNodes(
+  nodes: ForceNode[],
+  parentNode: TreeNode,
+  layout: LayoutMap,
+  treeNodes: TreeNode[],
+): ForceNode[] {
+  if (!parentNode.ports || parentNode.ports.length === 0) return nodes;
+
+  // Find the parent's ForceNode in its own parent level to get current w/h
+  const grandparent = findParentOf(treeNodes, parentNode.id);
+  const parentLevelId = grandparent?.id ?? "";
+  const parentLevel = layout.get(parentLevelId);
+  const parentFn = parentLevel?.nodes.find((fn) => fn.id === parentNode.id);
+  if (!parentFn) return nodes;
+
+  const halfW = parentFn.w / 2;
+  const halfH = parentFn.h / 2;
+  const portPositions = rectPortPositions(parentNode.ports, halfW, halfH, LABEL_H);
+
+  // Map port name → child node ID (ports reference children by label)
+  const childByLabel = new Map(parentNode.children.map((c) => [c.label, c.id]));
+  const pinMap = new Map<string, { x: number; y: number }>();
+  for (const pp of portPositions) {
+    const childId = childByLabel.get(pp.portName);
+    if (childId) {
+      // Port positions are relative to the rect center; child level is centered
+      // at (0, 0) but the rect center is offset by -LABEL_H/2 in y. Shift
+      // y by +LABEL_H/2 to convert to child level coordinate space.
+      pinMap.set(childId, { x: pp.x, y: pp.y + LABEL_H / 2 });
+    }
+  }
+
+  if (pinMap.size === 0) return nodes;
+  return nodes.map((fn) => {
+    const pin = pinMap.get(fn.id);
+    if (!pin) return fn;
+    // Set anchor as a marker so boundingBox excludes port-nodes
+    return { ...fn, x: pin.x, y: pin.y, vx: 0, vy: 0, pinned: true, anchor: pin };
+  });
+}
+
+/**
  * Build or rebuild a level's node list.
  * Always recomputes w/h from current expansion state so that collapsing a node
  * immediately gives it the correct (small) body size.
@@ -308,13 +402,17 @@ function buildLevel(
   const defaults = new Map(Object.entries(pinnedPositions));
   const rawPositions = algorithm.initNodes(ids, levelEdges, LEAF_W, LEAF_H, defaults);
 
+  // Compute topological charge for FIELD algorithm (static per topology)
+  const charges = topoCharge(ids, levelEdges);
+
   const nodes: ForceNode[] = rawPositions.map((fn): ForceNode => {
     const existing = prevMap.get(fn.id);
     const isExpanded = expandedSet.has(fn.id);
     const w = isExpanded ? (existing?.w ?? LEAF_W * 3) : LEAF_W;
     const h = isExpanded ? (existing?.h ?? LEAF_H * 3) : LEAF_H;
-    if (existing && algorithm.preservesPositions) return { ...existing, w, h };
-    return { ...fn, w, h };
+    const charge = charges.get(fn.id);
+    if (existing && algorithm.preservesPositions) return { ...existing, w, h, charge };
+    return { ...fn, w, h, charge };
   });
 
   return { nodes, settled: false, ticks: 0, bbox: null };
@@ -396,7 +494,11 @@ function stepLayout(
 
     const childIds = node.children.map((c) => c.id);
     const levelEdges = getEdgesAtLevel(edges, childIds);
-    const { nodes: ticked, settled } = algorithm.tick(level.nodes, levelEdges, level.ticks);
+
+    // Pin port-nodes at their boundary positions before ticking
+    const nodesWithPins = pinPortNodes(level.nodes, node, next, treeNodes);
+
+    const { nodes: ticked, settled } = algorithm.tick(nodesWithPins, levelEdges, level.ticks);
     const centered = centerNodes(ticked);
     const bb = boundingBox(centered, GROUP_PADDING);
     next.set(nodeId, { nodes: centered, settled, ticks: level.ticks + 1, bbox: bb });
@@ -440,6 +542,7 @@ function stepLayout(
 function makeCanvasAlgorithm(id: WorkspaceState["canvasAlgorithm"]): LayoutAlgorithm {
   if (id === "TOPOGRID") return createTOPOGRID({ hSpacing: 160, vSpacing: 130 });
   if (id === "SDF") return createSDF(DEFAULT_SDF_CONFIG);
+  if (id === "FIELD") return createFIELD(DEFAULT_FIELD_CONFIG);
   return createJANK(DEFAULT_JANK_CONFIG);
 }
 
@@ -637,6 +740,7 @@ function CanvasTopBar(
           { value: "JANK", label: "JANK" },
           { value: "TOPOGRID", label: "TOPOGRID" },
           { value: "SDF", label: "SDF" },
+          { value: "FIELD", label: "FIELD" },
         ]}
         selectedValue={ws.canvasAlgorithm}
         placeholder="layout"
@@ -1527,6 +1631,14 @@ function renderLevel(
                   style="pointer-events:none;"
                 />
               )}
+              {node.ports && node.ports.length > 0 && (
+                <g transform={`translate(${rx + rw / 2}, ${ry + rh / 2})`}>
+                  <NodePorts
+                    ports={rectPortPositions(node.ports, rw / 2, rh / 2, LABEL_H)}
+                    showLabels
+                  />
+                </g>
+              )}
               {renderLevel(
                 node.children,
                 node.id,
@@ -1669,6 +1781,12 @@ function renderLevel(
                 style="pointer-events:none;"
               />
             )}
+            {node.ports && node.ports.length > 0 && (
+              <NodePorts
+                ports={circlePortPositions(node.ports, r)}
+                showLabels={false}
+              />
+            )}
             <text
               x={0}
               y={hasChildren ? -3 : 3}
@@ -1722,6 +1840,7 @@ function renderLevel(
           arcC?: { x: number; y: number };
           isSelected: boolean;
           isHighlighted: boolean;
+          bend?: { x: number; y: number };
         };
         const renderData: EdgeRenderData[] = [];
         for (const edge of levelEdges) {
@@ -1776,8 +1895,15 @@ function renderLevel(
             dst = surfacePoint(pb, pa, 5 + 10);
           }
 
+          // For straight edges, check if we need to bend around an obstructing node
+          const bend = !needsArc
+            ? edgeBendPoint(src, dst, level.nodes, [edge.fromId, edge.toId], LEAF_R + 20)
+            : undefined;
+
           const d = needsArc
             ? `M${src.x},${src.y} A${r},${r} 0 0,${sweep} ${dst.x},${dst.y}`
+            : bend
+            ? `M${src.x},${src.y} Q${bend.x},${bend.y} ${dst.x},${dst.y}`
             : `M${src.x},${src.y} L${dst.x},${dst.y}`;
           renderData.push({
             edge,
@@ -1790,6 +1916,7 @@ function renderLevel(
             arcC: edgeArcC,
             isSelected: selectedId === edge.id,
             isHighlighted: highlightEntityIds.has(edge.id),
+            bend,
           });
         }
 
@@ -1797,9 +1924,17 @@ function renderLevel(
           <>
             {/* Pass 1: all edge paths */}
             {renderData.map(
-              ({ edge, d, src, dst, needsArc, r, sweep, arcC, isSelected, isHighlighted }) => {
+              (
+                { edge, d, src, dst, needsArc, r, sweep, arcC, isSelected, isHighlighted, bend },
+              ) => {
                 const stroke = isSelected ? "#5070c0" : isHighlighted ? "#50c070" : "#2a2a50";
-                const tangent = pathEndTangent(src, dst, needsArc, r, sweep, arcC);
+                const tangent = bend
+                  ? (() => {
+                    const dx = dst.x - bend.x, dy = dst.y - bend.y;
+                    const len = Math.sqrt(dx * dx + dy * dy);
+                    return len > 1e-9 ? { x: dx / len, y: dy / len } : { x: 1, y: 0 };
+                  })()
+                  : pathEndTangent(src, dst, needsArc, r, sweep, arcC);
                 const perp = { x: -tangent.y, y: tangent.x };
                 const tip = { x: dst.x + tangent.x * 10, y: dst.y + tangent.y * 10 };
                 const arrowPoints = `${tip.x},${tip.y} ${dst.x + perp.x * 3.5},${
@@ -1838,10 +1973,12 @@ function renderLevel(
               },
             )}
             {/* Pass 2: all labels on top of all paths */}
-            {renderData.map(({ edge, src, dst, needsArc, r, sweep, arcC }) => {
+            {renderData.map(({ edge, src, dst, needsArc, r, sweep, arcC, bend }) => {
               if (!edge.label) return null;
               const lp = needsArc
                 ? arcMidpoint(src.x, src.y, dst.x, dst.y, r, sweep, arcC)
+                : bend
+                ? { x: (src.x + 2 * bend.x + dst.x) / 4, y: (src.y + 2 * bend.y + dst.y) / 4 }
                 : { x: (src.x + dst.x) / 2, y: (src.y + dst.y) / 2 };
               return (
                 <text

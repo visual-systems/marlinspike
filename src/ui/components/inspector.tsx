@@ -10,6 +10,7 @@ import {
   getEdgesOut,
   nodeHash,
   type Panel,
+  type Port,
   removeNodeFromTree,
   subgraphJson,
   type Tab,
@@ -350,6 +351,14 @@ export function NodeInspector(
         </div>
       )}
 
+      {/* Ports — only shown for composite nodes with children */}
+      {node.kind === "composite" && node.children.length > 0 && (
+        <>
+          <PortsSection node={node} dir="in" ws={ws} update={update} />
+          <PortsSection node={node} dir="out" ws={ws} update={update} />
+        </>
+      )}
+
       {/* Edges In */}
       <EdgesSection
         node={node}
@@ -478,6 +487,113 @@ export function EdgesSection(
             const [from, to] = dir === "in" ? [id, node.id] : [node.id, id];
             onAddEdge(from, to);
           }}
+          width="fill"
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ports section
+// ---------------------------------------------------------------------------
+
+const PORT_COLORS: Record<Port["direction"], string> = {
+  in: "#4080c0",
+  out: "#c06040",
+  inout: "#80a040",
+};
+
+export function PortsSection(
+  { node, dir, ws, update }: {
+    node: TreeNode;
+    dir: "in" | "out";
+    ws: WorkspaceState;
+    update: Updater;
+  },
+) {
+  const ports = (node.ports ?? []).filter((p) =>
+    dir === "in" ? (p.direction === "in" || p.direction === "inout") : p.direction === "out"
+  );
+  const portNames = new Set((node.ports ?? []).map((p) => p.name));
+  // Candidates: children not yet ports, filtered by topological position.
+  // Input ports = initial nodes (no incoming edges from siblings).
+  // Output ports = terminal nodes (no outgoing edges to siblings).
+  const childIds = new Set(node.children.map((c) => c.id));
+  const siblingEdges = ws.edges.filter((e) => childIds.has(e.fromId) && childIds.has(e.toId));
+  const hasIncoming = new Set(siblingEdges.map((e) => e.toId));
+  const hasOutgoing = new Set(siblingEdges.map((e) => e.fromId));
+  const candidates = node.children.filter((c) => {
+    if (portNames.has(c.label)) return false;
+    if (dir === "in") return !hasIncoming.has(c.id); // initial nodes
+    return !hasOutgoing.has(c.id); // terminal nodes
+  });
+
+  function addPort(childLabel: string) {
+    const direction: Port["direction"] = dir === "in" ? "in" : "out";
+    update((s) =>
+      withNodeMutation(
+        s,
+        (nodes) =>
+          updateNodeInTree(nodes, node.id, (n) => ({
+            ...n,
+            ports: [...(n.ports ?? []), { name: childLabel, direction }],
+            version: n.version + 1,
+          })),
+      )
+    );
+  }
+
+  function removePort(portName: string) {
+    update((s) =>
+      withNodeMutation(
+        s,
+        (nodes) =>
+          updateNodeInTree(nodes, node.id, (n) => ({
+            ...n,
+            ports: (n.ports ?? []).filter((p) => p.name !== portName),
+            version: n.version + 1,
+          })),
+      )
+    );
+  }
+
+  return (
+    <div style="display:flex; flex-direction:column; gap:4px;">
+      <PropLabel text={dir === "in" ? "Ports In" : "Ports Out"} />
+
+      {ports.length === 0 && candidates.length === 0
+        ? <div style="font-size:11px; color:#333; font-style:italic;">no children</div>
+        : null}
+
+      {ports.map((port) => (
+        <div
+          key={port.name}
+          style="display:flex; align-items:center; gap:6px; padding:4px 6px; background:#13132a; border-radius:3px; font-size:12px;"
+        >
+          <span
+            style={`display:inline-block; width:8px; height:8px; border-radius:50%; background:${
+              PORT_COLORS[port.direction]
+            }; flex-shrink:0;`}
+          />
+          <span style="flex:1; color:#7070a0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            {port.name}
+            {port.type ? ` · ${port.type}` : ""}
+          </span>
+          <IconBtn
+            label="×"
+            title="Remove port"
+            onClick={() => removePort(port.name)}
+          />
+        </div>
+      ))}
+
+      {candidates.length > 0 && (
+        <Dropdown
+          items={candidates.map((c) => ({ value: c.label, label: c.label }))}
+          selectedValue={null}
+          placeholder={dir === "in" ? "+ input port…" : "+ output port…"}
+          onSelect={(label) => addPort(label)}
           width="fill"
         />
       )}

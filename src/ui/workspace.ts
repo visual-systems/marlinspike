@@ -322,6 +322,7 @@ function parseNode(raw: Record<string, unknown>): TreeNode {
     uri: raw.uri as string | undefined,
     kind: (raw.kind as "leaf" | "composite") ?? "leaf",
     children: ((raw.children as Record<string, unknown>[] | undefined) ?? []).map(parseNode),
+    ports: raw.ports as Port[] | undefined,
     data: (raw.data as Record<string, unknown> | undefined) ?? {},
     version: (raw.version as number | undefined) ?? 1,
   };

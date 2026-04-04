@@ -4,14 +4,19 @@ import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
 import { type BBox, boundingBox, centerNodes, type ForceNode, maxVelocity } from "../lib/force.ts";
 import {
   type AlgorithmId,
+  createFIELD,
   createJANK,
   createSDF,
   createTOPOGRID,
+  DEFAULT_FIELD_CONFIG,
   DEFAULT_JANK_CONFIG,
   DEFAULT_SDF_CONFIG,
   DEFAULT_TOPOGRID_CONFIG,
   type LayoutAlgorithm,
 } from "../lib/algorithms/index.ts";
+import { topoCharge } from "../lib/topo-charge.ts";
+import { rectPortPositions } from "../lib/port-layout.ts";
+import type { Port } from "../workspace.ts";
 import {
   connectedComponents,
   isCircleNode,
@@ -69,13 +74,40 @@ interface SdfAlgConfig {
   circleThreshold: number;
   spread: number;
   settleV: number;
+  anchorK: number;
+  anchorRampTicks: number;
   /** Show component bounding circles as a debug overlay */
   showComponents: boolean;
   /** Draw each node's SDF shape as a translucent overlay */
   showSdfs: boolean;
 }
 
-type AlgorithmConfig = JankAlgConfig | TopogridAlgConfig | SdfAlgConfig;
+interface FieldAlgConfig {
+  id: "FIELD";
+  leafR: number;
+  repulsionStrength: number;
+  restGap: number;
+  maxRepulsionDist: number;
+  sdfGradientEps: number;
+  springK: number;
+  springRestLength: number;
+  edgeClearance: number;
+  edgeRepulsionK: number;
+  componentRepulsionK: number;
+  damping: number;
+  maxVelocity: number;
+  circleThreshold: number;
+  spread: number;
+  settleV: number;
+  fieldStrength: number;
+  fieldDirection: [number, number];
+  anchorK: number;
+  anchorRampTicks: number;
+  showComponents: boolean;
+  showSdfs: boolean;
+}
+
+type AlgorithmConfig = JankAlgConfig | TopogridAlgConfig | SdfAlgConfig | FieldAlgConfig;
 
 const DEFAULT_JANK_STORY: JankAlgConfig = {
   id: "JANK",
@@ -113,6 +145,33 @@ const DEFAULT_SDF_STORY: SdfAlgConfig = {
   circleThreshold: DEFAULT_SDF_CONFIG.circleThreshold,
   spread: DEFAULT_SDF_CONFIG.spread,
   settleV: DEFAULT_SDF_CONFIG.settleV,
+  anchorK: DEFAULT_SDF_CONFIG.anchorK,
+  anchorRampTicks: DEFAULT_SDF_CONFIG.anchorRampTicks,
+  showComponents: false,
+  showSdfs: false,
+};
+
+const DEFAULT_FIELD_STORY: FieldAlgConfig = {
+  id: "FIELD",
+  leafR: 26,
+  repulsionStrength: DEFAULT_FIELD_CONFIG.repulsionStrength,
+  restGap: DEFAULT_FIELD_CONFIG.restGap,
+  maxRepulsionDist: DEFAULT_FIELD_CONFIG.maxRepulsionDist,
+  sdfGradientEps: DEFAULT_FIELD_CONFIG.sdfGradientEps,
+  springK: DEFAULT_FIELD_CONFIG.springK,
+  springRestLength: DEFAULT_FIELD_CONFIG.springRestLength,
+  edgeClearance: DEFAULT_FIELD_CONFIG.edgeClearance,
+  edgeRepulsionK: DEFAULT_FIELD_CONFIG.edgeRepulsionK,
+  componentRepulsionK: DEFAULT_FIELD_CONFIG.componentRepulsionK,
+  damping: DEFAULT_FIELD_CONFIG.damping,
+  maxVelocity: DEFAULT_FIELD_CONFIG.maxVelocity,
+  circleThreshold: DEFAULT_FIELD_CONFIG.circleThreshold,
+  spread: DEFAULT_FIELD_CONFIG.spread,
+  settleV: DEFAULT_FIELD_CONFIG.settleV,
+  fieldStrength: DEFAULT_FIELD_CONFIG.fieldStrength,
+  fieldDirection: DEFAULT_FIELD_CONFIG.fieldDirection,
+  anchorK: DEFAULT_FIELD_CONFIG.anchorK,
+  anchorRampTicks: DEFAULT_FIELD_CONFIG.anchorRampTicks,
   showComponents: false,
   showSdfs: false,
 };
@@ -120,12 +179,23 @@ const DEFAULT_SDF_STORY: SdfAlgConfig = {
 function defaultAlgConfig(id: AlgorithmId): AlgorithmConfig {
   if (id === "JANK") return DEFAULT_JANK_STORY;
   if (id === "TOPOGRID") return DEFAULT_TOPOGRID_STORY;
+  if (id === "FIELD") return DEFAULT_FIELD_STORY;
   return DEFAULT_SDF_STORY;
 }
 
 function makeAlgorithm(cfg: AlgorithmConfig): LayoutAlgorithm {
   if (cfg.id === "TOPOGRID") {
     return createTOPOGRID({ hSpacing: cfg.hSpacing, vSpacing: cfg.vSpacing });
+  }
+  if (cfg.id === "FIELD") {
+    const {
+      id: _id,
+      leafR: _r,
+      showComponents: _sc,
+      showSdfs: _ss,
+      ...fieldParams
+    } = cfg;
+    return createFIELD({ ...fieldParams, maxTicks: Infinity });
   }
   if (cfg.id === "SDF") {
     const { id: _id, leafR: _r, showComponents: _sc, showSdfs: _ss, ...sdfParams } = cfg;
@@ -146,6 +216,8 @@ interface NodeDef {
   children?: NodeDef[];
   /** Edges connecting children within this composite */
   edges?: { id: string; a: string; b: string }[];
+  /** Declared ports — enables anchor springs for matching children */
+  ports?: Port[];
 }
 
 interface Dataset {
@@ -373,6 +445,84 @@ const DATASETS: Dataset[] = [
       { id: "ps", a: "peer", b: "solo" },
     ],
   },
+  // --- Port / anchor datasets ---
+  {
+    name: "Quadratic roots (ports)",
+    nodes: [
+      {
+        id: "qr",
+        label: "quadratic-roots",
+        ports: [
+          { name: "a", direction: "in", type: "float" },
+          { name: "b", direction: "in", type: "float" },
+          { name: "c", direction: "in", type: "float" },
+          { name: "x1", direction: "out", type: "float" },
+          { name: "x2", direction: "out", type: "float" },
+        ],
+        children: [
+          { id: "pa", label: "a" },
+          { id: "pb", label: "b" },
+          { id: "pc", label: "c" },
+          { id: "neg", label: "negate" },
+          { id: "sq", label: "square" },
+          { id: "mul", label: "multiply" },
+          { id: "sub", label: "subtract" },
+          { id: "sqrt", label: "sqrt" },
+          { id: "add1", label: "add" },
+          { id: "sub2", label: "subtract" },
+          { id: "div1", label: "divide" },
+          { id: "div2", label: "divide" },
+          { id: "px1", label: "x1" },
+          { id: "px2", label: "x2" },
+        ],
+        edges: [
+          { id: "e1", a: "pb", b: "neg" },
+          { id: "e2", a: "pb", b: "sq" },
+          { id: "e3", a: "pa", b: "mul" },
+          { id: "e4", a: "pc", b: "mul" },
+          { id: "e5", a: "sq", b: "sub" },
+          { id: "e6", a: "mul", b: "sub" },
+          { id: "e7", a: "sub", b: "sqrt" },
+          { id: "e8", a: "neg", b: "add1" },
+          { id: "e9", a: "sqrt", b: "add1" },
+          { id: "e10", a: "neg", b: "sub2" },
+          { id: "e11", a: "sqrt", b: "sub2" },
+          { id: "e12", a: "add1", b: "div1" },
+          { id: "e13", a: "pa", b: "div1" },
+          { id: "e14", a: "sub2", b: "div2" },
+          { id: "e15", a: "pa", b: "div2" },
+          { id: "e16", a: "div1", b: "px1" },
+          { id: "e17", a: "div2", b: "px2" },
+        ],
+      },
+    ],
+    edges: [],
+  },
+  {
+    name: "Pipeline (ports)",
+    nodes: [
+      {
+        id: "pipe",
+        label: "pipeline",
+        ports: [
+          { name: "input", direction: "in" },
+          { name: "output", direction: "out" },
+        ],
+        children: [
+          { id: "inp", label: "input" },
+          { id: "va", label: "validate" },
+          { id: "tr", label: "transform" },
+          { id: "out", label: "output" },
+        ],
+        edges: [
+          { id: "e1", a: "inp", b: "va" },
+          { id: "e2", a: "va", b: "tr" },
+          { id: "e3", a: "tr", b: "out" },
+        ],
+      },
+    ],
+    edges: [],
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -428,7 +578,10 @@ function initSim(
     levelEdges: { a: string; b: string }[],
   ): void {
     const ids = nodes.map((n) => n.id);
-    const forceNodes = algorithm.initNodes(ids, levelEdges, d, d, new Map());
+    const rawNodes = algorithm.initNodes(ids, levelEdges, d, d, new Map());
+    // Attach topological charge for FIELD algorithm
+    const charges = topoCharge(ids, levelEdges);
+    const forceNodes = rawNodes.map((fn) => ({ ...fn, charge: charges.get(fn.id) }));
     map.set(parentId, { nodes: forceNodes, ticks: 0, bbox: null });
     for (const node of nodes) {
       if (node.children?.length) {
@@ -455,8 +608,34 @@ function tickSim(
     const level = next.get(composite.id);
     if (!level) continue;
 
+    // Pin port-nodes at their boundary positions
+    let nodesForTick = level.nodes;
+    if (composite.ports?.length) {
+      const parentId = findParentLevel(dataset.nodes, composite.id) ?? "";
+      const parentLevel = next.get(parentId);
+      const parentFn = parentLevel?.nodes.find((fn) => fn.id === composite.id);
+      if (parentFn) {
+        const halfW = parentFn.w / 2;
+        const halfH = parentFn.h / 2;
+        const portPositions = rectPortPositions(composite.ports, halfW, halfH, LABEL_H);
+        const childByLabel = new Map((composite.children ?? []).map((c) => [c.label, c.id]));
+        const pinMap = new Map<string, { x: number; y: number }>();
+        for (const pp of portPositions) {
+          const childId = childByLabel.get(pp.portName);
+          if (childId) pinMap.set(childId, { x: pp.x, y: pp.y + LABEL_H / 2 });
+        }
+        if (pinMap.size > 0) {
+          nodesForTick = level.nodes.map((fn) => {
+            const pin = pinMap.get(fn.id);
+            if (!pin) return fn;
+            return { ...fn, x: pin.x, y: pin.y, vx: 0, vy: 0, pinned: true, anchor: pin };
+          });
+        }
+      }
+    }
+
     const edges = composite.edges ?? [];
-    const { nodes: ticked } = algorithm.tick(level.nodes, edges, level.ticks);
+    const { nodes: ticked } = algorithm.tick(nodesForTick, edges, level.ticks);
     const centered = centerNodes(ticked);
     const bb = boundingBox(centered, GROUP_PADDING);
     next.set(composite.id, { nodes: centered, ticks: level.ticks + 1, bbox: bb });
@@ -575,6 +754,28 @@ function renderLevel(
             >
               {n.label}
             </text>
+            {/* Port dots on composite boundary */}
+            {n.ports?.length
+              ? (() => {
+                const halfW = pos.w / 2;
+                const halfH = pos.h / 2;
+                const pps = rectPortPositions(n.ports!, halfW, halfH, LABEL_H);
+                return pps.map((pp) => (
+                  <circle
+                    key={pp.portName}
+                    cx={pp.x}
+                    cy={pp.y}
+                    r={4 * invScale}
+                    fill={pp.direction === "in"
+                      ? "#5080d0"
+                      : pp.direction === "out"
+                      ? "#d08050"
+                      : "#50d080"}
+                    stroke="none"
+                  />
+                ));
+              })()
+              : null}
             {renderLevel(n.id, n.children!, n.edges ?? [], sim, cfg, invScale)}
           </g>
         );
@@ -584,7 +785,7 @@ function renderLevel(
         const a = posMap.get(e.a);
         const b = posMap.get(e.b);
         if (!a || !b) return null;
-        if (cfg.id === "SDF" && cfg.edgeClearance > 0) {
+        if ((cfg.id === "SDF" || cfg.id === "FIELD") && cfg.edgeClearance > 0) {
           const pts = bentEdgePoints(
             a.x,
             a.y,
@@ -909,6 +1110,7 @@ export function Configurator() {
             <option value="JANK" selected={algCfg.id === "JANK"}>JANK</option>
             <option value="TOPOGRID" selected={algCfg.id === "TOPOGRID"}>TOPOGRID</option>
             <option value="SDF" selected={algCfg.id === "SDF"}>SDF</option>
+            <option value="FIELD" selected={algCfg.id === "FIELD"}>FIELD</option>
           </select>
         </div>
 

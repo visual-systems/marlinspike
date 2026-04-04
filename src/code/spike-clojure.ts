@@ -59,6 +59,16 @@ function topoSort(ids: string[], edges: Edge[]): string[] {
   return result;
 }
 
+/** Format a Clojure map literal — single entry stays inline, multiple get one line each. */
+function formatMap(entries: [string, string][], baseIndent = ""): string {
+  if (entries.length <= 1) {
+    return `{${entries.map(([k, v]) => `${k} ${v}`).join(" ")}}`;
+  }
+  // Continuation lines align 1 char inside the `{`
+  const cont = baseIndent + " ";
+  return `{${entries.map(([k, v], i) => i === 0 ? `${k} ${v}` : `${cont}${k} ${v}`).join("\n")}}`;
+}
+
 /**
  * Emit a composite node that has edges among its children as a defn + let form.
  *
@@ -167,14 +177,16 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   // binding name; nodes not in the let block are inlined as call expressions.
   const returnRef = (id: string) => letIdSet.has(id) ? binding(id) : callExpr(id);
 
-  // Return expression
-  const returnExpr = portsMatchTerminals
-    ? `{${outputPorts.map((p) => `:${p.name} ${callExpr(p.name)}`).join(" ")}}`
+  // Return expression — map keys get their own lines for readability.
+  // Base indent depends on whether there is a let block (4 spaces) or not (2 spaces).
+  const mapEntries: [string, string][] | null = portsMatchTerminals
+    ? outputPorts.map((p) => [`:${p.name}`, callExpr(p.name)] as [string, string])
     : terminalIds.length === 1
-    ? callExpr(terminalIds[0])
-    : `{${terminalIds.map((id) => `:${nodeById.get(id)!.label} ${returnRef(id)}`).join(" ")}}`;
+    ? null
+    : terminalIds.map((id) => [`:${nodeById.get(id)!.label}`, returnRef(id)] as [string, string]);
 
   if (letIds.length === 0) {
+    const returnExpr = mapEntries ? formatMap(mapEntries, "  ") : callExpr(terminalIds[0]);
     return `(defn ${container.label}${attrMap}\n  [${paramList}]\n  ${returnExpr})`;
   }
 
@@ -186,6 +198,7 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
     .map((b, i) => (i === 0 ? `[${b}` : `${indent}${b}`))
     .join("\n") + "]";
 
+  const returnExpr = mapEntries ? formatMap(mapEntries, "    ") : callExpr(terminalIds[0]);
   return `(defn ${container.label}${attrMap}\n  [${paramList}]\n  (let ${letBlock}\n    ${returnExpr}))`;
 }
 
