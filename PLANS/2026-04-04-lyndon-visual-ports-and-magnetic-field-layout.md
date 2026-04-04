@@ -37,8 +37,13 @@ Edges remain node-to-node (no `fromPort`/`toPort` wiring yet).
 - [x] **A4 — Ports in inspector** (`src/ui/components/inspector.tsx`):
   - Add "Ports In" and "Ports Out" sections to `NodeInspector`, between Children and Edges In
   - Each port shown as a row: colored dot + name + type (if present)
-  - Read-only display for now (ports are declared via code, not edited in inspector)
+  - Port candidates filtered by topological position: input ports = initial nodes (no incoming sibling edges), output ports = terminal nodes (no outgoing sibling edges)
   - Uses `PropLabel` and existing styling conventions
+
+- [x] **A5 — Port stories** (`src/ui/stories/port.stories.tsx`):
+  - Circle port rendering: single input, single output, mixed I/O, inout, many ports
+  - Rect port rendering: inputs+outputs, many ports on expanded node
+  - Inspector stories: composite with existing ports, composite with add-port candidates
 
 ### Phase B — FIELD layout algorithm
 
@@ -64,7 +69,7 @@ Edges remain node-to-node (no `fromPort`/`toPort` wiring yet).
   - Add `"FIELD"` to `AlgorithmId` union in `src/ui/lib/algorithms/types.ts`
   - Export from `src/ui/lib/algorithms/index.ts`
   - Add to `makeCanvasAlgorithm()` in `canvas.tsx`
-  - Add to algorithm selector dropdown in layout stories
+  - Add to algorithm selector dropdown in layout stories (with full config + topoCharge wiring)
 
 - [x] **B5 — Propagate charge through the layout pipeline**:
   - In `buildLevel()` / `syncLayout()` (canvas.tsx): compute `topoCharge` for the level's edges, attach `charge` to each `ForceNode`
@@ -77,11 +82,17 @@ Edges remain node-to-node (no `fromPort`/`toPort` wiring yet).
   - Pinned nodes are respected
   - Adjust `fieldStrength` default
 
+### Bug fixes discovered during verification
+
+- [x] **Port persistence** (`src/ui/workspace.ts`): `parseNode` was missing `ports` field — ports silently dropped on page refresh, corrupting defn forms into empty param lists
+- [x] **Map pretty-printing** (`src/code/spike-clojure.ts`): multi-entry map literals (e.g. `{:x1 ... :x2 ...}`) now pretty-print one key-value pair per line instead of a single long line
+
 ### New files
 - `src/ui/lib/port-layout.ts` + `src/ui/lib/port-layout_test.ts`
 - `src/ui/components/port-rendering.tsx`
 - `src/ui/lib/topo-charge.ts` + `src/ui/lib/topo-charge_test.ts`
 - `src/ui/lib/algorithms/FIELD.ts`
+- `src/ui/stories/port.stories.tsx`
 
 ### Modified files
 - `src/ui/components/canvas.tsx` — port rendering (A3), charge propagation (B5), algorithm registration (B4)
@@ -89,6 +100,11 @@ Edges remain node-to-node (no `fromPort`/`toPort` wiring yet).
 - `src/ui/lib/force.ts` — `ForceNode.charge` field (B2)
 - `src/ui/lib/algorithms/types.ts` — `AlgorithmId` union (B4)
 - `src/ui/lib/algorithms/index.ts` — export FIELD (B4)
+- `src/ui/stories/index.ts` — export port stories
+- `src/ui/stories/layout.stories.tsx` — FIELD algorithm in configurator
+- `src/ui/workspace.ts` — port persistence fix
+- `src/code/spike-clojure.ts` — map pretty-printing
+- `src/code/spike-clojure_test.ts` — updated map format expectations
 
 ## Open Questions
 
