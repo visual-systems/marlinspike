@@ -101,22 +101,20 @@ not just FIELD.
 
 **Implementation:**
 
-- [ ] **C1 — Extend ForceNode with anchor target** (`src/ui/lib/force.ts`):
+- [x] **C1 — Extend ForceNode with anchor target** (`src/ui/lib/force.ts`):
   - Add optional `anchor?: { x: number; y: number }` field to `ForceNode`
   - Represents the target position (port boundary point) relative to the level origin
   - Existing algorithms ignore it (backward compatible)
 
-- [ ] **C2 — Attach anchors in buildLevel** (`src/ui/components/canvas.tsx`):
-  - When building a child level for an expanded composite, look up the parent's ports
-  - For each port, compute the boundary position via `rectPortPositions` (using the parent's current w/h)
-  - Attach `anchor: { x, y }` to the matching child ForceNode
-  - Anchors are recomputed on each `buildLevel` / size change (they depend on parent dimensions)
+- [x] **C2 — Pin port-nodes at boundary** (`src/ui/components/canvas.tsx`):
+  - `pinPortNodes` hard-places port-nodes at their boundary positions each tick (replaces soft anchor springs)
+  - Uses `rectPortPositions` with the parent's current w/h
+  - Sets `pinned: true` and `anchor` as marker so `boundingBox`/`centerNodes` handle them correctly
 
-- [ ] **C3 — Port anchor spring force** (`src/ui/lib/sdf-force.ts` or new module):
-  - New force: for each node with an `anchor`, apply a spring toward anchor position
-  - Strength ramps: `baseAnchorK * min(1, ticks / anchorRampTicks)`
-  - Config: `anchorK` (spring constant), `anchorRampTicks` (ramp duration)
-  - Applied in `tickSdfLevel` so all SDF-based algorithms (SDF, FIELD) get it for free
+- [x] **C3 — Port anchor spring force** (`src/ui/lib/sdf-force.ts`):
+  - `applyAnchorForces` implemented but superseded by hard-pinning approach
+  - Soft springs caused feedback loop (anchor pull → bbox growth → anchor moves further)
+  - Kept in codebase for potential future use; port-nodes now use pinning instead
 
 - [x] **C4 — Edge bending in canvas renderer**:
   - `edgeBendPoint()` computes quadratic bezier control point when a straight edge passes too close to a non-incident node
