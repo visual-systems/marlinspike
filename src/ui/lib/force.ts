@@ -16,6 +16,8 @@ export interface ForceNode {
   h: number;
   /** Topological charge in [-1, +1] for directional field layout. Optional. */
   charge?: number;
+  /** Target position for port-node anchor spring. Optional. */
+  anchor?: { x: number; y: number };
 }
 
 // ---------------------------------------------------------------------------

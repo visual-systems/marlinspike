@@ -4,7 +4,7 @@
 
 import type { LayoutAlgorithm } from "./types.ts";
 import { initPositions, maxVelocity } from "../force.ts";
-import { type SdfPhysicsConfig, tickSdfLevel } from "../sdf-force.ts";
+import { applyAnchorForces, type SdfPhysicsConfig, tickSdfLevel } from "../sdf-force.ts";
 
 // ---------------------------------------------------------------------------
 // SdfConfig
@@ -17,6 +17,10 @@ export interface SdfConfig extends SdfPhysicsConfig {
   settleV: number;
   /** Maximum ticks before force-settling */
   maxTicks: number;
+  /** Spring constant for port anchor forces (0 = disabled) */
+  anchorK: number;
+  /** Ticks over which anchor force ramps from 0 to anchorK */
+  anchorRampTicks: number;
 }
 
 export const DEFAULT_SDF_CONFIG: SdfConfig = {
@@ -44,6 +48,9 @@ export const DEFAULT_SDF_CONFIG: SdfConfig = {
   spread: 130,
   settleV: 0.3,
   maxTicks: 800,
+  // Port anchors
+  anchorK: 0.03,
+  anchorRampTicks: 80,
 };
 
 // ---------------------------------------------------------------------------
@@ -59,7 +66,8 @@ export function createSDF(config: SdfConfig): LayoutAlgorithm {
       return initPositions(ids, config.spread, defaults, leafW, leafH);
     },
     tick(nodes, edges, ticks) {
-      const next = tickSdfLevel(nodes, edges, config);
+      const afterSdf = tickSdfLevel(nodes, edges, config);
+      const next = applyAnchorForces(afterSdf, ticks, config.anchorK, config.anchorRampTicks);
       const mv = maxVelocity(next);
       return {
         nodes: next,

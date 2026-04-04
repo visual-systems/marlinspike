@@ -484,3 +484,30 @@ export function tickSdfLevel(
   result.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
   return result;
 }
+
+// ---------------------------------------------------------------------------
+// Port anchor spring — pulls port-nodes toward their boundary positions
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply a spring force pulling each node that has an `anchor` toward it.
+ * Strength ramps linearly from 0 to `anchorK` over `rampTicks` ticks so that
+ * topology forces dominate early and anchors refine positions later.
+ *
+ * Mutates vx/vy in place and returns the same array.
+ */
+export function applyAnchorForces(
+  nodes: ForceNode[],
+  ticks: number,
+  anchorK: number,
+  rampTicks: number,
+): ForceNode[] {
+  if (anchorK === 0) return nodes;
+  const strength = anchorK * Math.min(1, ticks / Math.max(rampTicks, 1));
+  return nodes.map((n) => {
+    if (n.pinned || !n.anchor) return n;
+    const dx = n.anchor.x - n.x;
+    const dy = n.anchor.y - n.y;
+    return { ...n, vx: n.vx + dx * strength, vy: n.vy + dy * strength };
+  });
+}

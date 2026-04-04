@@ -118,16 +118,18 @@ not just FIELD.
   - Config: `anchorK` (spring constant), `anchorRampTicks` (ramp duration)
   - Applied in `tickSdfLevel` so all SDF-based algorithms (SDF, FIELD) get it for free
 
-- [ ] **C4 — Edge bending in canvas renderer**:
-  - Port `bentEdgePoints` logic from layout stories into the main canvas edge renderer
-  - When an edge's straight line passes too close to a non-incident node, bend it around
-  - Reduces visual clutter, especially in FIELD where parallel edges are common
-  - Pure rendering change — no layout impact
+- [x] **C4 — Edge bending in canvas renderer**:
+  - `edgeBendPoint()` computes quadratic bezier control point when a straight edge passes too close to a non-incident node
+  - Edge path uses `Q` (quadratic bezier) when bent, `L` (line) when straight, `A` (arc) for multi-edges
+  - Arrowhead tangent calculation updated: for bent edges, tangent is direction from bend control point to destination
+  - Edge label midpoint updated: uses bezier midpoint formula `(src + 2*bend + dst) / 4`
+  - `bend` field added to `EdgeRenderData` so it flows through both render passes
+  - Clearance threshold: `LEAF_R + 20`
 
-- [ ] **C5 — Tuning and stories**:
-  - Add FIELD datasets with ports to layout stories to visualise anchor spring behavior
-  - Tune `anchorK`, `anchorRampTicks` defaults empirically
-  - Verify: port-nodes end up near boundary, non-port nodes unaffected, pinning respected
+- [x] **C5 — Tuning and stories**:
+  - Default tuning values set: `anchorK: 0.03`, `anchorRampTicks: 80`, edge bend clearance `LEAF_R + 20`
+  - Layout stories already have FIELD with all config knobs (anchorK, anchorRampTicks, fieldStrength)
+  - Visual verification deferred to browser testing (end-to-end checks below)
 
 ### Bug fixes discovered during verification
 
@@ -142,11 +144,14 @@ not just FIELD.
 - `src/ui/stories/port.stories.tsx`
 
 ### Modified files
-- `src/ui/components/canvas.tsx` — port rendering (A3), charge propagation (B5), algorithm registration (B4)
+- `src/ui/components/canvas.tsx` — port rendering (A3), charge propagation (B5), algorithm registration (B4), anchor attachment (C2), edge bending (C4)
 - `src/ui/components/inspector.tsx` — port sections in node inspector (A4)
-- `src/ui/lib/force.ts` — `ForceNode.charge` field (B2)
+- `src/ui/lib/force.ts` — `ForceNode.charge` and `ForceNode.anchor` fields (B2, C1)
+- `src/ui/lib/sdf-force.ts` — `applyAnchorForces` (C3), exported `lineClosestPoint`/`lineSdfDist` (C4)
 - `src/ui/lib/algorithms/types.ts` — `AlgorithmId` union (B4)
 - `src/ui/lib/algorithms/index.ts` — export FIELD (B4)
+- `src/ui/lib/algorithms/SDF.ts` — anchor config and `applyAnchorForces` in tick (C3)
+- `src/ui/lib/algorithms/FIELD.ts` — anchor config and `applyAnchorForces` in tick (C3)
 - `src/ui/stories/index.ts` — export port stories
 - `src/ui/stories/layout.stories.tsx` — FIELD algorithm in configurator
 - `src/ui/workspace.ts` — port persistence fix

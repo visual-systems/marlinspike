@@ -72,6 +72,8 @@ interface SdfAlgConfig {
   circleThreshold: number;
   spread: number;
   settleV: number;
+  anchorK: number;
+  anchorRampTicks: number;
   /** Show component bounding circles as a debug overlay */
   showComponents: boolean;
   /** Draw each node's SDF shape as a translucent overlay */
@@ -97,6 +99,8 @@ interface FieldAlgConfig {
   settleV: number;
   fieldStrength: number;
   fieldDirection: [number, number];
+  anchorK: number;
+  anchorRampTicks: number;
   showComponents: boolean;
   showSdfs: boolean;
 }
@@ -139,6 +143,8 @@ const DEFAULT_SDF_STORY: SdfAlgConfig = {
   circleThreshold: DEFAULT_SDF_CONFIG.circleThreshold,
   spread: DEFAULT_SDF_CONFIG.spread,
   settleV: DEFAULT_SDF_CONFIG.settleV,
+  anchorK: DEFAULT_SDF_CONFIG.anchorK,
+  anchorRampTicks: DEFAULT_SDF_CONFIG.anchorRampTicks,
   showComponents: false,
   showSdfs: false,
 };
@@ -162,6 +168,8 @@ const DEFAULT_FIELD_STORY: FieldAlgConfig = {
   settleV: DEFAULT_FIELD_CONFIG.settleV,
   fieldStrength: DEFAULT_FIELD_CONFIG.fieldStrength,
   fieldDirection: DEFAULT_FIELD_CONFIG.fieldDirection,
+  anchorK: DEFAULT_FIELD_CONFIG.anchorK,
+  anchorRampTicks: DEFAULT_FIELD_CONFIG.anchorRampTicks,
   showComponents: false,
   showSdfs: false,
 };

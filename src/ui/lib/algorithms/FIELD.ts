@@ -11,7 +11,7 @@
 
 import type { LayoutAlgorithm } from "./types.ts";
 import { initPositions, maxVelocity } from "../force.ts";
-import { type SdfPhysicsConfig, tickSdfLevel } from "../sdf-force.ts";
+import { applyAnchorForces, type SdfPhysicsConfig, tickSdfLevel } from "../sdf-force.ts";
 
 // ---------------------------------------------------------------------------
 // FieldConfig
@@ -28,6 +28,10 @@ export interface FieldConfig extends SdfPhysicsConfig {
   fieldStrength: number;
   /** Field direction vector [dx, dy] (unit vector). Default: [1, 0] = rightward. */
   fieldDirection: [number, number];
+  /** Spring constant for port anchor forces (0 = disabled) */
+  anchorK: number;
+  /** Ticks over which anchor force ramps from 0 to anchorK */
+  anchorRampTicks: number;
 }
 
 export const DEFAULT_FIELD_CONFIG: FieldConfig = {
@@ -51,6 +55,9 @@ export const DEFAULT_FIELD_CONFIG: FieldConfig = {
   // Field
   fieldStrength: 3,
   fieldDirection: [1, 0],
+  // Port anchors
+  anchorK: 0.03,
+  anchorRampTicks: 80,
 };
 
 // ---------------------------------------------------------------------------
@@ -72,7 +79,7 @@ export function createFIELD(config: FieldConfig): LayoutAlgorithm {
       // Apply directional field force based on charge
       const [fx, fy] = config.fieldDirection;
       const strength = config.fieldStrength;
-      const result = afterSdf.map((n) => {
+      const afterField = afterSdf.map((n) => {
         if (n.pinned || n.charge === undefined) return n;
         return {
           ...n,
@@ -80,6 +87,9 @@ export function createFIELD(config: FieldConfig): LayoutAlgorithm {
           vy: n.vy + fy * strength * n.charge,
         };
       });
+
+      // Apply port anchor springs (ramps up over time)
+      const result = applyAnchorForces(afterField, ticks, config.anchorK, config.anchorRampTicks);
 
       const mv = maxVelocity(result);
       return {
