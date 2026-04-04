@@ -9,6 +9,8 @@ import {
   getAppliedEntityIds,
   getConstraintsForEntity,
   type Panel,
+  PANEL_DEFAULT_WIDTH,
+  PANEL_MIN_WIDTH,
   type Tab,
   type Updater,
   withApplicationMutation,
@@ -152,7 +154,13 @@ export function ConstraintsPanel(
   const listFlex = hasInspector ? 1 - localSplit : 1;
 
   return (
-    <div style="display:flex; flex-direction:column; width:300px; min-width:200px; flex-shrink:0; border-right:1px solid #2a2a4a; background:#14142a; overflow:hidden; height:100%;">
+    <div
+      style={`display:flex; flex-direction:column; width:${
+        panel.width ?? PANEL_DEFAULT_WIDTH[panel.type]
+      }px; min-width:${
+        PANEL_MIN_WIDTH[panel.type]
+      }px; flex-shrink:0; background:#14142a; overflow:hidden; height:100%;`}
+    >
       {/* Header */}
       <div style="display:flex; align-items:center; justify-content:space-between; padding:4px 8px; font-size:11px; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; color:#666; border-bottom:1px solid #2a2a4a; flex-shrink:0;">
         <span>Constraints</span>

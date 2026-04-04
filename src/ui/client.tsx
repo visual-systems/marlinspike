@@ -16,9 +16,12 @@ import {
   getActiveTab,
   type ListEditorConfig,
   loadState,
+  PANEL_DEFAULT_WIDTH,
+  PANEL_MIN_WIDTH,
   STATE_KEY,
   type Tab,
   type Updater,
+  withPanel,
   type WorkspaceState,
 } from "./workspace.ts";
 
@@ -551,6 +554,36 @@ function WorkspaceArea({ ws, update }: { ws: WorkspaceState; update: Updater }) 
                     update={update}
                   />
                 )}
+              {/* Horizontal resize handle */}
+              <div
+                style="width:5px; cursor:col-resize; background:transparent; flex-shrink:0; height:100%; position:relative; z-index:2;"
+                onMouseDown={(e: MouseEvent) => {
+                  e.preventDefault();
+                  const startX = e.clientX;
+                  const startW = panel.width ?? PANEL_DEFAULT_WIDTH[panel.type];
+                  const minW = PANEL_MIN_WIDTH[panel.type];
+                  const prevCursor = document.body.style.cursor;
+                  document.body.style.cursor = "col-resize";
+                  const wrapper = (e.currentTarget as HTMLElement).parentElement!;
+                  const panelEl = wrapper.firstElementChild as HTMLElement;
+                  function onMove(ev: MouseEvent) {
+                    panelEl.style.width = Math.max(minW, startW + ev.clientX - startX) + "px";
+                  }
+                  function onUp(ev: MouseEvent) {
+                    document.removeEventListener("mousemove", onMove);
+                    document.removeEventListener("mouseup", onUp);
+                    document.body.style.cursor = prevCursor;
+                    const w = Math.max(minW, startW + ev.clientX - startX);
+                    update((s) =>
+                      withPanel(s, tab.id, panel.id, (p) => ({ ...p, width: w }))
+                    );
+                  }
+                  document.addEventListener("mousemove", onMove);
+                  document.addEventListener("mouseup", onUp);
+                }}
+              >
+                <div style="position:absolute; top:0; bottom:0; left:2px; width:1px; background:#2a2a4a;" />
+              </div>
             </div>
           ))}
         </div>
