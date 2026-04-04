@@ -8,6 +8,18 @@ import type { AlgorithmId } from "./lib/algorithms/index.ts";
 export const PANEL_TYPES = ["tree", "constraints", "code"] as const;
 export type PanelType = (typeof PANEL_TYPES)[number];
 
+export const PANEL_DEFAULT_WIDTH: Record<PanelType, number> = {
+  tree: 300,
+  constraints: 300,
+  code: 600,
+};
+
+export const PANEL_MIN_WIDTH: Record<PanelType, number> = {
+  tree: 200,
+  constraints: 200,
+  code: 300,
+};
+
 /** Unified selection — a panel or the canvas can select exactly one entity at a time. */
 export type Selection =
   | { type: "node"; id: string }
@@ -26,6 +38,8 @@ export interface Panel {
   /** Entity whose data this panel is viewing/editing as JSON. */
   codeEntityId?: string;
   codeEntityKind?: "node" | "edge";
+  /** Persisted panel width in pixels. Falls back to PANEL_DEFAULT_WIDTH if omitted. */
+  width?: number;
 }
 
 export interface Tab {
