@@ -62,13 +62,16 @@ export async function initSurreal(): Promise<Surreal> {
   const { surreal, wasm } = await loadModules();
 
   db = new surreal.Surreal({
-    engines: {
-      ...surreal.createRemoteEngines(),
-      ...wasm.createWasmEngines(),
-    },
+    engines: wasm.createWasmEngines(),
   });
 
   await db.connect("indxdb://marlinspike");
+
+  // Embedded mode requires root authentication and namespace/database selection
+  // before any operations can be performed.
+  await db.signin({ username: "root", password: "root" });
+  await db.use({ namespace: NS, database: DEFAULT_DB });
+
   return db;
 }
 
