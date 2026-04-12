@@ -18,8 +18,8 @@ DEFINE FIELD IF NOT EXISTS uri      ON tree_node TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS kind     ON tree_node TYPE string
   ASSERT $value IN ["leaf", "composite"];
 DEFINE FIELD IF NOT EXISTS parent   ON tree_node TYPE option<record<tree_node>>;
-DEFINE FIELD IF NOT EXISTS ports    ON tree_node FLEXIBLE TYPE option<array>;
-DEFINE FIELD IF NOT EXISTS data     ON tree_node FLEXIBLE TYPE object DEFAULT {};
+DEFINE FIELD IF NOT EXISTS ports    ON tree_node TYPE option<array> FLEXIBLE;
+DEFINE FIELD IF NOT EXISTS data     ON tree_node TYPE object FLEXIBLE DEFAULT {};
 DEFINE FIELD IF NOT EXISTS version  ON tree_node TYPE int DEFAULT 1;
 DEFINE INDEX IF NOT EXISTS idx_parent ON tree_node FIELDS parent;
 
@@ -28,7 +28,7 @@ DEFINE TABLE IF NOT EXISTS edge SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS fromId   ON edge TYPE record<tree_node>;
 DEFINE FIELD IF NOT EXISTS toId     ON edge TYPE record<tree_node>;
 DEFINE FIELD IF NOT EXISTS label    ON edge TYPE string;
-DEFINE FIELD IF NOT EXISTS data     ON edge FLEXIBLE TYPE object DEFAULT {};
+DEFINE FIELD IF NOT EXISTS data     ON edge TYPE object FLEXIBLE DEFAULT {};
 DEFINE FIELD IF NOT EXISTS version  ON edge TYPE int DEFAULT 1;
 DEFINE INDEX IF NOT EXISTS idx_from ON edge FIELDS fromId;
 DEFINE INDEX IF NOT EXISTS idx_to   ON edge FIELDS toId;
@@ -38,8 +38,8 @@ DEFINE TABLE IF NOT EXISTS constraint SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS label    ON constraint TYPE string;
 DEFINE FIELD IF NOT EXISTS uri      ON constraint TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS type     ON constraint TYPE string;
-DEFINE FIELD IF NOT EXISTS targets  ON constraint FLEXIBLE TYPE array DEFAULT [];
-DEFINE FIELD IF NOT EXISTS data     ON constraint FLEXIBLE TYPE object DEFAULT {};
+DEFINE FIELD IF NOT EXISTS targets  ON constraint TYPE array FLEXIBLE DEFAULT [];
+DEFINE FIELD IF NOT EXISTS data     ON constraint TYPE object FLEXIBLE DEFAULT {};
 DEFINE FIELD IF NOT EXISTS version  ON constraint TYPE int DEFAULT 1;
 
 -- Constraint applications (junction: constraint ↔ entity)
