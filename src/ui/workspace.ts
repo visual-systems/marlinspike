@@ -44,7 +44,8 @@ export interface Panel {
 
 export interface Tab {
   id: string;
-  name: string;
+  /** Display name. Null means unnamed — UI shows "Untitled" as placeholder. */
+  name: string | null;
   /** SurrealDB database identifier (UUID or "default" for the initial database). */
   databaseId: string;
   panels: Panel[];

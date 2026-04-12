@@ -191,8 +191,7 @@ function WorkspaceBar(
       const currentWs = wsRef.current;
       if (currentWs) await flushSync(currentWs);
 
-      const name = "Untitled";
-      const uuid = await createDatabase(name);
+      const uuid = await createDatabase("Untitled");
       const tabId = crypto.randomUUID();
       // Snapshot current tab's data before switching
       update((s) => {
@@ -213,7 +212,7 @@ function WorkspaceBar(
           ...s,
           tabs: [...s.tabs, {
             id: tabId,
-            name,
+            name: null,
             databaseId: uuid,
             panels: [defaultPanel()],
           }],
@@ -231,7 +230,7 @@ function WorkspaceBar(
           entityDrafts: {},
           connectedGraphs: [{
             id: uuid,
-            label: `localStorage/${name} (${uuid.slice(0, 8)})`,
+            label: `localStorage/Untitled (${uuid.slice(0, 8)})`,
             connected: true,
             required: true,
           }],
@@ -365,7 +364,7 @@ function TabItem(
           ...targetData,
           connectedGraphs: [{
             id: tab.databaseId,
-            label: `localStorage/${tab.name} (${tab.databaseId.slice(0, 8)})`,
+            label: `localStorage/${tab.name || "Untitled"} (${tab.databaseId.slice(0, 8)})`,
             connected: true,
             required: true,
           }],
@@ -398,7 +397,7 @@ function TabItem(
     const val = inputRef.current?.value.trim() ?? "";
     update((s) => ({
       ...s,
-      tabs: s.tabs.map((t) => t.id === tab.id ? { ...t, name: val || "Untitled" } : t),
+      tabs: s.tabs.map((t) => t.id === tab.id ? { ...t, name: val || null } : t),
     }));
     setRenaming(false);
   }
@@ -424,6 +423,8 @@ function TabItem(
         ? (
           <input
             ref={inputRef}
+            value={tab.name ?? ""}
+            placeholder="Untitled"
             style="background:#0f0f22; border:1px solid #4a4a7a; color:#e0e0e0; font-size:13px; padding:0 4px; width:100px; border-radius:2px;"
             onBlur={finishRename}
             onKeyDown={(e: KeyboardEvent) => {
@@ -434,10 +435,10 @@ function TabItem(
         )
         : (
           <span
-            style={isActive ? "cursor:text;" : ""}
+            style={isActive ? "cursor:text;" : (tab.name ? "" : "color:#555;")}
             onClick={handleLabelClick}
           >
-            {tab.name}
+            {tab.name || "Untitled"}
           </span>
         )}
       {canClose && (
