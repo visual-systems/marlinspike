@@ -62,43 +62,32 @@ export async function initSurreal(): Promise<Surreal> {
   const { surreal, wasm } = await loadModules();
   console.log("[surreal] modules loaded");
 
-  // Clear any corrupted IndexedDB state from earlier failed attempts.
-  await clearStaleIndexedDb();
-
   db = new surreal.Surreal({
     engines: wasm.createWasmEngines(),
   });
   console.log("[surreal] instance created");
 
+  // Try indxdb:// (persistent) first, fall back to mem:// (ephemeral).
+  // The use() call triggers the first real IndexedDB write, so it must
+  // be inside the try block too.
   try {
     await db.connect("indxdb://marlinspike");
     console.log("[surreal] connected to indxdb://marlinspike");
+    await db.use({ namespace: NS, database: DEFAULT_DB });
+    console.log("[surreal] using", NS, DEFAULT_DB);
   } catch (indxErr) {
-    console.warn("[surreal] indxdb:// failed, falling back to mem://", indxErr);
+    console.warn("[surreal] indxdb:// failed, trying mem://", indxErr);
+    await db.close();
+    db = new surreal.Surreal({
+      engines: wasm.createWasmEngines(),
+    });
     await db.connect("mem://");
     console.log("[surreal] connected to mem:// (in-memory, no persistence)");
+    await db.use({ namespace: NS, database: DEFAULT_DB });
+    console.log("[surreal] using", NS, DEFAULT_DB, "(mem)");
   }
-
-  await db.use({ namespace: NS, database: DEFAULT_DB });
-  console.log("[surreal] using", NS, DEFAULT_DB);
 
   return db;
-}
-
-/** Delete stale IndexedDB databases left by earlier failed SurrealDB init attempts. */
-async function clearStaleIndexedDb(): Promise<void> {
-  if (typeof indexedDB === "undefined") return;
-  try {
-    const dbs = await indexedDB.databases();
-    for (const dbInfo of dbs) {
-      if (dbInfo.name?.startsWith("marlinspike")) {
-        console.log("[surreal] clearing stale IndexedDB:", dbInfo.name);
-        indexedDB.deleteDatabase(dbInfo.name);
-      }
-    }
-  } catch {
-    // indexedDB.databases() not supported in all browsers — ignore
-  }
 }
 
 /** Returns the initialised Surreal instance. Throws if not yet initialised. */
