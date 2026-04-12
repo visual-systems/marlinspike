@@ -443,7 +443,7 @@ export function loadState(): WorkspaceState {
 // Async load (SurrealDB with localStorage migration)
 // ---------------------------------------------------------------------------
 
-import { initSurreal, useDatabase, useUiDb } from "./db/surreal.ts";
+import { getDb, initSurreal, useDatabase, useUiDb } from "./db/surreal.ts";
 import {
   buildTree,
   flattenTree,
@@ -485,7 +485,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     await initGraphSchema(DEFAULT_DB);
     // Register it
     await useUiDb();
-    const db = (await import("./db/surreal.ts")).getDb();
+    const db = getDb();
     await db.query("CREATE db_registry SET name = 'Default'");
 
     // Check for existing localStorage data to migrate
