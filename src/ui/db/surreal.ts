@@ -105,5 +105,32 @@ export async function useDefaultDb(): Promise<void> {
   await useDatabase(DEFAULT_DB);
 }
 
+// ---------------------------------------------------------------------------
+// Export / Import — used by the persistence bridge
+// ---------------------------------------------------------------------------
+
+/**
+ * Export the current database as a SurrealQL string.
+ * Caller must call useDatabase() first to select the target.
+ */
+export async function exportDb(): Promise<string> {
+  const conn = getDb();
+  const dump = await conn.export({});
+  return typeof dump === "string" ? dump : new TextDecoder().decode(dump as ArrayBuffer);
+}
+
+/**
+ * Import a SurrealQL dump into the current database.
+ * Caller must call useDatabase() first to select the target.
+ */
+export async function importDb(dump: string): Promise<void> {
+  const conn = getDb();
+  // Cast to accept the options parameter — the SDK types only declare 1 arg
+  // but the runtime API accepts { ml: false } to skip ML model import.
+  await (conn.import as (data: string, opts?: Record<string, unknown>) => Promise<void>)(dump, {
+    ml: false,
+  });
+}
+
 export { DEFAULT_DB, NS, UI_DB };
 export type { Surreal, SurrealSession };

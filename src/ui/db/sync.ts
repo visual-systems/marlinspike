@@ -5,7 +5,7 @@
  */
 
 import { getActiveTab, type WorkspaceState } from "../workspace.ts";
-import { useDatabase } from "./surreal.ts";
+import { exportDb, useDatabase, useUiDb } from "./surreal.ts";
 import {
   type CanvasState,
   deleteApplication,
@@ -21,6 +21,7 @@ import {
   saveWorkspaceUi,
   type UiState,
 } from "./operations.ts";
+import { saveDump } from "./bridge.ts";
 
 // ---------------------------------------------------------------------------
 // Debounced sync entry point
@@ -83,48 +84,58 @@ async function syncToDb(
   prev: WorkspaceState | null,
   next: WorkspaceState,
 ): Promise<void> {
+  let graphChanged = false;
+  let uiChanged = false;
+
   // If no previous state, this is a full write (shouldn't normally happen after init)
   if (!prev) {
     await syncGraphData(null, next);
     await syncCanvasState(null, next);
     await syncUiState(next);
-    return;
+    graphChanged = true;
+    uiChanged = true;
+  } else {
+    // Sync graph data if any graph-related fields changed
+    if (
+      prev.treeNodes !== next.treeNodes ||
+      prev.edges !== next.edges ||
+      prev.constraints !== next.constraints ||
+      prev.constraintApplications !== next.constraintApplications
+    ) {
+      await syncGraphData(prev, next);
+      graphChanged = true;
+    }
+
+    // Sync canvas state if any per-database canvas fields changed
+    if (
+      prev.focusId !== next.focusId ||
+      prev.canvasExpandedNodes !== next.canvasExpandedNodes ||
+      prev.canvasNodePositions !== next.canvasNodePositions ||
+      prev.canvasSelected !== next.canvasSelected ||
+      prev.canvasAlgorithm !== next.canvasAlgorithm ||
+      prev.entityDrafts !== next.entityDrafts
+    ) {
+      await syncCanvasState(prev, next);
+      graphChanged = true;
+    }
+
+    // Sync global UI state if any UI-related fields changed
+    if (
+      prev.tabs !== next.tabs ||
+      prev.activeTabId !== next.activeTabId ||
+      prev.personas !== next.personas ||
+      prev.activePersona !== next.activePersona ||
+      prev.workflows !== next.workflows ||
+      prev.activeWorkflow !== next.activeWorkflow ||
+      prev.connectedGraphs !== next.connectedGraphs
+    ) {
+      await syncUiState(next);
+      uiChanged = true;
+    }
   }
 
-  // Sync graph data if any graph-related fields changed
-  if (
-    prev.treeNodes !== next.treeNodes ||
-    prev.edges !== next.edges ||
-    prev.constraints !== next.constraints ||
-    prev.constraintApplications !== next.constraintApplications
-  ) {
-    await syncGraphData(prev, next);
-  }
-
-  // Sync canvas state if any per-database canvas fields changed
-  if (
-    prev.focusId !== next.focusId ||
-    prev.canvasExpandedNodes !== next.canvasExpandedNodes ||
-    prev.canvasNodePositions !== next.canvasNodePositions ||
-    prev.canvasSelected !== next.canvasSelected ||
-    prev.canvasAlgorithm !== next.canvasAlgorithm ||
-    prev.entityDrafts !== next.entityDrafts
-  ) {
-    await syncCanvasState(prev, next);
-  }
-
-  // Sync global UI state if any UI-related fields changed
-  if (
-    prev.tabs !== next.tabs ||
-    prev.activeTabId !== next.activeTabId ||
-    prev.personas !== next.personas ||
-    prev.activePersona !== next.activePersona ||
-    prev.workflows !== next.workflows ||
-    prev.activeWorkflow !== next.activeWorkflow ||
-    prev.connectedGraphs !== next.connectedGraphs
-  ) {
-    await syncUiState(next);
-  }
+  // Persist changed databases to IndexedDB via export/import bridge
+  await persistDumps(next, graphChanged, uiChanged);
 }
 
 // ---------------------------------------------------------------------------
@@ -209,6 +220,34 @@ async function syncUiState(state: WorkspaceState): Promise<void> {
     connectedGraphs: state.connectedGraphs,
   };
   await saveWorkspaceUi(uiState);
+}
+
+// ---------------------------------------------------------------------------
+// IndexedDB persistence bridge
+// ---------------------------------------------------------------------------
+
+async function persistDumps(
+  state: WorkspaceState,
+  graphChanged: boolean,
+  uiChanged: boolean,
+): Promise<void> {
+  try {
+    const databaseId = getActiveDatabaseId(state);
+
+    if (graphChanged) {
+      await useDatabase(databaseId);
+      const graphDump = await exportDb();
+      await saveDump(`db:${databaseId}`, graphDump);
+    }
+
+    if (uiChanged) {
+      await useUiDb();
+      const uiDump = await exportDb();
+      await saveDump("ui", uiDump);
+    }
+  } catch (err) {
+    console.error("[sync] Failed to persist dumps to IndexedDB:", err);
+  }
 }
 
 // ---------------------------------------------------------------------------

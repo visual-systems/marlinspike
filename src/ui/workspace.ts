@@ -45,7 +45,7 @@ export interface Panel {
 export interface Tab {
   id: string;
   name: string;
-  /** SurrealDB database slug this tab is bound to (e.g. "default", "my_project"). */
+  /** SurrealDB database identifier (UUID or "default" for the initial database). */
   databaseId: string;
   panels: Panel[];
 }
@@ -327,8 +327,8 @@ export function defaultState(): WorkspaceState {
     workflows: ["Explore", "Design", "Build"],
     activeWorkflow: "Explore",
     connectedGraphs: [{
-      id: "localStorage",
-      label: "localStorage",
+      id: DEFAULT_DB,
+      label: `localStorage/Default (${DEFAULT_DB.slice(0, 8)})`,
       connected: true,
       required: true,
     }],
@@ -468,7 +468,7 @@ export function loadState(): WorkspaceState {
 // Async load (SurrealDB with localStorage migration)
 // ---------------------------------------------------------------------------
 
-import { getDb, initSurreal, useDatabase, useUiDb } from "./db/surreal.ts";
+import { exportDb, getDb, importDb, initSurreal, useDatabase, useUiDb } from "./db/surreal.ts";
 import {
   buildTree,
   flattenTree,
@@ -490,30 +490,50 @@ import {
   type UiState,
 } from "./db/operations.ts";
 import { DEFAULT_DB } from "./db/surreal.ts";
+import { loadDump, saveDump } from "./db/bridge.ts";
 
 /**
  * Initialise SurrealDB and load workspace state.
  *
- * On first run: migrates existing localStorage data into SurrealDB.
- * On subsequent runs: loads directly from SurrealDB.
- * Falls back to defaultState() if both sources are empty.
+ * Startup sequence:
+ *   1. Connect to mem://
+ *   2. Restore _ui database from IndexedDB dump (if any)
+ *   3. Read registry to find the active database
+ *   4. Restore that database from its IndexedDB dump
+ *   5. Load state from SurrealDB's in-memory tables
+ *
+ * On first run: migrates existing localStorage data, creates default DB.
+ * Falls back to defaultState() if all sources are empty.
  */
 export async function loadStateAsync(): Promise<WorkspaceState> {
-  // 1. Initialise SurrealDB connection + schemas
+  // 1. Initialise SurrealDB connection (mem://)
   await initSurreal();
-  await initUiSchema();
 
-  // 2. Check if we have databases registered yet
+  // 2. Restore _ui database from IndexedDB dump
+  const uiDump = await loadDump("ui");
+  if (uiDump) {
+    await useUiDb();
+    await importDb(uiDump);
+    console.log("[init] Restored _ui database from IndexedDB");
+  } else {
+    await initUiSchema();
+  }
+
+  // 3. Check if we have databases registered
   const dbs = await listDatabases();
   const hasDefault = dbs.some((d) => d.name === "Default");
 
   if (!hasDefault) {
     // First launch — create default DB and attempt localStorage migration
-    await initGraphSchema(DEFAULT_DB);
+    const defaultUuid = DEFAULT_DB;
+    await initGraphSchema(defaultUuid);
+
     // Register it
     await useUiDb();
     const db = getDb();
-    await db.query("CREATE db_registry SET name = 'Default', slug = $slug", { slug: DEFAULT_DB });
+    await db.query("CREATE db_registry SET name = 'Default', uuid = $uuid", {
+      uuid: defaultUuid,
+    });
 
     // Check for existing localStorage data to migrate
     const existingState = loadState();
@@ -521,12 +541,11 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       !(existingState.treeNodes.length === 1 &&
         existingState.treeNodes[0].id === "spike://acme/backend");
 
-    if (hasExistingData) {
-      await migrateToSurreal(existingState);
-    } else {
-      // Write the default state into SurrealDB
-      await migrateToSurreal(defaultState());
-    }
+    const stateToMigrate = hasExistingData ? existingState : defaultState();
+    await migrateToSurreal(stateToMigrate);
+
+    // Persist initial dumps to IndexedDB
+    await persistInitialDumps(defaultUuid);
 
     // Clear localStorage after successful migration
     try {
@@ -535,17 +554,45 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       // Ignore — may not have access to localStorage
     }
 
-    const result = hasExistingData ? existingState : defaultState();
-    // Ensure migrated state has new fields
     return {
-      ...result,
-      tabs: result.tabs.map((t) => ({ ...t, databaseId: t.databaseId ?? DEFAULT_DB })),
-      _snapshotCache: result._snapshotCache ?? {},
+      ...stateToMigrate,
+      tabs: stateToMigrate.tabs.map((t) => ({
+        ...t,
+        databaseId: t.databaseId ?? defaultUuid,
+      })),
+      connectedGraphs: [{
+        id: defaultUuid,
+        label: `localStorage/Default (${defaultUuid.slice(0, 8)})`,
+        connected: true,
+        required: true,
+      }],
+      _snapshotCache: stateToMigrate._snapshotCache ?? {},
     };
   }
 
-  // 3. Load from SurrealDB
-  await useDatabase(DEFAULT_DB);
+  // 4. Load UI state to find active tab / database
+  const uiState = await loadWorkspaceUi();
+  let activeDatabaseId = DEFAULT_DB;
+  if (uiState) {
+    const activeTab = uiState.tabs.find((t: Tab) => t.id === uiState.activeTabId) ??
+      uiState.tabs[0];
+    if (activeTab?.databaseId) {
+      activeDatabaseId = activeTab.databaseId;
+    }
+  }
+
+  // 5. Restore active graph database from IndexedDB dump
+  const graphDump = await loadDump(`db:${activeDatabaseId}`);
+  if (graphDump) {
+    await useDatabase(activeDatabaseId);
+    await importDb(graphDump);
+    console.log(`[init] Restored database ${activeDatabaseId} from IndexedDB`);
+  } else {
+    await initGraphSchema(activeDatabaseId);
+  }
+
+  // 6. Load graph data from SurrealDB
+  await useDatabase(activeDatabaseId);
   const [flatNodes, edges, constraints, applications] = await Promise.all([
     loadAllNodes(),
     loadAllEdges(),
@@ -554,10 +601,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
   ]);
 
   const treeNodes = buildTree(flatNodes);
-  const [uiState, canvasState] = await Promise.all([
-    loadWorkspaceUi(),
-    loadCanvasState(),
-  ]);
+  const canvasState = await loadCanvasState();
 
   if (uiState) {
     // Backfill databaseId on tabs that predate this field
@@ -565,6 +609,18 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       ...t,
       databaseId: t.databaseId ?? DEFAULT_DB,
     }));
+    // Update connectedGraphs to show current database
+    const activeTab = tabs.find((t: Tab) => t.id === uiState.activeTabId) ?? tabs[0];
+    const dbEntry = dbs.find((d) => d.uuid === activeTab?.databaseId);
+    const connectedGraphs = [{
+      id: activeTab?.databaseId ?? DEFAULT_DB,
+      label: `localStorage/${dbEntry?.name ?? "Default"} (${
+        (activeTab?.databaseId ?? DEFAULT_DB).slice(0, 8)
+      })`,
+      connected: true,
+      required: true,
+    }];
+
     const ds = defaultState();
     return {
       treeNodes,
@@ -573,6 +629,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       constraintApplications: applications,
       ...uiState,
       tabs,
+      connectedGraphs,
       focusId: canvasState?.focusId ?? null,
       canvasExpandedNodes: canvasState?.canvasExpandedNodes ?? ds.canvasExpandedNodes,
       canvasNodePositions: canvasState?.canvasNodePositions ?? {},
@@ -594,10 +651,37 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
   };
 }
 
-/** Load graph + canvas data for a specific database. */
+/** Persist the initial SurrealDB state to IndexedDB after migration. */
+async function persistInitialDumps(graphDatabaseId: string): Promise<void> {
+  try {
+    await useDatabase(graphDatabaseId);
+    const graphDump = await exportDb();
+    await saveDump(`db:${graphDatabaseId}`, graphDump);
+
+    await useUiDb();
+    const uiDumpStr = await exportDb();
+    await saveDump("ui", uiDumpStr);
+
+    console.log("[init] Persisted initial dumps to IndexedDB");
+  } catch (err) {
+    console.error("[init] Failed to persist initial dumps:", err);
+  }
+}
+
+/** Load graph + canvas data for a specific database. Restores from IndexedDB dump if needed. */
 export async function loadDatabaseSnapshot(
   databaseId: string,
 ): Promise<DatabaseSnapshot> {
+  // Restore from IndexedDB dump if this database hasn't been loaded yet
+  const dump = await loadDump(`db:${databaseId}`);
+  if (dump) {
+    await useDatabase(databaseId);
+    await importDb(dump);
+    console.log(`[snapshot] Restored database ${databaseId} from IndexedDB`);
+  } else {
+    await initGraphSchema(databaseId);
+  }
+
   await useDatabase(databaseId);
   const [flatNodes, edges, constraints, applications] = await Promise.all([
     loadAllNodes(),

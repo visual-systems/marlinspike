@@ -21,7 +21,6 @@ import {
   loadStateAsync,
   PANEL_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
-  STATE_KEY,
   type Tab,
   type Updater,
   withPanel,
@@ -55,7 +54,7 @@ function App() {
       });
   }, []);
 
-  // Persist to SurrealDB on every state change (debounced)
+  // Persist to SurrealDB + IndexedDB on every state change (debounced)
   useEffect(() => {
     if (!ws) return;
     // Reset sync baseline when active tab changes (new database context)
@@ -63,9 +62,6 @@ function App() {
       setSyncBaseline(ws);
     }
     prevTabIdRef.current = ws.activeTabId;
-    // Also keep localStorage as a fallback write (exclude _snapshotCache)
-    const { _snapshotCache: _, ...persistable } = ws;
-    localStorage.setItem(STATE_KEY, JSON.stringify(persistable));
     if (!dbError) {
       scheduleSyncToDb(ws);
     }
@@ -186,8 +182,8 @@ function WorkspaceBar(
 
   async function addTab() {
     try {
-      const name = "New Tab";
-      const slug = await createDatabase(name);
+      const name = "Untitled";
+      const uuid = await createDatabase(name);
       const tabId = crypto.randomUUID();
       // Snapshot current tab's data before switching
       update((s) => {
@@ -206,7 +202,12 @@ function WorkspaceBar(
         };
         return {
           ...s,
-          tabs: [...s.tabs, { id: tabId, name, databaseId: slug, panels: [defaultPanel()] }],
+          tabs: [...s.tabs, {
+            id: tabId,
+            name,
+            databaseId: uuid,
+            panels: [defaultPanel()],
+          }],
           activeTabId: tabId,
           // New empty database
           treeNodes: [],
@@ -219,6 +220,12 @@ function WorkspaceBar(
           canvasSelected: null,
           canvasAlgorithm: s.canvasAlgorithm,
           entityDrafts: {},
+          connectedGraphs: [{
+            id: uuid,
+            label: `localStorage/${name} (${uuid.slice(0, 8)})`,
+            connected: true,
+            required: true,
+          }],
           _snapshotCache: {
             ...s._snapshotCache,
             [currentTab.databaseId]: snapshot,
@@ -346,6 +353,12 @@ function TabItem(
           ...s,
           activeTabId: tab.id,
           ...targetData,
+          connectedGraphs: [{
+            id: tab.databaseId,
+            label: `localStorage/${tab.name} (${tab.databaseId.slice(0, 8)})`,
+            connected: true,
+            required: true,
+          }],
           _snapshotCache: newCache,
         };
       });

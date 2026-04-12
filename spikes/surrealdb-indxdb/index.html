@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SurrealDB indxdb:// Spike</title>
+  <style>
+    body { font-family: monospace; max-width: 800px; margin: 2rem auto; }
+    #log { white-space: pre-wrap; background: #111; color: #0f0; padding: 1rem; border-radius: 4px; min-height: 300px; }
+    .error { color: #f44; }
+    .success { color: #4f4; }
+    button { margin: 0.5rem 0.25rem; padding: 0.5rem 1rem; cursor: pointer; }
+    .primary { background: #2a6; color: white; font-weight: bold; }
+    hr { margin: 1rem 0; border-color: #333; }
+  </style>
+</head>
+<body>
+  <h1>SurrealDB indxdb:// Spike</h1>
+
+  <div>
+    <button class="primary" onclick="testBridge()">Test mem:// + IndexedDB bridge</button>
+    <button onclick="clearLog()">Clear Log</button>
+  </div>
+  <p>Click the bridge button, then reload the page and click again — data should persist.</p>
+
+  <hr />
+
+  <div>
+    <button onclick="testMemory()">Test mem:// (no persistence)</button>
+    <button onclick="testIndxdb()">Test indxdb:// (broken upstream)</button>
+  </div>
+
+  <div id="log"></div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

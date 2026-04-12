@@ -339,8 +339,10 @@ export async function saveCanvasState(state: CanvasState): Promise<void> {
 
 export interface DbRegistryEntry {
   id: string;
+  /** UUID used as the SurrealDB database name and IndexedDB dump key. */
+  uuid: string;
+  /** Human-readable display name (mutable). */
   name: string;
-  slug: string;
   created: string;
   lastOpened: string;
 }
@@ -355,44 +357,48 @@ export async function listDatabases(): Promise<DbRegistryEntry[]> {
   return extractQueryResult(result);
 }
 
-/** Register a new database entry and initialise its schema. */
+/** Register a new database entry and initialise its schema. Returns the UUID. */
 export async function createDatabase(name: string): Promise<string> {
   const db = getDb();
-
-  // Generate a slug from the name
-  const slug = name.toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_|_$/g, "") ||
-    "project";
+  const uuid = crypto.randomUUID();
 
   // Register in the _ui db
   await useUiDb();
-  const regResult = await db.query<[DbRegistryEntry[]]>(
-    `CREATE db_registry SET name = $name, slug = $slug`,
-    { name, slug },
+  await db.query(
+    `CREATE db_registry SET name = $name, uuid = $uuid`,
+    { name, uuid },
   );
-  extractQueryResult<DbRegistryEntry>(regResult);
 
   // Initialise graph schema in the new database
-  await initGraphSchema(slug);
+  await initGraphSchema(uuid);
 
-  return slug;
+  return uuid;
 }
 
-/** Update lastOpened timestamp for a database. */
-export async function touchDatabase(id: string): Promise<void> {
+/** Rename a database (update display name only). */
+export async function renameDatabase(registryId: string, name: string): Promise<void> {
   const db = getDb();
   await useUiDb();
   await db.query(
-    `UPDATE ${id} SET lastOpened = time::now()`,
+    `UPDATE ${registryId} SET name = $name`,
+    { name },
+  );
+}
+
+/** Update lastOpened timestamp for a database. */
+export async function touchDatabase(registryId: string): Promise<void> {
+  const db = getDb();
+  await useUiDb();
+  await db.query(
+    `UPDATE ${registryId} SET lastOpened = time::now()`,
   );
 }
 
 /** Delete a database registry entry. */
-export async function deleteDatabase(id: string): Promise<void> {
+export async function deleteDatabase(registryId: string): Promise<void> {
   const db = getDb();
   await useUiDb();
-  await db.query(`DELETE ${id}`);
+  await db.query(`DELETE ${registryId}`);
 }
 
 // ---------------------------------------------------------------------------

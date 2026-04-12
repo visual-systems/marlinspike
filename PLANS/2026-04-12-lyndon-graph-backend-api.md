@@ -126,7 +126,30 @@ Use SurrealDB's JS client directly. Typed helper functions wrap SurrealQL querie
 - [x] Migration code reads localStorage → imports to SurrealDB → clears localStorage on first launch
 - [ ] Full removal deferred until SurrealDB persistence is validated end-to-end in browser
 
-### Step 8: Documentation & verification
+### Step 9: mem:// + IndexedDB persistence bridge
+SurrealDB's `indxdb://` is broken upstream (#5712). Workaround: use `mem://` for the engine, `db.export()`/`db.import()` through our own IndexedDB store for persistence. Validated in `spikes/surrealdb-indxdb/`.
+
+- [ ] Create `src/ui/db/bridge.ts` — IndexedDB key-value helpers for saving/loading SurrealQL dumps
+  - `openSnapshotDb()` → opens our own IndexedDB store (`surreal_snapshots`)
+  - `saveDump(key, data)` → write SurrealQL string
+  - `loadDump(key)` → read SurrealQL string or null
+  - `deleteDump(key)` → remove a dump
+  - `listDumpKeys()` → list all stored keys
+- [ ] Change database identity from slug to UUID
+  - `db_registry` entries: `{ id: uuid, name: string, created: string, lastOpened: string }`
+  - Tabs reference databases by UUID (`Tab.databaseId`)
+  - Display format in graph dropdown: `localStorage/{name} ({short uuid})`
+- [ ] Startup: import `_ui` dump → read registry + workspace → import active tab's database dump
+- [ ] Sync: after each debounced sync cycle, export current graph database + `_ui` database to IndexedDB bridge
+- [ ] New tab creates a new database (UUID + "Untitled" name)
+- [ ] Database management UI (accessible from tab bar area)
+  - List databases with name, last opened
+  - Create new database
+  - Rename database (name is just display metadata)
+  - Delete database (with confirmation if tabs reference it)
+- [ ] Remove localStorage fallback write (bridge replaces it)
+
+### Step 10: Documentation & verification
 - [x] Security considerations documented (see section below)
 - [x] Remote serving considerations documented (see section below)
 - [x] `deno task ci` passes (283 tests, all checks green)
@@ -143,6 +166,7 @@ Use SurrealDB's JS client directly. Typed helper functions wrap SurrealQL querie
 | `src/ui/db/operations.ts` | Typed query wrappers + tree flatten/rebuild |
 | `src/ui/db/sync.ts` | Diff-based incremental persistence |
 | `src/graph/types.ts` | Formal graph model — cross-reference for schema alignment |
+| `src/ui/db/bridge.ts` | mem:// ↔ IndexedDB persistence bridge (export/import dumps) |
 | `deno.json` | Add surrealdb dependency |
 
 ## Risks
@@ -154,10 +178,11 @@ Use SurrealDB's JS client directly. Typed helper functions wrap SurrealQL querie
 
 ## Open Questions
 
-- SurrealDB embedded WASM + Deno bundling: does it work out of the box?
+- ~~SurrealDB embedded WASM + Deno bundling: does it work out of the box?~~ Resolved: dynamic imports from esm.sh
 - IndexedDB storage limits for larger projects (typically 50MB+, should be fine)
 - Optimal debounce interval for SurrealDB writes (start with 500ms?)
-- How to handle concurrent tabs writing to the same SurrealDB database (IndexedDB handles this, but worth testing)
+- How to handle concurrent browser tabs writing to the same IndexedDB dump (last-write-wins is probably fine for local use)
+- **Multi-database integration**: Should config for which other databases/graphs are integrated be stored in the tab, in the graph database itself, or in the `_ui` database? Deferred — for now each tab has exactly one database.
 
 ## Security Considerations (documentation only, implementation deferred)
 
@@ -177,8 +202,11 @@ Use SurrealDB's JS client directly. Typed helper functions wrap SurrealQL querie
 - [ ] Graph data round-trips correctly (create nodes/edges, reload, verify) (requires browser testing)
 - [x] Tree structure preserved through flatten → store → load → rebuild cycle (buildTree/flattenTree implemented and type-checked)
 - [ ] Migration from localStorage works on first launch (requires browser testing)
-- [ ] Multiple databases can be created and listed (API ready, UI deferred)
+- [ ] Multiple databases can be created and listed
 - [ ] Incremental persistence works (modify one node, only that record updates) (requires browser testing)
-- [ ] No remaining direct localStorage usage for graph data (deferred — dual-write in Phase 1)
+- [ ] Data persists across page reloads via mem:// + IndexedDB bridge
+- [ ] New tab creates new database, switching tabs loads correct data
+- [ ] Database rename works without breaking tab associations
+- [ ] Database delete cleans up IndexedDB dump and handles orphaned tabs
 - [x] UI shows loading state during async init (no flash of empty state)
-- [x] `deno task ci` passes (266 tests, all checks green)
+- [x] `deno task ci` passes (283 tests, all checks green)

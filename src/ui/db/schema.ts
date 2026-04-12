@@ -64,7 +64,7 @@ DEFINE TABLE IF NOT EXISTS workspace SCHEMALESS;
 -- Database registry — tracks known project databases
 DEFINE TABLE IF NOT EXISTS db_registry SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS name       ON db_registry TYPE string;
-DEFINE FIELD IF NOT EXISTS slug       ON db_registry TYPE string;
+DEFINE FIELD IF NOT EXISTS uuid       ON db_registry TYPE string;
 DEFINE FIELD IF NOT EXISTS created    ON db_registry TYPE datetime DEFAULT time::now();
 DEFINE FIELD IF NOT EXISTS lastOpened ON db_registry TYPE datetime DEFAULT time::now();
 `;

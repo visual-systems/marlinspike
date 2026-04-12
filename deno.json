@@ -31,7 +31,7 @@
         "recommended"
       ]
     },
-    "exclude": ["dist/"]
+    "exclude": ["dist/", "spikes/"]
   },
   "imports": {
     "@cfworker/json-schema": "npm:@cfworker/json-schema@^2.0.1",
