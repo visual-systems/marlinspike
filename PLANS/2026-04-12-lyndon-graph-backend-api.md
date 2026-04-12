@@ -99,11 +99,26 @@ Use SurrealDB's JS client directly. Typed helper functions wrap SurrealQL querie
   - Graph data synced incrementally; UI state synced as bulk update
 - [x] Wired into `client.tsx` useEffect via `scheduleSyncToDb()`
 
-### Step 6: Multi-database basics
+### Step 5b: indxdb:// persistence fix
+- [x] Pinned SurrealDB versions: `surrealdb@2.0.3`, `@surrealdb/wasm@3.0.3` in deno.json, deno.client.json, and esm.sh URLs
+- [x] Added `useWithRetry()` — retries `use()` up to 4 times with increasing delays (0, 50, 200, 500ms) to work around known WASM↔JS IndexedDB transaction timing bug
+- [x] Multiple SurrealQL schema fixes: `FLEXIBLE` after `TYPE`, `TYPE any` for flexible arrays, `NONE` for optional fields
+- [x] Replaced broken dynamic `import("./db/surreal.ts")` with static `getDb()` import
+- [ ] Browser verification: indxdb:// persists across page reloads
+
+### Step 6: Multi-database basics — tabs as databases
 - [x] DB registry in `_ui` database: `db_registry` table with name, created, lastOpened
 - [x] Default database created on first launch (migration target)
-- [ ] Basic UI for database management (deferred — dropdown/dialog for creating/switching databases)
-- [ ] ConnectedGraphs dropdown wired to show databases from registry (deferred)
+- [ ] Add `databaseId` to `Tab` interface (SurrealDB database slug per tab)
+- [ ] Add `DatabaseSnapshot` type and `_snapshotCache` to `WorkspaceState`
+- [ ] Add `canvas_state` SCHEMALESS table to graph schema (per-database canvas state)
+- [ ] Add `slug` field to `db_registry` so database slug is tracked alongside display name
+- [ ] Update `UiState` — remove per-database fields (focusId, canvas*, entityDrafts)
+- [ ] Update sync layer: derive databaseId from active tab, add `flushSync()`, sync canvas state
+- [ ] Async `addTab()`: creates new SurrealDB database, assigns `databaseId`
+- [ ] Async `activateTab()`: flush sync → snapshot → load target → update state
+- [ ] `loadDatabaseSnapshot()` function for loading a database's data
+- [ ] Backfill migration: tabs missing `databaseId` get `DEFAULT_DB`
 
 ### Step 7: Remove localStorage (partially deferred)
 - [ ] localStorage kept as fallback write during Phase 1 (dual-write: SurrealDB primary + localStorage fallback)
@@ -113,7 +128,8 @@ Use SurrealDB's JS client directly. Typed helper functions wrap SurrealQL querie
 ### Step 8: Documentation & verification
 - [x] Security considerations documented (see section below)
 - [x] Remote serving considerations documented (see section below)
-- [x] `deno task ci` passes (266 tests, all checks green)
+- [x] `deno task ci` passes (283 tests, all checks green)
+- [x] flattenTree/buildTree unit tests added (17 tests)
 
 ## Key Files
 

@@ -12,7 +12,7 @@
     "@hono/hono/jsx/dom/jsx-runtime": "jsr:@hono/hono/jsx/dom/jsx-runtime",
     "@std/assert": "jsr:@std/assert@0.223.0",
     "@std/cli": "jsr:@std/cli",
-    "surrealdb": "npm:surrealdb@latest",
-    "@surrealdb/wasm": "npm:@surrealdb/wasm@latest"
+    "surrealdb": "npm:surrealdb@2.0.3",
+    "@surrealdb/wasm": "npm:@surrealdb/wasm@3.0.3"
   }
 }

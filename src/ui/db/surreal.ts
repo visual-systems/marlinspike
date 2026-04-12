@@ -32,8 +32,8 @@ async function loadModules(): Promise<{ surreal: SurrealModule; wasm: WasmModule
   // Pin the surrealdb version used by @surrealdb/wasm via esm.sh's
   // ?deps parameter so both packages share a single module instance.
   // Without this, esm.sh loads separate copies causing class mismatches.
-  const surrealUrl = "https://esm.sh/surrealdb@2";
-  const wasmUrl = "https://esm.sh/@surrealdb/wasm@3?deps=surrealdb@2";
+  const surrealUrl = "https://esm.sh/surrealdb@2.0.3";
+  const wasmUrl = "https://esm.sh/@surrealdb/wasm@3.0.3?deps=surrealdb@2.0.3";
 
   const [s, w] = await Promise.all([
     import(/* @vite-ignore */ surrealUrl) as Promise<SurrealModule>,
@@ -62,25 +62,20 @@ export async function initSurreal(): Promise<Surreal> {
   const { surreal, wasm } = await loadModules();
   console.log("[surreal] modules loaded");
 
-  db = new surreal.Surreal({
-    engines: wasm.createWasmEngines(),
-  });
-  console.log("[surreal] instance created");
-
   // Try indxdb:// (persistent) first, fall back to mem:// (ephemeral).
-  // The use() call triggers the first real IndexedDB write, so it must
-  // be inside the try block too.
+  // The use() call triggers the first real IndexedDB write and can fail
+  // due to a known WASM↔JS async barrier that expires IndexedDB transactions.
+  // Retry with increasing delays before giving up.
+  db = new surreal.Surreal({ engines: wasm.createWasmEngines() });
   try {
     await db.connect("indxdb://marlinspike");
     console.log("[surreal] connected to indxdb://marlinspike");
-    await db.use({ namespace: NS, database: DEFAULT_DB });
-    console.log("[surreal] using", NS, DEFAULT_DB);
+    await useWithRetry(db, NS, DEFAULT_DB);
+    console.log("[surreal] using", NS, DEFAULT_DB, "(indxdb)");
   } catch (indxErr) {
     console.warn("[surreal] indxdb:// failed, trying mem://", indxErr);
     await db.close();
-    db = new surreal.Surreal({
-      engines: wasm.createWasmEngines(),
-    });
+    db = new surreal.Surreal({ engines: wasm.createWasmEngines() });
     await db.connect("mem://");
     console.log("[surreal] connected to mem:// (in-memory, no persistence)");
     await db.use({ namespace: NS, database: DEFAULT_DB });
@@ -88,6 +83,27 @@ export async function initSurreal(): Promise<Surreal> {
   }
 
   return db;
+}
+
+const RETRY_DELAYS = [0, 50, 200, 500];
+
+async function useWithRetry(
+  conn: Surreal,
+  namespace: string,
+  database: string,
+): Promise<void> {
+  for (let i = 0; i < RETRY_DELAYS.length; i++) {
+    try {
+      if (RETRY_DELAYS[i] > 0) {
+        await new Promise((r) => setTimeout(r, RETRY_DELAYS[i]));
+      }
+      await conn.use({ namespace, database });
+      return;
+    } catch (err) {
+      if (i === RETRY_DELAYS.length - 1) throw err;
+      console.warn(`[surreal] use() attempt ${i + 1} failed, retrying...`, err);
+    }
+  }
 }
 
 /** Returns the initialised Surreal instance. Throws if not yet initialised. */
