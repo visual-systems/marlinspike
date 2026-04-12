@@ -19,6 +19,7 @@ DEFINE FIELD IF NOT EXISTS kind     ON tree_node TYPE string
   ASSERT $value IN ["leaf", "composite"];
 DEFINE FIELD IF NOT EXISTS parent   ON tree_node TYPE option<record<tree_node>>;
 DEFINE FIELD IF NOT EXISTS ports    ON tree_node TYPE option<array>;
+DEFINE FIELD IF NOT EXISTS ports.*  ON tree_node FLEXIBLE TYPE object;
 DEFINE FIELD IF NOT EXISTS data     ON tree_node TYPE object FLEXIBLE DEFAULT {};
 DEFINE FIELD IF NOT EXISTS version  ON tree_node TYPE int DEFAULT 1;
 DEFINE INDEX IF NOT EXISTS idx_parent ON tree_node FIELDS parent;
@@ -39,6 +40,7 @@ DEFINE FIELD IF NOT EXISTS label    ON constraint TYPE string;
 DEFINE FIELD IF NOT EXISTS uri      ON constraint TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS type     ON constraint TYPE string;
 DEFINE FIELD IF NOT EXISTS targets  ON constraint TYPE array DEFAULT [];
+DEFINE FIELD IF NOT EXISTS targets.* ON constraint FLEXIBLE TYPE object;
 DEFINE FIELD IF NOT EXISTS data     ON constraint TYPE object FLEXIBLE DEFAULT {};
 DEFINE FIELD IF NOT EXISTS version  ON constraint TYPE int DEFAULT 1;
 
