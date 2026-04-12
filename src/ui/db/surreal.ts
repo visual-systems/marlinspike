@@ -21,6 +21,7 @@ interface SurrealModule {
 
 interface WasmModule {
   createWasmEngines: () => Engines;
+  createWasmWorkerEngines: (() => Engines) | undefined;
 }
 
 let surrealMod: SurrealModule | null = null;
@@ -63,10 +64,14 @@ export async function initSurreal(): Promise<Surreal> {
   console.log("[surreal] modules loaded");
 
   // Try indxdb:// (persistent) first, fall back to mem:// (ephemeral).
-  // The use() call triggers the first real IndexedDB write and can fail
-  // due to a known WASM↔JS async barrier that expires IndexedDB transactions.
-  // Retry with increasing delays before giving up.
-  db = new surreal.Surreal({ engines: wasm.createWasmEngines() });
+  // Use Worker-based engine if available — runs WASM + IndexedDB on a
+  // dedicated thread, avoiding the main-thread async barrier that causes
+  // IndexedDB transactions to expire.
+  const makeEngines = wasm.createWasmWorkerEngines ?? wasm.createWasmEngines;
+  const engineLabel = wasm.createWasmWorkerEngines ? "worker" : "main-thread";
+  console.log(`[surreal] using ${engineLabel} WASM engine`);
+
+  db = new surreal.Surreal({ engines: makeEngines() });
   try {
     await db.connect("indxdb://marlinspike");
     console.log("[surreal] connected to indxdb://marlinspike");
