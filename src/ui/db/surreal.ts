@@ -65,12 +65,10 @@ export async function initSurreal(): Promise<Surreal> {
     engines: wasm.createWasmEngines(),
   });
 
-  await db.connect("indxdb://marlinspike");
-
-  // Embedded mode requires root authentication and namespace/database selection
-  // before any operations can be performed.
-  await db.signin({ username: "root", password: "root" });
-  await db.use({ namespace: NS, database: DEFAULT_DB });
+  await db.connect("indxdb://marlinspike", {
+    namespace: NS,
+    database: DEFAULT_DB,
+  });
 
   return db;
 }
