@@ -566,7 +566,12 @@ function CanvasInspector(
     selected: ws.canvasSelected,
     inspectorSplit: 0.5,
   };
-  const fakeTab: Tab = { id: "__canvas_tab__", name: "Canvas", panels: [fakePanel] };
+  const fakeTab: Tab = {
+    id: "__canvas_tab__",
+    name: "Canvas",
+    databaseId: "default",
+    panels: [fakePanel],
+  };
 
   const canvasUpdate: Updater = (fn) => {
     update((s) => {

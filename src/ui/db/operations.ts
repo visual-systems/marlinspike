@@ -276,7 +276,7 @@ export async function deleteApplication(id: string): Promise<void> {
 // UI state (workspace)
 // ---------------------------------------------------------------------------
 
-/** The portion of WorkspaceState stored in the _ui database. */
+/** The portion of WorkspaceState stored in the _ui database (global, not per-database). */
 export interface UiState {
   tabs: WorkspaceState["tabs"];
   activeTabId: string;
@@ -285,6 +285,10 @@ export interface UiState {
   workflows: string[];
   activeWorkflow: string | null;
   connectedGraphs: WorkspaceState["connectedGraphs"];
+}
+
+/** Per-database canvas/UI state stored in each graph database's canvas_state table. */
+export interface CanvasState {
   focusId: string | null;
   canvasExpandedNodes: string[];
   canvasNodePositions: Record<string, { x: number; y: number; pinned?: boolean }>;
@@ -312,12 +316,31 @@ export async function saveWorkspaceUi(state: UiState): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Canvas state (per-database)
+// ---------------------------------------------------------------------------
+
+/** Load canvas state from the current graph database. Returns null if none exists. */
+export async function loadCanvasState(): Promise<CanvasState | null> {
+  const db = getDb();
+  const result = await db.query<[CanvasState[]]>("SELECT * FROM canvas_state:main");
+  const rows = extractQueryResult<CanvasState>(result);
+  return rows.length > 0 ? rows[0] : null;
+}
+
+/** Save canvas state to the current graph database. */
+export async function saveCanvasState(state: CanvasState): Promise<void> {
+  const db = getDb();
+  await db.query("UPSERT canvas_state:main CONTENT $state", { state });
+}
+
+// ---------------------------------------------------------------------------
 // Database registry
 // ---------------------------------------------------------------------------
 
 export interface DbRegistryEntry {
   id: string;
   name: string;
+  slug: string;
   created: string;
   lastOpened: string;
 }
@@ -345,15 +368,15 @@ export async function createDatabase(name: string): Promise<string> {
   // Register in the _ui db
   await useUiDb();
   const regResult = await db.query<[DbRegistryEntry[]]>(
-    `CREATE db_registry SET name = $name`,
-    { name },
+    `CREATE db_registry SET name = $name, slug = $slug`,
+    { name, slug },
   );
-  const entry = extractQueryResult<DbRegistryEntry>(regResult)[0];
+  extractQueryResult<DbRegistryEntry>(regResult);
 
   // Initialise graph schema in the new database
   await initGraphSchema(slug);
 
-  return entry.id;
+  return slug;
 }
 
 /** Update lastOpened timestamp for a database. */

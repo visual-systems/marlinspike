@@ -47,6 +47,9 @@ DEFINE TABLE IF NOT EXISTS constraint_application SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS constraintId ON constraint_application TYPE record<constraint>;
 DEFINE FIELD IF NOT EXISTS entityId     ON constraint_application TYPE string;
 DEFINE FIELD IF NOT EXISTS version      ON constraint_application TYPE int DEFAULT 1;
+
+-- Per-database canvas/UI state (single record per database)
+DEFINE TABLE IF NOT EXISTS canvas_state SCHEMALESS;
 `;
 
 // ---------------------------------------------------------------------------
@@ -61,6 +64,7 @@ DEFINE TABLE IF NOT EXISTS workspace SCHEMALESS;
 -- Database registry — tracks known project databases
 DEFINE TABLE IF NOT EXISTS db_registry SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS name       ON db_registry TYPE string;
+DEFINE FIELD IF NOT EXISTS slug       ON db_registry TYPE string;
 DEFINE FIELD IF NOT EXISTS created    ON db_registry TYPE datetime DEFAULT time::now();
 DEFINE FIELD IF NOT EXISTS lastOpened ON db_registry TYPE datetime DEFAULT time::now();
 `;

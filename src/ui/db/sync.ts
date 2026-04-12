@@ -4,16 +4,17 @@
  * and issues targeted SurrealDB operations for only what changed.
  */
 
-import type { WorkspaceState } from "../workspace.ts";
+import { getActiveTab, type WorkspaceState } from "../workspace.ts";
 import { useDatabase } from "./surreal.ts";
-import { DEFAULT_DB } from "./surreal.ts";
 import {
+  type CanvasState,
   deleteApplication,
   deleteConstraint,
   deleteEdge,
   deleteTreeNode,
   flattenTree,
   saveApplication,
+  saveCanvasState,
   saveConstraint,
   saveEdge,
   saveTreeNode,
@@ -27,6 +28,7 @@ import {
 
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 let prevState: WorkspaceState | null = null;
+let syncing = false;
 
 const DEBOUNCE_MS = 500;
 
@@ -38,13 +40,34 @@ export function scheduleSyncToDb(newState: WorkspaceState): void {
   if (syncTimer) clearTimeout(syncTimer);
   const prev = prevState;
   syncTimer = setTimeout(async () => {
+    syncing = true;
     try {
       await syncToDb(prev, newState);
     } catch (err) {
       console.error("[sync] Failed to persist state:", err);
     }
     prevState = newState;
+    syncing = false;
   }, DEBOUNCE_MS);
+}
+
+/** Immediately flush any pending sync. Returns when complete. */
+export async function flushSync(currentState: WorkspaceState): Promise<void> {
+  if (syncTimer) {
+    clearTimeout(syncTimer);
+    syncTimer = null;
+  }
+  // Wait for any in-flight sync to finish
+  while (syncing) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  const prev = prevState;
+  try {
+    await syncToDb(prev, currentState);
+  } catch (err) {
+    console.error("[sync] Flush failed:", err);
+  }
+  prevState = currentState;
 }
 
 /** Set the initial state for diffing (called after loadStateAsync). */
@@ -63,6 +86,7 @@ async function syncToDb(
   // If no previous state, this is a full write (shouldn't normally happen after init)
   if (!prev) {
     await syncGraphData(null, next);
+    await syncCanvasState(null, next);
     await syncUiState(next);
     return;
   }
@@ -77,7 +101,19 @@ async function syncToDb(
     await syncGraphData(prev, next);
   }
 
-  // Sync UI state if any UI-related fields changed
+  // Sync canvas state if any per-database canvas fields changed
+  if (
+    prev.focusId !== next.focusId ||
+    prev.canvasExpandedNodes !== next.canvasExpandedNodes ||
+    prev.canvasNodePositions !== next.canvasNodePositions ||
+    prev.canvasSelected !== next.canvasSelected ||
+    prev.canvasAlgorithm !== next.canvasAlgorithm ||
+    prev.entityDrafts !== next.entityDrafts
+  ) {
+    await syncCanvasState(prev, next);
+  }
+
+  // Sync global UI state if any UI-related fields changed
   if (
     prev.tabs !== next.tabs ||
     prev.activeTabId !== next.activeTabId ||
@@ -85,13 +121,7 @@ async function syncToDb(
     prev.activePersona !== next.activePersona ||
     prev.workflows !== next.workflows ||
     prev.activeWorkflow !== next.activeWorkflow ||
-    prev.connectedGraphs !== next.connectedGraphs ||
-    prev.focusId !== next.focusId ||
-    prev.canvasExpandedNodes !== next.canvasExpandedNodes ||
-    prev.canvasNodePositions !== next.canvasNodePositions ||
-    prev.canvasSelected !== next.canvasSelected ||
-    prev.canvasAlgorithm !== next.canvasAlgorithm ||
-    prev.entityDrafts !== next.entityDrafts
+    prev.connectedGraphs !== next.connectedGraphs
   ) {
     await syncUiState(next);
   }
@@ -101,11 +131,15 @@ async function syncToDb(
 // Graph data sync
 // ---------------------------------------------------------------------------
 
+function getActiveDatabaseId(state: WorkspaceState): string {
+  return getActiveTab(state).databaseId;
+}
+
 async function syncGraphData(
   prev: WorkspaceState | null,
   next: WorkspaceState,
 ): Promise<void> {
-  await useDatabase(DEFAULT_DB);
+  await useDatabase(getActiveDatabaseId(next));
 
   // Tree nodes — compare flat representations
   if (!prev || prev.treeNodes !== next.treeNodes) {
@@ -141,7 +175,27 @@ async function syncGraphData(
 }
 
 // ---------------------------------------------------------------------------
-// UI state sync (bulk write — small data, changes frequently)
+// Canvas state sync (per-database, bulk write)
+// ---------------------------------------------------------------------------
+
+async function syncCanvasState(
+  _prev: WorkspaceState | null,
+  next: WorkspaceState,
+): Promise<void> {
+  await useDatabase(getActiveDatabaseId(next));
+  const canvas: CanvasState = {
+    focusId: next.focusId,
+    canvasExpandedNodes: next.canvasExpandedNodes,
+    canvasNodePositions: next.canvasNodePositions,
+    canvasSelected: next.canvasSelected,
+    canvasAlgorithm: next.canvasAlgorithm,
+    entityDrafts: next.entityDrafts,
+  };
+  await saveCanvasState(canvas);
+}
+
+// ---------------------------------------------------------------------------
+// UI state sync (global, bulk write)
 // ---------------------------------------------------------------------------
 
 async function syncUiState(state: WorkspaceState): Promise<void> {
@@ -153,12 +207,6 @@ async function syncUiState(state: WorkspaceState): Promise<void> {
     workflows: state.workflows,
     activeWorkflow: state.activeWorkflow,
     connectedGraphs: state.connectedGraphs,
-    focusId: state.focusId,
-    canvasExpandedNodes: state.canvasExpandedNodes,
-    canvasNodePositions: state.canvasNodePositions,
-    canvasSelected: state.canvasSelected,
-    canvasAlgorithm: state.canvasAlgorithm,
-    entityDrafts: state.entityDrafts,
   };
   await saveWorkspaceUi(uiState);
 }

@@ -45,7 +45,23 @@ export interface Panel {
 export interface Tab {
   id: string;
   name: string;
+  /** SurrealDB database slug this tab is bound to (e.g. "default", "my_project"). */
+  databaseId: string;
   panels: Panel[];
+}
+
+/** Per-database state that gets swapped when switching tabs. */
+export interface DatabaseSnapshot {
+  treeNodes: TreeNode[];
+  edges: Edge[];
+  constraints: Constraint[];
+  constraintApplications: ConstraintApplication[];
+  focusId: string | null;
+  canvasExpandedNodes: string[];
+  canvasNodePositions: Record<string, { x: number; y: number; pinned?: boolean }>;
+  canvasSelected: Selection;
+  canvasAlgorithm: AlgorithmId;
+  entityDrafts: Record<string, string>;
 }
 
 // Describes what kind of entities a constraint is relevant to.
@@ -92,6 +108,8 @@ export interface WorkspaceState {
   canvasAlgorithm: AlgorithmId;
   /** Live unsaved edits keyed by entity ID. Shared between code panels and inspector. */
   entityDrafts: Record<string, string>;
+  /** In-memory cache of other tabs' database snapshots. Not persisted. */
+  _snapshotCache: Record<string, DatabaseSnapshot>;
 }
 
 export interface Port {
@@ -298,7 +316,7 @@ export function defaultCodePanel(): Panel {
 export function defaultState(): WorkspaceState {
   const tabId = crypto.randomUUID();
   return {
-    tabs: [{ id: tabId, name: "Main", panels: [defaultPanel()] }],
+    tabs: [{ id: tabId, name: "Main", databaseId: DEFAULT_DB, panels: [defaultPanel()] }],
     activeTabId: tabId,
     treeNodes: defaultTreeNodes(),
     edges: [],
@@ -320,6 +338,7 @@ export function defaultState(): WorkspaceState {
     canvasSelected: null,
     canvasAlgorithm: "SDF",
     entityDrafts: {},
+    _snapshotCache: {},
   };
 }
 
@@ -394,7 +413,12 @@ export function loadState(): WorkspaceState {
             selected: null,
             inspectorSplit: 0.5,
           }];
-        return { id: t.id as string, name: t.name as string, panels };
+        return {
+          id: t.id as string,
+          name: t.name as string,
+          databaseId: (t.databaseId as string | undefined) ?? "default",
+          panels,
+        };
       });
       if (tabs.length === 0) return defaultState();
       const rawNodes = parsed.treeNodes as Record<string, unknown>[] | undefined;
@@ -431,6 +455,7 @@ export function loadState(): WorkspaceState {
         canvasSelected: null,
         canvasAlgorithm: (parsed.canvasAlgorithm as AlgorithmId | undefined) ?? "SDF",
         entityDrafts: {},
+        _snapshotCache: {},
       };
     }
   } catch {
@@ -454,8 +479,10 @@ import {
   loadAllConstraints,
   loadAllEdges,
   loadAllNodes,
+  loadCanvasState,
   loadWorkspaceUi,
   saveApplication,
+  saveCanvasState,
   saveConstraint,
   saveEdge,
   saveTreeNode,
@@ -486,7 +513,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     // Register it
     await useUiDb();
     const db = getDb();
-    await db.query("CREATE db_registry SET name = 'Default'");
+    await db.query("CREATE db_registry SET name = 'Default', slug = $slug", { slug: DEFAULT_DB });
 
     // Check for existing localStorage data to migrate
     const existingState = loadState();
@@ -508,7 +535,13 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       // Ignore — may not have access to localStorage
     }
 
-    return hasExistingData ? existingState : defaultState();
+    const result = hasExistingData ? existingState : defaultState();
+    // Ensure migrated state has new fields
+    return {
+      ...result,
+      tabs: result.tabs.map((t) => ({ ...t, databaseId: t.databaseId ?? DEFAULT_DB })),
+      _snapshotCache: result._snapshotCache ?? {},
+    };
   }
 
   // 3. Load from SurrealDB
@@ -521,15 +554,32 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
   ]);
 
   const treeNodes = buildTree(flatNodes);
-  const uiState = await loadWorkspaceUi();
+  const [uiState, canvasState] = await Promise.all([
+    loadWorkspaceUi(),
+    loadCanvasState(),
+  ]);
 
   if (uiState) {
+    // Backfill databaseId on tabs that predate this field
+    const tabs = uiState.tabs.map((t: Tab) => ({
+      ...t,
+      databaseId: t.databaseId ?? DEFAULT_DB,
+    }));
+    const ds = defaultState();
     return {
       treeNodes,
       edges: normaliseEdges(edges),
       constraints,
       constraintApplications: applications,
       ...uiState,
+      tabs,
+      focusId: canvasState?.focusId ?? null,
+      canvasExpandedNodes: canvasState?.canvasExpandedNodes ?? ds.canvasExpandedNodes,
+      canvasNodePositions: canvasState?.canvasNodePositions ?? {},
+      canvasSelected: canvasState?.canvasSelected ?? null,
+      canvasAlgorithm: canvasState?.canvasAlgorithm ?? ds.canvasAlgorithm,
+      entityDrafts: canvasState?.entityDrafts ?? {},
+      _snapshotCache: {},
     };
   }
 
@@ -541,6 +591,33 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     edges: normaliseEdges(edges),
     constraints,
     constraintApplications: applications,
+  };
+}
+
+/** Load graph + canvas data for a specific database. */
+export async function loadDatabaseSnapshot(
+  databaseId: string,
+): Promise<DatabaseSnapshot> {
+  await useDatabase(databaseId);
+  const [flatNodes, edges, constraints, applications] = await Promise.all([
+    loadAllNodes(),
+    loadAllEdges(),
+    loadAllConstraints(),
+    loadAllApplications(),
+  ]);
+  const canvasState = await loadCanvasState();
+  const ds = defaultState();
+  return {
+    treeNodes: buildTree(flatNodes),
+    edges: normaliseEdges(edges),
+    constraints,
+    constraintApplications: applications,
+    focusId: canvasState?.focusId ?? null,
+    canvasExpandedNodes: canvasState?.canvasExpandedNodes ?? ds.canvasExpandedNodes,
+    canvasNodePositions: canvasState?.canvasNodePositions ?? {},
+    canvasSelected: canvasState?.canvasSelected ?? null,
+    canvasAlgorithm: canvasState?.canvasAlgorithm ?? ds.canvasAlgorithm,
+    entityDrafts: canvasState?.entityDrafts ?? {},
   };
 }
 
@@ -594,7 +671,17 @@ async function migrateToSurreal(state: WorkspaceState): Promise<void> {
     await saveApplication(app);
   }
 
-  // Write UI state
+  // Write canvas state to the graph database
+  await saveCanvasState({
+    focusId: state.focusId,
+    canvasExpandedNodes: state.canvasExpandedNodes,
+    canvasNodePositions: state.canvasNodePositions,
+    canvasSelected: state.canvasSelected,
+    canvasAlgorithm: state.canvasAlgorithm,
+    entityDrafts: state.entityDrafts,
+  });
+
+  // Write global UI state
   const uiState: UiState = {
     tabs: state.tabs,
     activeTabId: state.activeTabId,
@@ -603,12 +690,6 @@ async function migrateToSurreal(state: WorkspaceState): Promise<void> {
     workflows: state.workflows,
     activeWorkflow: state.activeWorkflow,
     connectedGraphs: state.connectedGraphs,
-    focusId: state.focusId,
-    canvasExpandedNodes: state.canvasExpandedNodes,
-    canvasNodePositions: state.canvasNodePositions,
-    canvasSelected: state.canvasSelected,
-    canvasAlgorithm: state.canvasAlgorithm,
-    entityDrafts: state.entityDrafts,
   };
   await saveWorkspaceUi(uiState);
 }
