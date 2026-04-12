@@ -17,7 +17,6 @@ import type { Engines } from "surrealdb";
 
 interface SurrealModule {
   Surreal: typeof Surreal;
-  createRemoteEngines: () => Engines;
 }
 
 interface WasmModule {
@@ -30,10 +29,11 @@ let wasmMod: WasmModule | null = null;
 async function loadModules(): Promise<{ surreal: SurrealModule; wasm: WasmModule }> {
   if (surrealMod && wasmMod) return { surreal: surrealMod, wasm: wasmMod };
 
-  // Dynamic imports with string variables so @deno/emit's static analysis
-  // cannot resolve them — they are fetched by the browser at runtime.
+  // Pin the surrealdb version used by @surrealdb/wasm via esm.sh's
+  // ?deps parameter so both packages share a single module instance.
+  // Without this, esm.sh loads separate copies causing class mismatches.
   const surrealUrl = "https://esm.sh/surrealdb@2";
-  const wasmUrl = "https://esm.sh/@surrealdb/wasm@3";
+  const wasmUrl = "https://esm.sh/@surrealdb/wasm@3?deps=surrealdb@2";
 
   const [s, w] = await Promise.all([
     import(/* @vite-ignore */ surrealUrl) as Promise<SurrealModule>,
@@ -60,15 +60,18 @@ export async function initSurreal(): Promise<Surreal> {
   if (db) return db;
 
   const { surreal, wasm } = await loadModules();
+  console.log("[surreal] modules loaded");
 
   db = new surreal.Surreal({
     engines: wasm.createWasmEngines(),
   });
+  console.log("[surreal] instance created");
 
-  await db.connect("indxdb://marlinspike", {
-    namespace: NS,
-    database: DEFAULT_DB,
-  });
+  await db.connect("indxdb://marlinspike");
+  console.log("[surreal] connected to indxdb://marlinspike");
+
+  await db.use({ namespace: NS, database: DEFAULT_DB });
+  console.log("[surreal] using", NS, DEFAULT_DB);
 
   return db;
 }
