@@ -109,16 +109,16 @@ Use SurrealDB's JS client directly. Typed helper functions wrap SurrealQL querie
 ### Step 6: Multi-database basics — tabs as databases
 - [x] DB registry in `_ui` database: `db_registry` table with name, created, lastOpened
 - [x] Default database created on first launch (migration target)
-- [ ] Add `databaseId` to `Tab` interface (SurrealDB database slug per tab)
-- [ ] Add `DatabaseSnapshot` type and `_snapshotCache` to `WorkspaceState`
-- [ ] Add `canvas_state` SCHEMALESS table to graph schema (per-database canvas state)
-- [ ] Add `slug` field to `db_registry` so database slug is tracked alongside display name
-- [ ] Update `UiState` — remove per-database fields (focusId, canvas*, entityDrafts)
-- [ ] Update sync layer: derive databaseId from active tab, add `flushSync()`, sync canvas state
-- [ ] Async `addTab()`: creates new SurrealDB database, assigns `databaseId`
-- [ ] Async `activateTab()`: flush sync → snapshot → load target → update state
-- [ ] `loadDatabaseSnapshot()` function for loading a database's data
-- [ ] Backfill migration: tabs missing `databaseId` get `DEFAULT_DB`
+- [x] Add `databaseId` to `Tab` interface (SurrealDB database slug per tab)
+- [x] Add `DatabaseSnapshot` type and `_snapshotCache` to `WorkspaceState`
+- [x] Add `canvas_state` SCHEMALESS table to graph schema (per-database canvas state)
+- [x] Add `slug` field to `db_registry` so database slug is tracked alongside display name
+- [x] Update `UiState` — remove per-database fields (focusId, canvas*, entityDrafts)
+- [x] Update sync layer: derive databaseId from active tab, add `flushSync()`, sync canvas state
+- [x] Async `addTab()`: creates new SurrealDB database, assigns `databaseId`
+- [x] Async `activateTab()`: flush sync → snapshot → load target → update state
+- [x] `loadDatabaseSnapshot()` function for loading a database's data
+- [x] Backfill migration: tabs missing `databaseId` get `DEFAULT_DB`
 
 ### Step 7: Remove localStorage (partially deferred)
 - [ ] localStorage kept as fallback write during Phase 1 (dual-write: SurrealDB primary + localStorage fallback)
