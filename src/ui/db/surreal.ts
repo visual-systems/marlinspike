@@ -21,7 +21,6 @@ interface SurrealModule {
 
 interface WasmModule {
   createWasmEngines: () => Engines;
-  createWasmWorkerEngines: (() => Engines) | undefined;
 }
 
 let surrealMod: SurrealModule | null = null;
@@ -56,59 +55,24 @@ const DEFAULT_DB = "default";
 
 let db: Surreal | null = null;
 
-/** Initialise the SurrealDB embedded connection (IndexedDB-backed). */
+/** Initialise the SurrealDB embedded connection (in-memory). */
 export async function initSurreal(): Promise<Surreal> {
   if (db) return db;
 
   const { surreal, wasm } = await loadModules();
   console.log("[surreal] modules loaded");
 
-  // Try indxdb:// (persistent) first, fall back to mem:// (ephemeral).
-  // Use Worker-based engine if available — runs WASM + IndexedDB on a
-  // dedicated thread, avoiding the main-thread async barrier that causes
-  // IndexedDB transactions to expire.
-  const makeEngines = wasm.createWasmWorkerEngines ?? wasm.createWasmEngines;
-  const engineLabel = wasm.createWasmWorkerEngines ? "worker" : "main-thread";
-  console.log(`[surreal] using ${engineLabel} WASM engine`);
-
-  db = new surreal.Surreal({ engines: makeEngines() });
-  try {
-    await db.connect("indxdb://marlinspike");
-    console.log("[surreal] connected to indxdb://marlinspike");
-    await useWithRetry(db, NS, DEFAULT_DB);
-    console.log("[surreal] using", NS, DEFAULT_DB, "(indxdb)");
-  } catch (indxErr) {
-    console.warn("[surreal] indxdb:// failed, trying mem://", indxErr);
-    await db.close();
-    db = new surreal.Surreal({ engines: wasm.createWasmEngines() });
-    await db.connect("mem://");
-    console.log("[surreal] connected to mem:// (in-memory, no persistence)");
-    await db.use({ namespace: NS, database: DEFAULT_DB });
-    console.log("[surreal] using", NS, DEFAULT_DB, "(mem)");
-  }
+  // indxdb:// (IndexedDB persistence) has a known WASM↔JS async barrier bug
+  // that causes IndexedDB transactions to expire. Using mem:// until we add
+  // a remote SurrealDB backend for proper persistence.
+  // See: https://github.com/surrealdb/surrealdb/issues/5712
+  db = new surreal.Surreal({ engines: wasm.createWasmEngines() });
+  await db.connect("mem://");
+  console.log("[surreal] connected to mem://");
+  await db.use({ namespace: NS, database: DEFAULT_DB });
+  console.log("[surreal] using", NS, DEFAULT_DB);
 
   return db;
-}
-
-const RETRY_DELAYS = [0, 50, 200, 500];
-
-async function useWithRetry(
-  conn: Surreal,
-  namespace: string,
-  database: string,
-): Promise<void> {
-  for (let i = 0; i < RETRY_DELAYS.length; i++) {
-    try {
-      if (RETRY_DELAYS[i] > 0) {
-        await new Promise((r) => setTimeout(r, RETRY_DELAYS[i]));
-      }
-      await conn.use({ namespace, database });
-      return;
-    } catch (err) {
-      if (i === RETRY_DELAYS.length - 1) throw err;
-      console.warn(`[surreal] use() attempt ${i + 1} failed, retrying...`, err);
-    }
-  }
 }
 
 /** Returns the initialised Surreal instance. Throws if not yet initialised. */

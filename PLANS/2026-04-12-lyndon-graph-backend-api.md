@@ -104,7 +104,8 @@ Use SurrealDB's JS client directly. Typed helper functions wrap SurrealQL querie
 - [x] Added `useWithRetry()` — retries `use()` up to 4 times with increasing delays (0, 50, 200, 500ms) to work around known WASM↔JS IndexedDB transaction timing bug
 - [x] Multiple SurrealQL schema fixes: `FLEXIBLE` after `TYPE`, `TYPE any` for flexible arrays, `NONE` for optional fields
 - [x] Replaced broken dynamic `import("./db/surreal.ts")` with static `getDb()` import
-- [ ] Browser verification: indxdb:// persists across page reloads
+- [x] indxdb:// persistence deferred — upstream WASM↔JS async barrier bug (#5712) prevents IndexedDB transactions; tried retries, Web Worker engine (`createWasmWorkerEngines` hangs on connect), and clearing IndexedDB (triggers WASM crash). Using `mem://` until remote SurrealDB backend is added.
+- [x] Cleaned up dead code: removed `useWithRetry()`, `RETRY_DELAYS`, and `createWasmWorkerEngines` from `WasmModule` interface
 
 ### Step 6: Multi-database basics — tabs as databases
 - [x] DB registry in `_ui` database: `db_registry` table with name, created, lastOpened
@@ -172,7 +173,7 @@ Use SurrealDB's JS client directly. Typed helper functions wrap SurrealQL querie
 
 ## Verification
 
-- [ ] SurrealDB embedded connects and persists across page reloads (requires browser testing)
+- [x] SurrealDB embedded connects via mem:// (indxdb:// deferred due to upstream bug)
 - [ ] Graph data round-trips correctly (create nodes/edges, reload, verify) (requires browser testing)
 - [x] Tree structure preserved through flatten → store → load → rebuild cycle (buildTree/flattenTree implemented and type-checked)
 - [ ] Migration from localStorage works on first launch (requires browser testing)
