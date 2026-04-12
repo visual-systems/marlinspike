@@ -40,7 +40,9 @@
     "@hono/hono/jsx/dom": "jsr:@hono/hono/jsx/dom",
     "@hono/hono/jsx/dom/jsx-runtime": "jsr:@hono/hono/jsx/dom/jsx-runtime",
     "@std/assert": "jsr:@std/assert@0.223.0",
-    "@std/cli": "jsr:@std/cli"
+    "@std/cli": "jsr:@std/cli",
+    "surrealdb": "npm:surrealdb@latest",
+    "@surrealdb/wasm": "npm:@surrealdb/wasm@latest"
   },
   "deploy": {
     "project": "b9da7955-aedb-4095-8385-fa9241d1edd5",

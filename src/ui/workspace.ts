@@ -440,6 +440,180 @@ export function loadState(): WorkspaceState {
 }
 
 // ---------------------------------------------------------------------------
+// Async load (SurrealDB with localStorage migration)
+// ---------------------------------------------------------------------------
+
+import { initSurreal, useDatabase, useUiDb } from "./db/surreal.ts";
+import {
+  buildTree,
+  flattenTree,
+  initGraphSchema,
+  initUiSchema,
+  listDatabases,
+  loadAllApplications,
+  loadAllConstraints,
+  loadAllEdges,
+  loadAllNodes,
+  loadWorkspaceUi,
+  saveApplication,
+  saveConstraint,
+  saveEdge,
+  saveTreeNode,
+  saveWorkspaceUi,
+  type UiState,
+} from "./db/operations.ts";
+import { DEFAULT_DB } from "./db/surreal.ts";
+
+/**
+ * Initialise SurrealDB and load workspace state.
+ *
+ * On first run: migrates existing localStorage data into SurrealDB.
+ * On subsequent runs: loads directly from SurrealDB.
+ * Falls back to defaultState() if both sources are empty.
+ */
+export async function loadStateAsync(): Promise<WorkspaceState> {
+  // 1. Initialise SurrealDB connection + schemas
+  await initSurreal();
+  await initUiSchema();
+
+  // 2. Check if we have databases registered yet
+  const dbs = await listDatabases();
+  const hasDefault = dbs.some((d) => d.name === "Default");
+
+  if (!hasDefault) {
+    // First launch — create default DB and attempt localStorage migration
+    await initGraphSchema(DEFAULT_DB);
+    // Register it
+    await useUiDb();
+    const db = (await import("./db/surreal.ts")).getDb();
+    await db.query("CREATE db_registry SET name = 'Default'");
+
+    // Check for existing localStorage data to migrate
+    const existingState = loadState();
+    const hasExistingData = existingState.treeNodes.length > 0 &&
+      !(existingState.treeNodes.length === 1 &&
+        existingState.treeNodes[0].id === "spike://acme/backend");
+
+    if (hasExistingData) {
+      await migrateToSurreal(existingState);
+    } else {
+      // Write the default state into SurrealDB
+      await migrateToSurreal(defaultState());
+    }
+
+    // Clear localStorage after successful migration
+    try {
+      localStorage.removeItem(STATE_KEY);
+    } catch {
+      // Ignore — may not have access to localStorage
+    }
+
+    return hasExistingData ? existingState : defaultState();
+  }
+
+  // 3. Load from SurrealDB
+  await useDatabase(DEFAULT_DB);
+  const [flatNodes, edges, constraints, applications] = await Promise.all([
+    loadAllNodes(),
+    loadAllEdges(),
+    loadAllConstraints(),
+    loadAllApplications(),
+  ]);
+
+  const treeNodes = buildTree(flatNodes);
+  const uiState = await loadWorkspaceUi();
+
+  if (uiState) {
+    return {
+      treeNodes,
+      edges: normaliseEdges(edges),
+      constraints,
+      constraintApplications: applications,
+      ...uiState,
+    };
+  }
+
+  // No UI state saved yet — return defaults with loaded graph data
+  const ds = defaultState();
+  return {
+    ...ds,
+    treeNodes,
+    edges: normaliseEdges(edges),
+    constraints,
+    constraintApplications: applications,
+  };
+}
+
+/**
+ * Normalise edge records coming from SurrealDB.
+ * Record link fields like fromId/toId may come back as record objects
+ * rather than plain strings.
+ */
+function normaliseEdges(edges: Edge[]): Edge[] {
+  return edges.map((e) => ({
+    ...e,
+    id: recordIdToString(e.id),
+    fromId: recordIdToString(e.fromId),
+    toId: recordIdToString(e.toId),
+  }));
+}
+
+/** Convert a SurrealDB record ID (e.g. "tree_node:abc") to just the id part. */
+function recordIdToString(val: unknown): string {
+  if (typeof val === "string") {
+    // Strip table prefix if present: "tree_node:abc" → "abc"
+    const colonIdx = (val as string).indexOf(":");
+    if (colonIdx >= 0 && (val as string).startsWith("tree_node:")) {
+      return (val as string).slice(colonIdx + 1);
+    }
+    return val as string;
+  }
+  // SurrealDB SDK may return RecordId objects with .toString()
+  if (val && typeof val === "object" && "toString" in val) {
+    return recordIdToString(String(val));
+  }
+  return String(val);
+}
+
+/** Write a full WorkspaceState into SurrealDB (used for initial migration). */
+async function migrateToSurreal(state: WorkspaceState): Promise<void> {
+  // Write graph data to the default database
+  await useDatabase(DEFAULT_DB);
+
+  const flatNodes = flattenTree(state.treeNodes);
+  for (const node of flatNodes) {
+    await saveTreeNode(node);
+  }
+  for (const edge of state.edges) {
+    await saveEdge(edge);
+  }
+  for (const constraint of state.constraints) {
+    await saveConstraint(constraint);
+  }
+  for (const app of state.constraintApplications) {
+    await saveApplication(app);
+  }
+
+  // Write UI state
+  const uiState: UiState = {
+    tabs: state.tabs,
+    activeTabId: state.activeTabId,
+    personas: state.personas,
+    activePersona: state.activePersona,
+    workflows: state.workflows,
+    activeWorkflow: state.activeWorkflow,
+    connectedGraphs: state.connectedGraphs,
+    focusId: state.focusId,
+    canvasExpandedNodes: state.canvasExpandedNodes,
+    canvasNodePositions: state.canvasNodePositions,
+    canvasSelected: state.canvasSelected,
+    canvasAlgorithm: state.canvasAlgorithm,
+    entityDrafts: state.entityDrafts,
+  };
+  await saveWorkspaceUi(uiState);
+}
+
+// ---------------------------------------------------------------------------
 // State update helpers
 // ---------------------------------------------------------------------------
 

@@ -16,6 +16,7 @@ import {
   getActiveTab,
   type ListEditorConfig,
   loadState,
+  loadStateAsync,
   PANEL_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
   STATE_KEY,
@@ -24,30 +25,61 @@ import {
   withPanel,
   type WorkspaceState,
 } from "./workspace.ts";
+import { scheduleSyncToDb, setSyncBaseline } from "./db/sync.ts";
 
 // ---------------------------------------------------------------------------
 // App root
 // ---------------------------------------------------------------------------
 
 function App() {
-  const [ws, setWs] = useState<WorkspaceState>(loadState);
+  const [ws, setWs] = useState<WorkspaceState | null>(null);
+  const [dbError, setDbError] = useState<string | null>(null);
   const [listEditor, setListEditor] = useState<ListEditorConfig | null>(null);
 
-  // Persist to localStorage on every state change
+  // Async initialisation — load from SurrealDB (with localStorage migration)
   useEffect(() => {
+    loadStateAsync()
+      .then((state) => {
+        setWs(state);
+        setSyncBaseline(state);
+      })
+      .catch((err) => {
+        console.error("[init] SurrealDB init failed, falling back to localStorage:", err);
+        setDbError(String(err));
+        const state = loadState();
+        setWs(state);
+      });
+  }, []);
+
+  // Persist to SurrealDB on every state change (debounced)
+  useEffect(() => {
+    if (!ws) return;
+    // Also keep localStorage as a fallback write for now
     localStorage.setItem(STATE_KEY, JSON.stringify(ws));
+    if (!dbError) {
+      scheduleSyncToDb(ws);
+    }
   }, [ws]);
 
-  const update: Updater = (fn) => setWs((prev) => fn(prev));
+  const update: Updater = (fn) => setWs((prev) => prev ? fn(prev) : prev);
 
   // Notify child components after Hono finishes its render cycle.
   // Hono's JSX DOM does not re-render child components on prop changes,
   // so we use a post-render event to nudge them.
   useEffect(() => {
-    globalThis.dispatchEvent(new Event("ws-updated"));
+    if (ws) globalThis.dispatchEvent(new Event("ws-updated"));
   }, [ws]);
 
   const showListEditor = (config: ListEditorConfig) => setListEditor(config);
+
+  // Loading state while SurrealDB initialises
+  if (!ws) {
+    return (
+      <div style="display:flex; align-items:center; justify-content:center; height:100vh; color:#555; font-size:14px;">
+        Loading…
+      </div>
+    );
+  }
 
   return (
     <>

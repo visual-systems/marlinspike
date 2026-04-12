@@ -16,7 +16,9 @@
     "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/io@0.223": "0.223.0",
     "jsr:@std/path@0.223": "0.223.0",
-    "npm:@cfworker/json-schema@^2.0.1": "2.0.1"
+    "npm:@cfworker/json-schema@^2.0.1": "2.0.1",
+    "npm:@surrealdb/wasm@latest": "3.0.3_surrealdb@2.0.3__tslib@2.8.1__typescript@5.3.3",
+    "npm:surrealdb@latest": "2.0.3_tslib@2.8.1_typescript@5.3.3"
   },
   "jsr": {
     "@deno/cache-dir@0.13.2": {
@@ -87,6 +89,35 @@
   "npm": {
     "@cfworker/json-schema@2.0.1": {
       "integrity": "sha512-1w7xVrTFjAWBVaOWRH5AMdKpJdltF4iy/d93E7qj8Rox6yY9OzEW1aC7T5eONrDOxXrlnsclPw9v24XW2c0mkg=="
+    },
+    "@surrealdb/cbor@2.0.0-alpha.4": {
+      "integrity": "sha512-l/hNZ3ZCOJq8rzwx1y5ZV/8b2bYCWdhGqRVY33Pu50NAHyAW5qLsMn3ZBkZow77mAKwNCsbDsRGnyYEuU95mjw=="
+    },
+    "@surrealdb/wasm@3.0.3_surrealdb@2.0.3__tslib@2.8.1__typescript@5.3.3": {
+      "integrity": "sha512-7tUOiQB2eZY80oNKfLvwqZLgANun04ubKXqfanAZmAnwJMB/nKetk7eh6dRd+PFzmLla1Ns2m6Fku+H/DSFjbA==",
+      "dependencies": [
+        "surrealdb"
+      ]
+    },
+    "surrealdb@2.0.3_tslib@2.8.1_typescript@5.3.3": {
+      "integrity": "sha512-60dXe7K+7M5EUr6VyIgd/SEUCKFXqc54JHUhCTG8IDlqp7pmuuQQWs2wpgulp2oSXpy+9jwKhgNR/mP3wrEgfw==",
+      "dependencies": [
+        "@surrealdb/cbor",
+        "tslib",
+        "typescript",
+        "uuidv7"
+      ]
+    },
+    "tslib@2.8.1": {
+      "integrity": "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="
+    },
+    "typescript@5.3.3": {
+      "integrity": "sha512-pXWcraxM0uxAS+tN0AG/BF2TyqmHO014Z070UsJ+pFvYuRSq8KH8DmWpnbXe0pEPDHXZV3FcAbJkijJ5oNEnWw==",
+      "bin": true
+    },
+    "uuidv7@1.2.1": {
+      "integrity": "sha512-4kPkK3/XTQW9Hbm4CaqfICn+kY9LJtDVEOfgsRRra/+n2Ofg4NqzRFceAkxvQ/Ud/6BpHOPzj8cirqM7TzTN5Q==",
+      "bin": true
     }
   },
   "workspace": {
@@ -95,7 +126,9 @@
       "jsr:@hono/hono@*",
       "jsr:@std/assert@0.223.0",
       "jsr:@std/cli@*",
-      "npm:@cfworker/json-schema@^2.0.1"
+      "npm:@cfworker/json-schema@^2.0.1",
+      "npm:@surrealdb/wasm@latest",
+      "npm:surrealdb@latest"
     ]
   }
 }
