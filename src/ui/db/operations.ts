@@ -117,23 +117,36 @@ export async function loadAllNodes(): Promise<FlatNode[]> {
 export async function saveTreeNode(node: FlatNode): Promise<void> {
   const db = getDb();
   const parentRef = node.parent ? `tree_node:${sanitizeId(node.parent)}` : "NONE";
+  // Build SET clauses — omit optional fields when undefined so SurrealDB
+  // doesn't receive NULL (which it rejects for option<T> fields).
+  const setClauses = [
+    `label = $label`,
+    `kind = $kind`,
+    `parent = ${parentRef}`,
+    `data = $data`,
+    `version = $version`,
+  ];
+  const bindings: Record<string, unknown> = {
+    label: node.label,
+    kind: node.kind,
+    data: node.data,
+    version: node.version,
+  };
+  if (node.uri !== undefined) {
+    setClauses.push(`uri = $uri`);
+    bindings.uri = node.uri;
+  } else {
+    setClauses.push(`uri = NONE`);
+  }
+  if (node.ports !== undefined) {
+    setClauses.push(`ports = $ports`);
+    bindings.ports = node.ports;
+  } else {
+    setClauses.push(`ports = NONE`);
+  }
   await db.query(
-    `UPSERT tree_node:${sanitizeId(node.id)} SET
-      label = $label,
-      uri = $uri,
-      kind = $kind,
-      parent = ${parentRef},
-      ports = $ports,
-      data = $data,
-      version = $version`,
-    {
-      label: node.label,
-      uri: node.uri ?? null,
-      kind: node.kind,
-      ports: node.ports ?? null,
-      data: node.data,
-      version: node.version,
-    },
+    `UPSERT tree_node:${sanitizeId(node.id)} SET ${setClauses.join(",\n      ")}`,
+    bindings,
   );
 }
 
@@ -193,22 +206,29 @@ export async function loadAllConstraints(): Promise<Constraint[]> {
 /** Upsert a constraint. */
 export async function saveConstraint(c: Constraint): Promise<void> {
   const db = getDb();
+  const setClauses = [
+    `label = $label`,
+    `type = $type`,
+    `targets = $targets`,
+    `data = $data`,
+    `version = $version`,
+  ];
+  const bindings: Record<string, unknown> = {
+    label: c.label,
+    type: c.type,
+    targets: c.targets,
+    data: c.data,
+    version: c.version,
+  };
+  if (c.uri !== undefined) {
+    setClauses.push(`uri = $uri`);
+    bindings.uri = c.uri;
+  } else {
+    setClauses.push(`uri = NONE`);
+  }
   await db.query(
-    `UPSERT \`constraint\`:${sanitizeId(c.id)} SET
-      label = $label,
-      uri = $uri,
-      type = $type,
-      targets = $targets,
-      data = $data,
-      version = $version`,
-    {
-      label: c.label,
-      uri: c.uri ?? null,
-      type: c.type,
-      targets: c.targets,
-      data: c.data,
-      version: c.version,
-    },
+    `UPSERT \`constraint\`:${sanitizeId(c.id)} SET ${setClauses.join(",\n      ")}`,
+    bindings,
   );
 }
 
