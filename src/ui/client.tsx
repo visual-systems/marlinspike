@@ -38,6 +38,10 @@ function App() {
   const [dbError, setDbError] = useState<string | null>(null);
   const [listEditor, setListEditor] = useState<ListEditorConfig | null>(null);
   const prevTabIdRef = useRef<string | null>(null);
+  // Keep a ref to the latest ws so async closures (addTab, activateTab)
+  // always see the current state — Hono doesn't re-render child components.
+  const wsRef = useRef<WorkspaceState | null>(null);
+  wsRef.current = ws;
 
   // Async initialisation — load from SurrealDB (with localStorage migration)
   useEffect(() => {
@@ -89,7 +93,7 @@ function App() {
 
   return (
     <>
-      <WorkspaceBar ws={ws} update={update} showListEditor={showListEditor} />
+      <WorkspaceBar ws={ws} wsRef={wsRef} update={update} showListEditor={showListEditor} />
       <WorkspaceControls ws={ws} update={update} showListEditor={showListEditor} />
       <WorkspaceArea ws={ws} update={update} />
       {listEditor && <ListEditorModal config={listEditor} onClose={() => setListEditor(null)} />}
@@ -154,8 +158,9 @@ function ListEditorModal(
 // ---------------------------------------------------------------------------
 
 function WorkspaceBar(
-  { ws, update, showListEditor }: {
+  { ws, wsRef, update, showListEditor }: {
     ws: WorkspaceState;
+    wsRef: { current: WorkspaceState | null };
     update: Updater;
     showListEditor: (c: ListEditorConfig) => void;
   },
@@ -182,6 +187,10 @@ function WorkspaceBar(
 
   async function addTab() {
     try {
+      // Flush current database to IndexedDB before switching
+      const currentWs = wsRef.current;
+      if (currentWs) await flushSync(currentWs);
+
       const name = "Untitled";
       const uuid = await createDatabase(name);
       const tabId = crypto.randomUUID();
@@ -262,7 +271,7 @@ function WorkspaceBar(
             isActive={tab.id === ws.activeTabId}
             canClose={ws.tabs.length > 1}
             update={update}
-            ws={ws}
+            wsRef={wsRef}
           />
         ))}
         <button
@@ -295,12 +304,12 @@ function WorkspaceBar(
 // ---------------------------------------------------------------------------
 
 function TabItem(
-  { tab, isActive, canClose, update, ws }: {
+  { tab, isActive, canClose, update, wsRef }: {
     tab: Tab;
     isActive: boolean;
     canClose: boolean;
     update: Updater;
-    ws: WorkspaceState;
+    wsRef: { current: WorkspaceState | null };
   },
 ) {
   const [renaming, setRenaming] = useState(false);
@@ -315,31 +324,32 @@ function TabItem(
   }, [renaming]);
 
   async function activateTab() {
-    if (switching || tab.id === ws.activeTabId) return;
+    const currentWs = wsRef.current;
+    if (switching || !currentWs || tab.id === currentWs.activeTabId) return;
     setSwitching(true);
     try {
       // 1. Flush any pending writes to the current database
-      await flushSync(ws);
+      await flushSync(currentWs);
 
       // 2. Snapshot current tab's data
-      const currentTab = getActiveTab(ws);
+      const currentTab = getActiveTab(currentWs);
       const snapshot: DatabaseSnapshot = {
-        treeNodes: ws.treeNodes,
-        edges: ws.edges,
-        constraints: ws.constraints,
-        constraintApplications: ws.constraintApplications,
-        focusId: ws.focusId,
-        canvasExpandedNodes: ws.canvasExpandedNodes,
-        canvasNodePositions: ws.canvasNodePositions,
-        canvasSelected: ws.canvasSelected,
-        canvasAlgorithm: ws.canvasAlgorithm,
-        entityDrafts: ws.entityDrafts,
+        treeNodes: currentWs.treeNodes,
+        edges: currentWs.edges,
+        constraints: currentWs.constraints,
+        constraintApplications: currentWs.constraintApplications,
+        focusId: currentWs.focusId,
+        canvasExpandedNodes: currentWs.canvasExpandedNodes,
+        canvasNodePositions: currentWs.canvasNodePositions,
+        canvasSelected: currentWs.canvasSelected,
+        canvasAlgorithm: currentWs.canvasAlgorithm,
+        entityDrafts: currentWs.entityDrafts,
       };
 
       // 3. Load target tab's data (from cache or DB)
       let targetData: DatabaseSnapshot;
-      if (ws._snapshotCache[tab.databaseId]) {
-        targetData = ws._snapshotCache[tab.databaseId];
+      if (currentWs._snapshotCache[tab.databaseId]) {
+        targetData = currentWs._snapshotCache[tab.databaseId];
       } else {
         targetData = await loadDatabaseSnapshot(tab.databaseId);
       }
