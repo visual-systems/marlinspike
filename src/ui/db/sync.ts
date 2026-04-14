@@ -30,26 +30,42 @@ import { saveDump } from "./bridge.ts";
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 let prevState: WorkspaceState | null = null;
 let syncing = false;
+let lastSyncTime = 0;
 
 const DEBOUNCE_MS = 500;
+const EAGER_INTERVAL_MS = 2000;
 
 /**
- * Schedule a debounced sync of workspace state to SurrealDB.
- * Only the diff between prevState and newState is written.
+ * Schedule a sync of workspace state to SurrealDB.
+ * Uses leading-edge + trailing-edge debounce: fires immediately if
+ * EAGER_INTERVAL_MS has elapsed since the last sync, otherwise debounces.
+ * This ensures edits are persisted quickly while avoiding excessive writes.
  */
 export function scheduleSyncToDb(newState: WorkspaceState): void {
   if (syncTimer) clearTimeout(syncTimer);
   const prev = prevState;
-  syncTimer = setTimeout(async () => {
+  const now = Date.now();
+  const elapsed = now - lastSyncTime;
+
+  const doSync = async () => {
     syncing = true;
     try {
       await syncToDb(prev, newState);
+      lastSyncTime = Date.now();
     } catch (err) {
       console.error("[sync] Failed to persist state:", err);
     }
     prevState = newState;
     syncing = false;
-  }, DEBOUNCE_MS);
+  };
+
+  if (elapsed >= EAGER_INTERVAL_MS) {
+    // Enough time since last sync — fire immediately
+    doSync();
+  } else {
+    // Debounce — fire after DEBOUNCE_MS
+    syncTimer = setTimeout(doSync, DEBOUNCE_MS);
+  }
 }
 
 /** Immediately flush any pending sync. Returns when complete. */
@@ -238,12 +254,14 @@ async function persistDumps(
       await useDatabase(databaseId);
       const graphDump = await exportDb();
       await saveDump(`db:${databaseId}`, graphDump);
+      console.log(`[sync] Persisted db:${databaseId} (${graphDump.length} bytes)`);
     }
 
     if (uiChanged) {
       await useUiDb();
       const uiDump = await exportDb();
       await saveDump("ui", uiDump);
+      console.log(`[sync] Persisted ui (${uiDump.length} bytes)`);
     }
   } catch (err) {
     console.error("[sync] Failed to persist dumps to IndexedDB:", err);

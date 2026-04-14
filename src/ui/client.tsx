@@ -28,6 +28,11 @@ import {
 } from "./workspace.ts";
 import { flushSync, scheduleSyncToDb, setSyncBaseline } from "./db/sync.ts";
 import { createDatabase } from "./db/operations.ts";
+import { exportDb, useDatabase, useUiDb } from "./db/surreal.ts";
+import { saveDump } from "./db/bridge.ts";
+
+// Module-level flag: skip baseline reset when addTab handles its own persistence
+let skipBaselineReset = false;
 
 // ---------------------------------------------------------------------------
 // App root
@@ -58,12 +63,31 @@ function App() {
       });
   }, []);
 
+  // Flush pending sync before page unload so edits survive refresh
+  useEffect(() => {
+    const handler = () => {
+      const current = wsRef.current;
+      if (current) {
+        // flushSync is async but beforeunload can't wait — fire and hope.
+        // To improve reliability, we also persist eagerly (not just debounced).
+        flushSync(current);
+      }
+    };
+    globalThis.addEventListener("beforeunload", handler);
+    return () => globalThis.removeEventListener("beforeunload", handler);
+  }, []);
+
   // Persist to SurrealDB + IndexedDB on every state change (debounced)
   useEffect(() => {
     if (!ws) return;
     // Reset sync baseline when active tab changes (new database context)
+    // Skip if addTab already handled persistence (avoids clobbering the diff)
     if (prevTabIdRef.current !== null && prevTabIdRef.current !== ws.activeTabId) {
-      setSyncBaseline(ws);
+      if (skipBaselineReset) {
+        skipBaselineReset = false;
+      } else {
+        setSyncBaseline(ws);
+      }
     }
     prevTabIdRef.current = ws.activeTabId;
     if (!dbError) {
@@ -240,7 +264,22 @@ function WorkspaceBar(
           },
         };
       });
-      setSyncBaseline(null!); // Force full write on next sync
+      // Tell the useEffect not to reset the sync baseline — we need the
+      // diff to detect the new tab/UI changes and persist them.
+      skipBaselineReset = true;
+
+      // Immediately persist the new (empty) database and updated UI state
+      // to IndexedDB. We can't rely on the sync cycle because the useEffect
+      // resets the sync baseline on tab change, causing the diff to see no changes.
+      await useDatabase(uuid);
+      const graphDump = await exportDb();
+      await saveDump(`db:${uuid}`, graphDump);
+      console.log(`[addTab] Persisted db:${uuid} (${graphDump.length} bytes)`);
+
+      await useUiDb();
+      const uiDump = await exportDb();
+      await saveDump("ui", uiDump);
+      console.log(`[addTab] Persisted ui (${uiDump.length} bytes)`);
     } catch (err) {
       console.error("[addTab] Failed to create database:", err);
     }

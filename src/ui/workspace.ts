@@ -513,15 +513,18 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
   // 2. Restore _ui database from IndexedDB dump
   const uiDump = await loadDump("ui");
   if (uiDump) {
+    console.log(`[init] Found _ui dump (${uiDump.length} bytes), importing...`);
     await useUiDb();
     await importDb(uiDump);
     console.log("[init] Restored _ui database from IndexedDB");
   } else {
+    console.log("[init] No _ui dump found, initialising fresh schema");
     await initUiSchema();
   }
 
   // 3. Check if we have databases registered
   const dbs = await listDatabases();
+  console.log("[init] Registered databases:", dbs.map((d) => `${d.name} (${d.uuid})`));
   const hasDefault = dbs.some((d) => d.name === "Default");
 
   if (!hasDefault) {
@@ -575,20 +578,36 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
   const uiState = await loadWorkspaceUi();
   let activeDatabaseId = DEFAULT_DB;
   if (uiState) {
+    console.log("[init] UI state loaded:", {
+      activeTabId: uiState.activeTabId,
+      tabCount: uiState.tabs.length,
+      tabs: uiState.tabs.map((t: Tab) => ({
+        id: t.id.slice(0, 8),
+        name: t.name,
+        databaseId: t.databaseId?.slice(0, 8),
+      })),
+    });
     const activeTab = uiState.tabs.find((t: Tab) => t.id === uiState.activeTabId) ??
       uiState.tabs[0];
     if (activeTab?.databaseId) {
       activeDatabaseId = activeTab.databaseId;
     }
+  } else {
+    console.log("[init] No UI state found in _ui database");
   }
 
   // 5. Restore active graph database from IndexedDB dump
+  console.log(`[init] Active database: ${activeDatabaseId}`);
   const graphDump = await loadDump(`db:${activeDatabaseId}`);
   if (graphDump) {
+    console.log(
+      `[init] Found graph dump for ${activeDatabaseId} (${graphDump.length} bytes), importing...`,
+    );
     await useDatabase(activeDatabaseId);
     await importDb(graphDump);
     console.log(`[init] Restored database ${activeDatabaseId} from IndexedDB`);
   } else {
+    console.log(`[init] No dump found for db:${activeDatabaseId}, initialising fresh schema`);
     await initGraphSchema(activeDatabaseId);
   }
 
@@ -601,8 +620,16 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     loadAllApplications(),
   ]);
 
+  console.log("[init] Loaded from SurrealDB:", {
+    nodes: flatNodes.length,
+    edges: edges.length,
+    constraints: constraints.length,
+    applications: applications.length,
+  });
+
   const treeNodes = buildTree(flatNodes);
   const canvasState = await loadCanvasState();
+  console.log("[init] Canvas state:", canvasState ? "found" : "not found");
 
   if (uiState) {
     // Backfill databaseId on tabs that predate this field
@@ -624,11 +651,16 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
 
     const ds = defaultState();
     return {
+      ...ds,
+      // UI-only fields from SurrealDB (tabs, personas, workflows, etc.)
+      // Spread first so explicit graph/canvas fields below take precedence.
+      ...uiState,
+      // Graph data loaded from SurrealDB — must override any stale fields in uiState
       treeNodes,
       edges: normaliseEdges(edges),
       constraints,
       constraintApplications: applications,
-      ...uiState,
+      // Overrides
       tabs,
       connectedGraphs,
       focusId: canvasState?.focusId ?? null,
@@ -673,13 +705,16 @@ async function persistInitialDumps(graphDatabaseId: string): Promise<void> {
 export async function loadDatabaseSnapshot(
   databaseId: string,
 ): Promise<DatabaseSnapshot> {
+  console.log(`[snapshot] Loading database ${databaseId}...`);
   // Restore from IndexedDB dump if this database hasn't been loaded yet
   const dump = await loadDump(`db:${databaseId}`);
   if (dump) {
+    console.log(`[snapshot] Found dump for ${databaseId} (${dump.length} bytes), importing...`);
     await useDatabase(databaseId);
     await importDb(dump);
     console.log(`[snapshot] Restored database ${databaseId} from IndexedDB`);
   } else {
+    console.log(`[snapshot] No dump found for db:${databaseId}, initialising fresh schema`);
     await initGraphSchema(databaseId);
   }
 
@@ -690,6 +725,12 @@ export async function loadDatabaseSnapshot(
     loadAllConstraints(),
     loadAllApplications(),
   ]);
+  console.log(`[snapshot] Loaded from SurrealDB:`, {
+    nodes: flatNodes.length,
+    edges: edges.length,
+    constraints: constraints.length,
+    applications: applications.length,
+  });
   const canvasState = await loadCanvasState();
   const ds = defaultState();
   return {

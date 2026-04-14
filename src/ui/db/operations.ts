@@ -84,7 +84,8 @@ export function buildTree(flat: FlatNode[]): TreeNode[] {
 
   const childrenOf = new Map<string | null, FlatNode[]>();
   for (const row of flat) {
-    const key = row.parent;
+    // Normalise parent: null/undefined/empty → null (root node)
+    const key = row.parent || null;
     if (!childrenOf.has(key)) childrenOf.set(key, []);
     childrenOf.get(key)!.push(row);
   }
@@ -110,7 +111,35 @@ export function buildTree(flat: FlatNode[]): TreeNode[] {
 export async function loadAllNodes(): Promise<FlatNode[]> {
   const db = getDb();
   const result = await db.query<[FlatNode[]]>("SELECT * FROM tree_node");
-  return extractQueryResult(result);
+  const rows = extractQueryResult<FlatNode>(result);
+  // Normalise fields from SurrealDB's representation:
+  // - `id` comes back as a RecordId object → extract the string key
+  // - `parent` comes back as a RecordId or NONE → normalise to string|null
+  return rows.map((row) => ({
+    ...row,
+    id: normaliseRecordId(row.id),
+    parent: row.parent == null ? null : normaliseRecordId(row.parent as string),
+  }));
+}
+
+/** Extract the plain string ID from a SurrealDB RecordId or string. */
+function normaliseRecordId(value: unknown): string {
+  if (typeof value === "string") {
+    // Strip "table:" prefix if present (e.g. "tree_node:abc" → "abc")
+    const colonIdx = value.indexOf(":");
+    return colonIdx >= 0 ? value.slice(colonIdx + 1) : value;
+  }
+  // RecordId objects have a .id property or toString()
+  if (value && typeof value === "object") {
+    const rec = value as Record<string, unknown>;
+    if (typeof rec.id === "string") return rec.id;
+    if (typeof rec.toString === "function") {
+      const s = rec.toString();
+      const colonIdx = s.indexOf(":");
+      return colonIdx >= 0 ? s.slice(colonIdx + 1) : s;
+    }
+  }
+  return String(value);
 }
 
 /** Upsert a single flat node. */
@@ -164,7 +193,13 @@ export async function deleteTreeNode(id: string): Promise<void> {
 export async function loadAllEdges(): Promise<Edge[]> {
   const db = getDb();
   const result = await db.query<[Edge[]]>("SELECT * FROM edge");
-  return extractQueryResult(result);
+  const rows = extractQueryResult<Edge>(result);
+  return rows.map((row) => ({
+    ...row,
+    id: normaliseRecordId(row.id),
+    fromId: normaliseRecordId(row.fromId),
+    toId: normaliseRecordId(row.toId),
+  }));
 }
 
 /** Upsert an edge. */
@@ -200,7 +235,11 @@ export async function loadAllConstraints(): Promise<Constraint[]> {
   const db = getDb();
   // "constraint" is a reserved word in SurrealQL, so we backtick-quote it
   const result = await db.query<[Constraint[]]>("SELECT * FROM `constraint`");
-  return extractQueryResult(result);
+  const rows = extractQueryResult<Constraint>(result);
+  return rows.map((row) => ({
+    ...row,
+    id: normaliseRecordId(row.id),
+  }));
 }
 
 /** Upsert a constraint. */
@@ -248,7 +287,12 @@ export async function loadAllApplications(): Promise<ConstraintApplication[]> {
   const result = await db.query<[ConstraintApplication[]]>(
     "SELECT * FROM constraint_application",
   );
-  return extractQueryResult(result);
+  const rows = extractQueryResult<ConstraintApplication>(result);
+  return rows.map((row) => ({
+    ...row,
+    id: normaliseRecordId(row.id),
+    constraintId: normaliseRecordId(row.constraintId),
+  }));
 }
 
 /** Upsert a constraint application. */
@@ -302,7 +346,7 @@ export async function loadWorkspaceUi(): Promise<UiState | null> {
   const db = getDb();
   await useUiDb();
   const result = await db.query<[UiState[]]>(
-    "SELECT * FROM workspace:main",
+    "SELECT tabs, activeTabId, personas, activePersona, workflows, activeWorkflow, connectedGraphs FROM workspace:main",
   );
   const rows = extractQueryResult<UiState>(result);
   return rows.length > 0 ? rows[0] : null;
