@@ -5,6 +5,7 @@ import {
   collectSubtreeIds,
   findNode,
   findPath,
+  getWorkspaceRootId,
   type TreeNode,
   type Updater,
   type WorkspaceState,
@@ -35,7 +36,7 @@ export function FocusDropdown({ ws, update }: { ws: WorkspaceState; update: Upda
     const afterFocus = ws.focusId
       ? fullPath.slice(fullPath.findIndex((n) => n.id === ws.focusId) + 1)
       : fullPath;
-    pathToSelection = afterFocus.filter((n) => n.kind === "composite");
+    pathToSelection = afterFocus.filter((n) => n.kind === "composite" && n.id !== rootId);
   }
 
   function setFocus(id: string | null) {
@@ -66,8 +67,9 @@ export function FocusDropdown({ ws, update }: { ws: WorkspaceState; update: Upda
     "display:flex; align-items:center; padding:5px 10px; font-size:11px; color:#a0b4e0; user-select:none; white-space:nowrap; gap:4px;";
   const dividerStyle = "height:1px; background:#1a1a2e; margin:2px 0;";
 
-  // Ancestors: nodes in focusPath excluding the focus node itself
-  const ancestors = focusPath.slice(0, -1);
+  // Ancestors: nodes in focusPath excluding the focus node itself and the workspace root
+  const rootId = getWorkspaceRootId(ws);
+  const ancestors = focusPath.slice(0, -1).filter((n) => n.id !== rootId);
 
   const hasAbove = ancestors.length > 0 || ws.focusId !== null;
   const hasBelow = pathToSelection.length > 0;

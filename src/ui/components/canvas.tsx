@@ -8,6 +8,7 @@ import {
   findParentOf,
   findPath,
   getFocusedRootNodes,
+  getWorkspaceRootId,
   type Panel,
   type Tab,
   type TreeNode,
@@ -570,6 +571,7 @@ function CanvasInspector(
     id: "__canvas_tab__",
     name: "Canvas",
     databaseId: "default",
+    rootNodeId: getWorkspaceRootId(ws),
     panels: [fakePanel],
   };
 
@@ -1239,18 +1241,8 @@ export function Canvas(
     const id = crypto.randomUUID();
     const newNode: TreeNode = { id, label: "", kind: "leaf", children: [], data: {}, version: 1 };
     // When focused, "root canvas level" maps to inside the focused node
-    const effectiveParentId = parentId ?? ws.focusId ?? null;
-    if (effectiveParentId === null) {
-      update((s) => ({
-        ...s,
-        treeNodes: [...s.treeNodes, newNode],
-        canvasNodePositions: {
-          ...s.canvasNodePositions,
-          [id]: { x: localX, y: localY, pinned: true },
-        },
-        canvasSelected: { type: "node", id },
-      }));
-    } else {
+    const effectiveParentId = parentId ?? ws.focusId ?? getWorkspaceRootId(ws);
+    {
       update((s) => {
         function addChild(nodes: TreeNode[]): TreeNode[] {
           return nodes.map((n) =>

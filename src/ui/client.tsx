@@ -15,10 +15,12 @@ import {
   defaultConstraintsPanel,
   defaultPanel,
   getActiveTab,
+  getWorkspaceRootId,
   type ListEditorConfig,
   loadDatabaseSnapshot,
   loadState,
   loadStateAsync,
+  makeRootNode,
   PANEL_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
   type Tab,
@@ -217,6 +219,7 @@ function WorkspaceBar(
 
       const uuid = await createDatabase("Untitled");
       const tabId = crypto.randomUUID();
+      const rootNodeId = crypto.randomUUID();
       // Snapshot current tab's data before switching
       update((s) => {
         const currentTab = getActiveTab(s);
@@ -238,11 +241,12 @@ function WorkspaceBar(
             id: tabId,
             name: null,
             databaseId: uuid,
+            rootNodeId,
             panels: [defaultPanel()],
           }],
           activeTabId: tabId,
-          // New empty database
-          treeNodes: [],
+          // New empty database with workspace root
+          treeNodes: [makeRootNode(rootNodeId, [])],
           edges: [],
           constraints: [],
           constraintApplications: [],
@@ -389,7 +393,7 @@ function TabItem(
       if (currentWs._snapshotCache[tab.databaseId]) {
         targetData = currentWs._snapshotCache[tab.databaseId];
       } else {
-        targetData = await loadDatabaseSnapshot(tab.databaseId);
+        targetData = await loadDatabaseSnapshot(tab.databaseId, tab.rootNodeId);
       }
 
       // 4. Update state atomically
@@ -599,6 +603,18 @@ function WorkspaceControls(
 
       {/* Right-side controls */}
       <div style="display:flex; align-items:stretch; margin-left:auto; flex-shrink:0;">
+        <div
+          style="display:flex; align-items:center; padding:0 6px; font-size:11px; color:#555; cursor:pointer; user-select:none; border-left:1px solid #1a1a2e; flex-shrink:0;"
+          title="Inspect focused node"
+          onClick={() => {
+            const nodeId = ws.focusId ?? getWorkspaceRootId(ws);
+            update((s) => ({ ...s, canvasSelected: { type: "node", id: nodeId } }));
+          }}
+          onMouseEnter={(e: MouseEvent) => (e.currentTarget as HTMLElement).style.color = "#888"}
+          onMouseLeave={(e: MouseEvent) => (e.currentTarget as HTMLElement).style.color = "#555"}
+        >
+          ⓘ
+        </div>
         <FocusDropdown ws={ws} update={update} />
         <ConnectedGraphsBtn ws={ws} update={update} />
       </div>
@@ -649,7 +665,7 @@ function ConnectedGraphsBtn({ ws, update }: { ws: WorkspaceState; update: Update
       </div>
       {open && (
         <div
-          style="position:absolute; top:100%; right:0; min-width:180px; background:#0d0d1e; border:1px solid #252538; z-index:200; display:flex; flex-direction:column; box-shadow:0 4px 12px rgba(0,0,0,0.5);"
+          style="position:absolute; top:100%; right:0; min-width:280px; background:#0d0d1e; border:1px solid #252538; z-index:200; display:flex; flex-direction:column; box-shadow:0 4px 12px rgba(0,0,0,0.5);"
           onClick={(e: MouseEvent) => e.stopPropagation()}
         >
           {ws.connectedGraphs.map((graph) => (

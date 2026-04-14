@@ -19,19 +19,21 @@ Each phase is independently shippable.
 ## Approach
 
 ### Phase 1: Workspace root node
-- [ ] Add `WORKSPACE_ROOT_ID` constant and `makeRootNode()` helper to `workspace.ts`
-- [ ] Change `defaultTreeNodes()` to return `[makeRootNode([...existing...])]`
-- [ ] Change `getFocusedRootNodes()`: when `focusId === null`, return `ws.treeNodes[0]?.children ?? []`
-- [ ] Add `getWorkspaceRoot(ws)` helper
-- [ ] Migration in `loadStateAsync()` and `loadDatabaseSnapshot()`: wrap existing trees in root node if missing
-- [ ] Migration in `loadState()` (localStorage path): same wrapping
-- [ ] Update `addTab()` in `client.tsx`: new tabs get `[makeRootNode([])]`
-- [ ] Update canvas `addNode()`: use `WORKSPACE_ROOT_ID` as fallback parent instead of null
-- [ ] Update focus dropdown: filter root node from ancestor breadcrumbs
-- [ ] Add "inspect" button next to focus dropdown — inspects the currently focused node (or workspace root when at root)
-- [ ] Widen the connected-graphs dropdown so graph names fit on one line
-- [ ] Verify `buildTree`/`flattenTree` work unchanged (root is just a node with `parent: null`)
-- [ ] Verify sync works unchanged (root syncs as a regular FlatNode)
+- [x] Add `makeRootNode(id, children)`, `getWorkspaceRoot()`, `getWorkspaceRootId()`, `ensureWorkspaceRoot()` to `workspace.ts`
+- [x] Add `rootNodeId` field to `Tab` interface (UUID, not a constant — supports embedding)
+- [x] Change `defaultTreeNodes()` to return `ensureWorkspaceRoot([...existing...])`
+- [x] Change `getFocusedRootNodes()`: when `focusId === null`, return workspace root's children
+- [x] Migration in `loadStateAsync()` and `loadDatabaseSnapshot()`: wrap via `ensureWorkspaceRoot()`
+- [x] Migration in `loadState()` (localStorage path): same wrapping
+- [x] Update `addTab()` in `client.tsx`: new tabs get `[makeRootNode([])]`
+- [x] Update canvas `addNode()`: use `WORKSPACE_ROOT_ID` as fallback parent instead of null
+- [x] Update focus dropdown: filter root node from ancestor breadcrumbs
+- [x] Add "inspect" button next to focus dropdown — inspects the currently focused node (or workspace root when at root)
+- [x] Widen the connected-graphs dropdown so graph names fit on one line (180px → 280px)
+- [x] Add unit tests for workspace root helpers (`workspace_test.ts`)
+- [x] Verify `buildTree`/`flattenTree` work unchanged (root is just a node with `parent: null`)
+- [x] Verify sync works unchanged (root syncs as a regular FlatNode)
+- [x] `deno task ci` passes — 292 tests, all checks green
 
 ### Phase 2: `workspace.connections` constraint type
 - [ ] Register `workspace.connections` in constraint type registry (`validate_workspace.ts`)
@@ -73,9 +75,12 @@ Each phase is independently shippable.
 
 ### Root node structure
 ```
+// Tab stores the root node's UUID
+Tab { rootNodeId: "a1b2c3d4-..." }
+
 treeNodes: [
   {
-    id: WORKSPACE_ROOT_ID,     // "spike://workspace-root"
+    id: "a1b2c3d4-...",        // UUID (same as tab.rootNodeId)
     label: "Workspace",
     kind: "composite",
     children: [...today's top-level nodes...],
@@ -85,6 +90,8 @@ treeNodes: [
 ]
 ```
 
+Root IDs are UUIDs (not a fixed constant) so workspaces can be embedded inside other graphs without ID collisions.
+
 ### Visual transparency
 `getFocusedRootNodes()` is the single point of change — returns `ws.treeNodes[0].children` when `focusId === null`. Tree panel, canvas, and focus dropdown all go through this function, so the root is never rendered directly.
 
@@ -92,13 +99,13 @@ Canvas `syncLayout()` receives `focusedRootNodes` (the children), so layout keys
 
 ### Canvas addNode() fix
 Currently: `effectiveParentId = parentId ?? ws.focusId ?? null` — null means "add to forest root".
-After: `effectiveParentId = parentId ?? ws.focusId ?? WORKSPACE_ROOT_ID` — adds as child of workspace root.
+After: `effectiveParentId = parentId ?? ws.focusId ?? getWorkspaceRootId(ws)` — adds as child of workspace root.
 
 ### findParentOf() behavior
-With the root node, `findParentOf(ws.treeNodes, topLevelChildId)` now returns the root node instead of null. Call sites use `?.id ?? ""` patterns which correctly handle this — the workspace root's grandparent is still null, so `findParentOf(treeNodes, WORKSPACE_ROOT_ID)` returns null and the `?? ""` fallback still produces `""` for the canvas root level key.
+With the root node, `findParentOf(ws.treeNodes, topLevelChildId)` now returns the root node instead of null. Call sites use `?.id ?? ""` patterns which correctly handle this — the workspace root's grandparent is still null, so `findParentOf(treeNodes, rootNodeId)` returns null and the `?? ""` fallback still produces `""` for the canvas root level key.
 
 ### Migration
-On load, check `ws.treeNodes[0]?.id !== WORKSPACE_ROOT_ID` → wrap: `[makeRootNode(existingNodes)]`. This runs in `loadStateAsync()`, `loadDatabaseSnapshot()`, and `loadState()`. The root is then persisted by the normal sync cycle.
+On load, `ensureWorkspaceRoot(treeNodes, tab.rootNodeId)` wraps if needed. If the tab has no `rootNodeId` yet (migration), a new UUID is generated and backfilled. This runs in `loadStateAsync()`, `loadDatabaseSnapshot()`, and `loadState()`. The root is then persisted by the normal sync cycle.
 
 ### Connection pool (Phase 3)
 ```typescript
@@ -127,6 +134,8 @@ export function getRemoteDb(id: string): Surreal | undefined;
 - Should the workspace root be deletable? Probably not — if deleted, recreate it automatically.
 - How to handle auth credentials securely? For now, stored in node data (local IndexedDB). Future: credential store or OAuth flow.
 - Should remote connection status be reactive (live query / subscription)? Defer — poll or manual refresh for now.
+- **Tab name on root node:** The tab's display name could live as a property on the root node (it's workspace metadata). Deferring for now — currently on Tab.
+- **databaseId on root node vs Tab:** The root node could own its database identity, but there's a bootstrap problem — you need to know which database to load *before* you can read the root node. For now, `databaseId` stays on Tab. Future: root nodes always live in local storage; their connection config (via constraints) determines what gets synced remotely.
 
 ## Verification
 

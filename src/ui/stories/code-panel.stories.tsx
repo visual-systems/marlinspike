@@ -527,7 +527,8 @@ const INVALID_CODE = `(defn broken [x]
 
 export function ValidityStates() {
   const base = defaultState();
-  const ws: WorkspaceState = { ...base, treeNodes: defaultTreeNodes(), edges: [] };
+  const rootNodeId = base.tabs[0].rootNodeId;
+  const ws: WorkspaceState = { ...base, treeNodes: defaultTreeNodes(rootNodeId), edges: [] };
 
   const vApplied = computeValidity(
     VALID_APPLIED_CODE,
