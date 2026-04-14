@@ -10,48 +10,114 @@ import { CodePanel } from "./components/code-panel.tsx";
 import { Canvas } from "./components/canvas.tsx";
 import { validateWorkspace } from "../graph/validate_workspace.ts";
 import {
+  type DatabaseSnapshot,
   defaultCodePanel,
   defaultConstraintsPanel,
   defaultPanel,
   getActiveTab,
   type ListEditorConfig,
+  loadDatabaseSnapshot,
   loadState,
+  loadStateAsync,
   PANEL_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
-  STATE_KEY,
   type Tab,
   type Updater,
   withPanel,
   type WorkspaceState,
 } from "./workspace.ts";
+import { flushSync, scheduleSyncToDb, setSyncBaseline } from "./db/sync.ts";
+import { createDatabase } from "./db/operations.ts";
+import { exportDb, useDatabase, useUiDb } from "./db/surreal.ts";
+import { saveDump } from "./db/bridge.ts";
+
+// Module-level flag: skip baseline reset when addTab handles its own persistence
+let skipBaselineReset = false;
 
 // ---------------------------------------------------------------------------
 // App root
 // ---------------------------------------------------------------------------
 
 function App() {
-  const [ws, setWs] = useState<WorkspaceState>(loadState);
+  const [ws, setWs] = useState<WorkspaceState | null>(null);
+  const [dbError, setDbError] = useState<string | null>(null);
   const [listEditor, setListEditor] = useState<ListEditorConfig | null>(null);
+  const prevTabIdRef = useRef<string | null>(null);
+  // Keep a ref to the latest ws so async closures (addTab, activateTab)
+  // always see the current state — Hono doesn't re-render child components.
+  const wsRef = useRef<WorkspaceState | null>(null);
+  wsRef.current = ws;
 
-  // Persist to localStorage on every state change
+  // Async initialisation — load from SurrealDB (with localStorage migration)
   useEffect(() => {
-    localStorage.setItem(STATE_KEY, JSON.stringify(ws));
+    loadStateAsync()
+      .then((state) => {
+        setWs(state);
+        setSyncBaseline(state);
+      })
+      .catch((err) => {
+        console.error("[init] SurrealDB init failed, falling back to localStorage:", err);
+        setDbError(String(err));
+        const state = loadState();
+        setWs(state);
+      });
+  }, []);
+
+  // Flush pending sync before page unload so edits survive refresh
+  useEffect(() => {
+    const handler = () => {
+      const current = wsRef.current;
+      if (current) {
+        // flushSync is async but beforeunload can't wait — fire and hope.
+        // To improve reliability, we also persist eagerly (not just debounced).
+        flushSync(current);
+      }
+    };
+    globalThis.addEventListener("beforeunload", handler);
+    return () => globalThis.removeEventListener("beforeunload", handler);
+  }, []);
+
+  // Persist to SurrealDB + IndexedDB on every state change (debounced)
+  useEffect(() => {
+    if (!ws) return;
+    // Reset sync baseline when active tab changes (new database context)
+    // Skip if addTab already handled persistence (avoids clobbering the diff)
+    if (prevTabIdRef.current !== null && prevTabIdRef.current !== ws.activeTabId) {
+      if (skipBaselineReset) {
+        skipBaselineReset = false;
+      } else {
+        setSyncBaseline(ws);
+      }
+    }
+    prevTabIdRef.current = ws.activeTabId;
+    if (!dbError) {
+      scheduleSyncToDb(ws);
+    }
   }, [ws]);
 
-  const update: Updater = (fn) => setWs((prev) => fn(prev));
+  const update: Updater = (fn) => setWs((prev) => prev ? fn(prev) : prev);
 
   // Notify child components after Hono finishes its render cycle.
   // Hono's JSX DOM does not re-render child components on prop changes,
   // so we use a post-render event to nudge them.
   useEffect(() => {
-    globalThis.dispatchEvent(new Event("ws-updated"));
+    if (ws) globalThis.dispatchEvent(new Event("ws-updated"));
   }, [ws]);
 
   const showListEditor = (config: ListEditorConfig) => setListEditor(config);
 
+  // Loading state while SurrealDB initialises
+  if (!ws) {
+    return (
+      <div style="display:flex; align-items:center; justify-content:center; height:100vh; color:#555; font-size:14px;">
+        Loading…
+      </div>
+    );
+  }
+
   return (
     <>
-      <WorkspaceBar ws={ws} update={update} showListEditor={showListEditor} />
+      <WorkspaceBar ws={ws} wsRef={wsRef} update={update} showListEditor={showListEditor} />
       <WorkspaceControls ws={ws} update={update} showListEditor={showListEditor} />
       <WorkspaceArea ws={ws} update={update} />
       {listEditor && <ListEditorModal config={listEditor} onClose={() => setListEditor(null)} />}
@@ -116,8 +182,9 @@ function ListEditorModal(
 // ---------------------------------------------------------------------------
 
 function WorkspaceBar(
-  { ws, update, showListEditor }: {
+  { ws, wsRef, update, showListEditor }: {
     ws: WorkspaceState;
+    wsRef: { current: WorkspaceState | null };
     update: Updater;
     showListEditor: (c: ListEditorConfig) => void;
   },
@@ -142,13 +209,80 @@ function WorkspaceBar(
     });
   }
 
-  function addTab() {
-    const tabId = crypto.randomUUID();
-    update((s) => ({
-      ...s,
-      tabs: [...s.tabs, { id: tabId, name: "New Tab", panels: [defaultPanel()] }],
-      activeTabId: tabId,
-    }));
+  async function addTab() {
+    try {
+      // Flush current database to IndexedDB before switching
+      const currentWs = wsRef.current;
+      if (currentWs) await flushSync(currentWs);
+
+      const uuid = await createDatabase("Untitled");
+      const tabId = crypto.randomUUID();
+      // Snapshot current tab's data before switching
+      update((s) => {
+        const currentTab = getActiveTab(s);
+        const snapshot: DatabaseSnapshot = {
+          treeNodes: s.treeNodes,
+          edges: s.edges,
+          constraints: s.constraints,
+          constraintApplications: s.constraintApplications,
+          focusId: s.focusId,
+          canvasExpandedNodes: s.canvasExpandedNodes,
+          canvasNodePositions: s.canvasNodePositions,
+          canvasSelected: s.canvasSelected,
+          canvasAlgorithm: s.canvasAlgorithm,
+          entityDrafts: s.entityDrafts,
+        };
+        return {
+          ...s,
+          tabs: [...s.tabs, {
+            id: tabId,
+            name: null,
+            databaseId: uuid,
+            panels: [defaultPanel()],
+          }],
+          activeTabId: tabId,
+          // New empty database
+          treeNodes: [],
+          edges: [],
+          constraints: [],
+          constraintApplications: [],
+          focusId: null,
+          canvasExpandedNodes: [],
+          canvasNodePositions: {},
+          canvasSelected: null,
+          canvasAlgorithm: s.canvasAlgorithm,
+          entityDrafts: {},
+          connectedGraphs: [{
+            id: uuid,
+            label: `localStorage/Untitled (${uuid.slice(0, 8)})`,
+            connected: true,
+            required: true,
+          }],
+          _snapshotCache: {
+            ...s._snapshotCache,
+            [currentTab.databaseId]: snapshot,
+          },
+        };
+      });
+      // Tell the useEffect not to reset the sync baseline — we need the
+      // diff to detect the new tab/UI changes and persist them.
+      skipBaselineReset = true;
+
+      // Immediately persist the new (empty) database and updated UI state
+      // to IndexedDB. We can't rely on the sync cycle because the useEffect
+      // resets the sync baseline on tab change, causing the diff to see no changes.
+      await useDatabase(uuid);
+      const graphDump = await exportDb();
+      await saveDump(`db:${uuid}`, graphDump);
+      console.log(`[addTab] Persisted db:${uuid} (${graphDump.length} bytes)`);
+
+      await useUiDb();
+      const uiDump = await exportDb();
+      await saveDump("ui", uiDump);
+      console.log(`[addTab] Persisted ui (${uiDump.length} bytes)`);
+    } catch (err) {
+      console.error("[addTab] Failed to create database:", err);
+    }
   }
 
   return (
@@ -175,6 +309,7 @@ function WorkspaceBar(
             isActive={tab.id === ws.activeTabId}
             canClose={ws.tabs.length > 1}
             update={update}
+            wsRef={wsRef}
           />
         ))}
         <button
@@ -207,14 +342,16 @@ function WorkspaceBar(
 // ---------------------------------------------------------------------------
 
 function TabItem(
-  { tab, isActive, canClose, update }: {
+  { tab, isActive, canClose, update, wsRef }: {
     tab: Tab;
     isActive: boolean;
     canClose: boolean;
     update: Updater;
+    wsRef: { current: WorkspaceState | null };
   },
 ) {
   const [renaming, setRenaming] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -224,8 +361,63 @@ function TabItem(
     }
   }, [renaming]);
 
-  function activateTab() {
-    update((s) => ({ ...s, activeTabId: tab.id }));
+  async function activateTab() {
+    const currentWs = wsRef.current;
+    if (switching || !currentWs || tab.id === currentWs.activeTabId) return;
+    setSwitching(true);
+    try {
+      // 1. Flush any pending writes to the current database
+      await flushSync(currentWs);
+
+      // 2. Snapshot current tab's data
+      const currentTab = getActiveTab(currentWs);
+      const snapshot: DatabaseSnapshot = {
+        treeNodes: currentWs.treeNodes,
+        edges: currentWs.edges,
+        constraints: currentWs.constraints,
+        constraintApplications: currentWs.constraintApplications,
+        focusId: currentWs.focusId,
+        canvasExpandedNodes: currentWs.canvasExpandedNodes,
+        canvasNodePositions: currentWs.canvasNodePositions,
+        canvasSelected: currentWs.canvasSelected,
+        canvasAlgorithm: currentWs.canvasAlgorithm,
+        entityDrafts: currentWs.entityDrafts,
+      };
+
+      // 3. Load target tab's data (from cache or DB)
+      let targetData: DatabaseSnapshot;
+      if (currentWs._snapshotCache[tab.databaseId]) {
+        targetData = currentWs._snapshotCache[tab.databaseId];
+      } else {
+        targetData = await loadDatabaseSnapshot(tab.databaseId);
+      }
+
+      // 4. Update state atomically
+      update((s) => {
+        const newCache = { ...s._snapshotCache };
+        newCache[currentTab.databaseId] = snapshot;
+        delete newCache[tab.databaseId]; // Now "live", remove from cache
+        return {
+          ...s,
+          activeTabId: tab.id,
+          ...targetData,
+          connectedGraphs: [{
+            id: tab.databaseId,
+            label: `localStorage/${tab.name || "Untitled"} (${tab.databaseId.slice(0, 8)})`,
+            connected: true,
+            required: true,
+          }],
+          _snapshotCache: newCache,
+        };
+      });
+
+      // 5. Reset sync baseline for the new database context
+      // (We need to get the updated state, but since update is async in Hono
+      // we set a flag and let the useEffect handle baseline reset)
+    } catch (err) {
+      console.error("[activateTab] Failed to switch tab:", err);
+    }
+    setSwitching(false);
   }
 
   function closeTab(e: MouseEvent) {
@@ -244,7 +436,7 @@ function TabItem(
     const val = inputRef.current?.value.trim() ?? "";
     update((s) => ({
       ...s,
-      tabs: s.tabs.map((t) => t.id === tab.id ? { ...t, name: val || "Untitled" } : t),
+      tabs: s.tabs.map((t) => t.id === tab.id ? { ...t, name: val || null } : t),
     }));
     setRenaming(false);
   }
@@ -270,6 +462,8 @@ function TabItem(
         ? (
           <input
             ref={inputRef}
+            value={tab.name ?? ""}
+            placeholder="Untitled"
             style="background:#0f0f22; border:1px solid #4a4a7a; color:#e0e0e0; font-size:13px; padding:0 4px; width:100px; border-radius:2px;"
             onBlur={finishRename}
             onKeyDown={(e: KeyboardEvent) => {
@@ -280,10 +474,10 @@ function TabItem(
         )
         : (
           <span
-            style={isActive ? "cursor:text;" : ""}
+            style={isActive ? "cursor:text;" : (tab.name ? "" : "color:#555;")}
             onClick={handleLabelClick}
           >
-            {tab.name}
+            {tab.name || "Untitled"}
           </span>
         )}
       {canClose && (

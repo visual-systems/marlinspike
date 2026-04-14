@@ -978,7 +978,62 @@ This is a useful design forcing function: if a constraint plugin cannot explain 
 
 
 
-## 14. Open Questions
+## 14. Persistence Layer
+
+### 14.1 Current Implementation
+
+Graph and UI state are stored in **SurrealDB embedded (WASM)** running in-browser with the `mem://` engine. Persistence across page reloads is achieved via a custom bridge that exports SurrealDB databases as SurrealQL dumps and stores them in IndexedDB.
+
+```
+WorkspaceState ←→ SurrealDB (mem://) ←→ export/import ←→ IndexedDB
+                   in-memory WASM            SurrealQL        browser storage
+                   (query engine)            dump strings     (marlinspike_snapshots)
+```
+
+#### Database layout
+
+- **`_ui` database** — global UI state: tabs, personas, workflows, connected graphs, and a `db_registry` table listing all known graph databases.
+- **Per-graph databases** — one SurrealDB database per tab/project, identified by UUID. Contains `tree_node`, `edge`, `constraint`, `constraint_application`, and `canvas_state` tables.
+
+#### Sync strategy
+
+A diff-based sync layer ([`src/ui/db/sync.ts`](src/ui/db/sync.ts)) compares the previous and current `WorkspaceState` by reference equality on each field group (graph data, canvas state, UI state). Only changed groups are written to SurrealDB. After writing, the affected databases are exported and saved to IndexedDB via the bridge.
+
+Sync uses a **leading-edge + trailing-edge debounce**: the first change after 2 seconds of inactivity fires immediately; subsequent rapid changes are debounced at 500ms. A `beforeunload` handler attempts a final flush on page close.
+
+#### IndexedDB bridge
+
+The bridge ([`src/ui/db/bridge.ts`](src/ui/db/bridge.ts)) is a thin wrapper around a single IndexedDB object store (`marlinspike_snapshots` → `dumps`). Keys are `db:{uuid}` for graph databases and `ui` for the UI database. Values are SurrealQL dump strings produced by `db.export()`.
+
+On startup, [`loadStateAsync()`](src/ui/workspace.ts) restores the `_ui` dump first, reads the `db_registry` to find the active tab's database, then restores that database's dump before querying for graph data.
+
+### 14.2 SurrealDB RecordId Normalisation
+
+SurrealDB's WASM SDK returns record identifiers as `RecordId` objects rather than plain strings, and the `NONE` value (used for root nodes with no parent) deserialises as `undefined` rather than `null`. All load functions in [`src/ui/db/operations.ts`](src/ui/db/operations.ts) normalise these values back to plain strings via `normaliseRecordId()`.
+
+This is critical for `buildTree()`, which reconstructs the rose-tree hierarchy from flat nodes — without normalisation, root nodes (where `parent` is `NONE`/`undefined`) are never found and the tree is empty.
+
+### 14.3 Why Not `indxdb://` (SurrealDB's Native IndexedDB Engine)
+
+SurrealDB advertises an `indxdb://` engine for browser-native persistence. This would eliminate the need for the export/import bridge. However, **it is broken as of surrealdb@2.0.3 / @surrealdb/wasm@3.0.3** (the latest versions available at time of writing).
+
+The failure mode: `connect("indxdb://marlinspike")` succeeds, but the first `use()` call triggers an IndexedDB `TransactionInactiveError`. The root cause is a WASM↔JavaScript async boundary issue — IndexedDB transactions auto-commit when the microtask queue empties, and SurrealDB's internal changefeed cleanup task races with the first database operation.
+
+This was confirmed in isolation via a standalone Vite test harness ([`spikes/surrealdb-indxdb/`](spikes/surrealdb-indxdb/)) that reproduces the failure outside our stack. The issue is tracked upstream: [surrealdb/surrealdb#5712](https://github.com/surrealdb/surrealdb/issues/5712).
+
+**Decision:** Use `mem://` with the IndexedDB bridge until the upstream bug is fixed. The bridge adds ~20 lines of code and works reliably. When `indxdb://` is fixed, the bridge can be removed and `connect()` changed to `indxdb://` — the rest of the code (schema, operations, sync) is engine-agnostic.
+
+### 14.4 Future Direction
+
+The current persistence model is a single-user, single-browser solution. The path to collaboration:
+
+1. **Remote SurrealDB** — replace `mem://` with a WebSocket connection to a hosted SurrealDB instance. The sync layer and operations are already engine-agnostic; only the connection string changes.
+2. **CRDT layer** — for real-time collaboration, the graph store would move to a CRDT (Automerge/Yjs) with SurrealDB as the persistence backend rather than the source of truth.
+3. **Multi-database composition** — the tab/database mapping is already UUID-based. The `connectedGraphs` field on each tab is designed to support connecting multiple databases into a single workspace view, though this is not yet implemented.
+
+---
+
+## 15. Open Questions
 
 ### Architecture
 
@@ -1000,7 +1055,7 @@ This is a useful design forcing function: if a constraint plugin cannot explain 
 
 ### Notions Not Yet Explored
 
-- **Graph database / API** — a dedicated store and query API for graphs, beyond simple URI-addressed document retrieval.
+- **Graph database / API** — a dedicated store and query API for graphs, beyond simple URI-addressed document retrieval. (Partially addressed by §14 — SurrealDB provides the store and query layer; the bridge provides browser persistence. Remote API and multi-user access are not yet implemented.)
 - **Overlay and modification of referenced graphs** — applying patches or extensions to a referenced subgraph URI without forking it; composing compatible graphs by overlay.
 - **Class / template system** — a mechanism for templating new nodes from a prototype, similar to class inheritance, enabling reuse patterns beyond URI reference.
 - **Workflow notion** — alongside the existing persona notion, workflows could allow easily bootstrapping projects of a certain type (e.g. "K8s service", "audio DSP graph", "ETL pipeline") with pre-configured schemas and constraint plugins.

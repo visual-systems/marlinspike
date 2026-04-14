@@ -44,8 +44,25 @@ export interface Panel {
 
 export interface Tab {
   id: string;
-  name: string;
+  /** Display name. Null means unnamed — UI shows "Untitled" as placeholder. */
+  name: string | null;
+  /** SurrealDB database identifier (UUID or "default" for the initial database). */
+  databaseId: string;
   panels: Panel[];
+}
+
+/** Per-database state that gets swapped when switching tabs. */
+export interface DatabaseSnapshot {
+  treeNodes: TreeNode[];
+  edges: Edge[];
+  constraints: Constraint[];
+  constraintApplications: ConstraintApplication[];
+  focusId: string | null;
+  canvasExpandedNodes: string[];
+  canvasNodePositions: Record<string, { x: number; y: number; pinned?: boolean }>;
+  canvasSelected: Selection;
+  canvasAlgorithm: AlgorithmId;
+  entityDrafts: Record<string, string>;
 }
 
 // Describes what kind of entities a constraint is relevant to.
@@ -92,6 +109,8 @@ export interface WorkspaceState {
   canvasAlgorithm: AlgorithmId;
   /** Live unsaved edits keyed by entity ID. Shared between code panels and inspector. */
   entityDrafts: Record<string, string>;
+  /** In-memory cache of other tabs' database snapshots. Not persisted. */
+  _snapshotCache: Record<string, DatabaseSnapshot>;
 }
 
 export interface Port {
@@ -298,7 +317,7 @@ export function defaultCodePanel(): Panel {
 export function defaultState(): WorkspaceState {
   const tabId = crypto.randomUUID();
   return {
-    tabs: [{ id: tabId, name: "Main", panels: [defaultPanel()] }],
+    tabs: [{ id: tabId, name: "Main", databaseId: DEFAULT_DB, panels: [defaultPanel()] }],
     activeTabId: tabId,
     treeNodes: defaultTreeNodes(),
     edges: [],
@@ -309,8 +328,8 @@ export function defaultState(): WorkspaceState {
     workflows: ["Explore", "Design", "Build"],
     activeWorkflow: "Explore",
     connectedGraphs: [{
-      id: "localStorage",
-      label: "localStorage",
+      id: DEFAULT_DB,
+      label: `localStorage/Default (${DEFAULT_DB.slice(0, 8)})`,
       connected: true,
       required: true,
     }],
@@ -320,6 +339,7 @@ export function defaultState(): WorkspaceState {
     canvasSelected: null,
     canvasAlgorithm: "SDF",
     entityDrafts: {},
+    _snapshotCache: {},
   };
 }
 
@@ -394,7 +414,12 @@ export function loadState(): WorkspaceState {
             selected: null,
             inspectorSplit: 0.5,
           }];
-        return { id: t.id as string, name: t.name as string, panels };
+        return {
+          id: t.id as string,
+          name: t.name as string,
+          databaseId: (t.databaseId as string | undefined) ?? "default",
+          panels,
+        };
       });
       if (tabs.length === 0) return defaultState();
       const rawNodes = parsed.treeNodes as Record<string, unknown>[] | undefined;
@@ -431,12 +456,368 @@ export function loadState(): WorkspaceState {
         canvasSelected: null,
         canvasAlgorithm: (parsed.canvasAlgorithm as AlgorithmId | undefined) ?? "SDF",
         entityDrafts: {},
+        _snapshotCache: {},
       };
     }
   } catch {
     // ignore corrupt state
   }
   return defaultState();
+}
+
+// ---------------------------------------------------------------------------
+// Async load (SurrealDB with localStorage migration)
+// ---------------------------------------------------------------------------
+
+import { exportDb, getDb, importDb, initSurreal, useDatabase, useUiDb } from "./db/surreal.ts";
+import {
+  buildTree,
+  flattenTree,
+  initGraphSchema,
+  initUiSchema,
+  listDatabases,
+  loadAllApplications,
+  loadAllConstraints,
+  loadAllEdges,
+  loadAllNodes,
+  loadCanvasState,
+  loadWorkspaceUi,
+  saveApplication,
+  saveCanvasState,
+  saveConstraint,
+  saveEdge,
+  saveTreeNode,
+  saveWorkspaceUi,
+  type UiState,
+} from "./db/operations.ts";
+import { DEFAULT_DB } from "./db/surreal.ts";
+import { loadDump, saveDump } from "./db/bridge.ts";
+
+/**
+ * Initialise SurrealDB and load workspace state.
+ *
+ * Startup sequence:
+ *   1. Connect to mem://
+ *   2. Restore _ui database from IndexedDB dump (if any)
+ *   3. Read registry to find the active database
+ *   4. Restore that database from its IndexedDB dump
+ *   5. Load state from SurrealDB's in-memory tables
+ *
+ * On first run: migrates existing localStorage data, creates default DB.
+ * Falls back to defaultState() if all sources are empty.
+ */
+export async function loadStateAsync(): Promise<WorkspaceState> {
+  // 1. Initialise SurrealDB connection (mem://)
+  await initSurreal();
+
+  // 2. Restore _ui database from IndexedDB dump
+  const uiDump = await loadDump("ui");
+  if (uiDump) {
+    console.log(`[init] Found _ui dump (${uiDump.length} bytes), importing...`);
+    await useUiDb();
+    await importDb(uiDump);
+    console.log("[init] Restored _ui database from IndexedDB");
+  } else {
+    console.log("[init] No _ui dump found, initialising fresh schema");
+    await initUiSchema();
+  }
+
+  // 3. Check if we have databases registered
+  const dbs = await listDatabases();
+  console.log("[init] Registered databases:", dbs.map((d) => `${d.name} (${d.uuid})`));
+  const hasDefault = dbs.some((d) => d.name === "Default");
+
+  if (!hasDefault) {
+    // First launch — create default DB and attempt localStorage migration
+    const defaultUuid = DEFAULT_DB;
+    await initGraphSchema(defaultUuid);
+
+    // Register it
+    await useUiDb();
+    const db = getDb();
+    await db.query("CREATE db_registry SET name = 'Default', uuid = $uuid", {
+      uuid: defaultUuid,
+    });
+
+    // Check for existing localStorage data to migrate
+    const existingState = loadState();
+    const hasExistingData = existingState.treeNodes.length > 0 &&
+      !(existingState.treeNodes.length === 1 &&
+        existingState.treeNodes[0].id === "spike://acme/backend");
+
+    const stateToMigrate = hasExistingData ? existingState : defaultState();
+    await migrateToSurreal(stateToMigrate);
+
+    // Persist initial dumps to IndexedDB
+    await persistInitialDumps(defaultUuid);
+
+    // Clear localStorage after successful migration
+    try {
+      localStorage.removeItem(STATE_KEY);
+    } catch {
+      // Ignore — may not have access to localStorage
+    }
+
+    return {
+      ...stateToMigrate,
+      tabs: stateToMigrate.tabs.map((t) => ({
+        ...t,
+        databaseId: t.databaseId ?? defaultUuid,
+      })),
+      connectedGraphs: [{
+        id: defaultUuid,
+        label: `localStorage/Default (${defaultUuid.slice(0, 8)})`,
+        connected: true,
+        required: true,
+      }],
+      _snapshotCache: stateToMigrate._snapshotCache ?? {},
+    };
+  }
+
+  // 4. Load UI state to find active tab / database
+  const uiState = await loadWorkspaceUi();
+  let activeDatabaseId = DEFAULT_DB;
+  if (uiState) {
+    console.log("[init] UI state loaded:", {
+      activeTabId: uiState.activeTabId,
+      tabCount: uiState.tabs.length,
+      tabs: uiState.tabs.map((t: Tab) => ({
+        id: t.id.slice(0, 8),
+        name: t.name,
+        databaseId: t.databaseId?.slice(0, 8),
+      })),
+    });
+    const activeTab = uiState.tabs.find((t: Tab) => t.id === uiState.activeTabId) ??
+      uiState.tabs[0];
+    if (activeTab?.databaseId) {
+      activeDatabaseId = activeTab.databaseId;
+    }
+  } else {
+    console.log("[init] No UI state found in _ui database");
+  }
+
+  // 5. Restore active graph database from IndexedDB dump
+  console.log(`[init] Active database: ${activeDatabaseId}`);
+  const graphDump = await loadDump(`db:${activeDatabaseId}`);
+  if (graphDump) {
+    console.log(
+      `[init] Found graph dump for ${activeDatabaseId} (${graphDump.length} bytes), importing...`,
+    );
+    await useDatabase(activeDatabaseId);
+    await importDb(graphDump);
+    console.log(`[init] Restored database ${activeDatabaseId} from IndexedDB`);
+  } else {
+    console.log(`[init] No dump found for db:${activeDatabaseId}, initialising fresh schema`);
+    await initGraphSchema(activeDatabaseId);
+  }
+
+  // 6. Load graph data from SurrealDB
+  await useDatabase(activeDatabaseId);
+  const [flatNodes, edges, constraints, applications] = await Promise.all([
+    loadAllNodes(),
+    loadAllEdges(),
+    loadAllConstraints(),
+    loadAllApplications(),
+  ]);
+
+  console.log("[init] Loaded from SurrealDB:", {
+    nodes: flatNodes.length,
+    edges: edges.length,
+    constraints: constraints.length,
+    applications: applications.length,
+  });
+
+  const treeNodes = buildTree(flatNodes);
+  const canvasState = await loadCanvasState();
+  console.log("[init] Canvas state:", canvasState ? "found" : "not found");
+
+  if (uiState) {
+    // Backfill databaseId on tabs that predate this field
+    const tabs = uiState.tabs.map((t: Tab) => ({
+      ...t,
+      databaseId: t.databaseId ?? DEFAULT_DB,
+    }));
+    // Update connectedGraphs to show current database
+    const activeTab = tabs.find((t: Tab) => t.id === uiState.activeTabId) ?? tabs[0];
+    const dbEntry = dbs.find((d) => d.uuid === activeTab?.databaseId);
+    const connectedGraphs = [{
+      id: activeTab?.databaseId ?? DEFAULT_DB,
+      label: `localStorage/${dbEntry?.name ?? "Default"} (${
+        (activeTab?.databaseId ?? DEFAULT_DB).slice(0, 8)
+      })`,
+      connected: true,
+      required: true,
+    }];
+
+    const ds = defaultState();
+    return {
+      ...ds,
+      // UI-only fields from SurrealDB (tabs, personas, workflows, etc.)
+      // Spread first so explicit graph/canvas fields below take precedence.
+      ...uiState,
+      // Graph data loaded from SurrealDB — must override any stale fields in uiState
+      treeNodes,
+      edges: normaliseEdges(edges),
+      constraints,
+      constraintApplications: applications,
+      // Overrides
+      tabs,
+      connectedGraphs,
+      focusId: canvasState?.focusId ?? null,
+      canvasExpandedNodes: canvasState?.canvasExpandedNodes ?? ds.canvasExpandedNodes,
+      canvasNodePositions: canvasState?.canvasNodePositions ?? {},
+      canvasSelected: canvasState?.canvasSelected ?? null,
+      canvasAlgorithm: canvasState?.canvasAlgorithm ?? ds.canvasAlgorithm,
+      entityDrafts: canvasState?.entityDrafts ?? {},
+      _snapshotCache: {},
+    };
+  }
+
+  // No UI state saved yet — return defaults with loaded graph data
+  const ds = defaultState();
+  return {
+    ...ds,
+    treeNodes,
+    edges: normaliseEdges(edges),
+    constraints,
+    constraintApplications: applications,
+  };
+}
+
+/** Persist the initial SurrealDB state to IndexedDB after migration. */
+async function persistInitialDumps(graphDatabaseId: string): Promise<void> {
+  try {
+    await useDatabase(graphDatabaseId);
+    const graphDump = await exportDb();
+    await saveDump(`db:${graphDatabaseId}`, graphDump);
+
+    await useUiDb();
+    const uiDumpStr = await exportDb();
+    await saveDump("ui", uiDumpStr);
+
+    console.log("[init] Persisted initial dumps to IndexedDB");
+  } catch (err) {
+    console.error("[init] Failed to persist initial dumps:", err);
+  }
+}
+
+/** Load graph + canvas data for a specific database. Restores from IndexedDB dump if needed. */
+export async function loadDatabaseSnapshot(
+  databaseId: string,
+): Promise<DatabaseSnapshot> {
+  console.log(`[snapshot] Loading database ${databaseId}...`);
+  // Restore from IndexedDB dump if this database hasn't been loaded yet
+  const dump = await loadDump(`db:${databaseId}`);
+  if (dump) {
+    console.log(`[snapshot] Found dump for ${databaseId} (${dump.length} bytes), importing...`);
+    await useDatabase(databaseId);
+    await importDb(dump);
+    console.log(`[snapshot] Restored database ${databaseId} from IndexedDB`);
+  } else {
+    console.log(`[snapshot] No dump found for db:${databaseId}, initialising fresh schema`);
+    await initGraphSchema(databaseId);
+  }
+
+  await useDatabase(databaseId);
+  const [flatNodes, edges, constraints, applications] = await Promise.all([
+    loadAllNodes(),
+    loadAllEdges(),
+    loadAllConstraints(),
+    loadAllApplications(),
+  ]);
+  console.log(`[snapshot] Loaded from SurrealDB:`, {
+    nodes: flatNodes.length,
+    edges: edges.length,
+    constraints: constraints.length,
+    applications: applications.length,
+  });
+  const canvasState = await loadCanvasState();
+  const ds = defaultState();
+  return {
+    treeNodes: buildTree(flatNodes),
+    edges: normaliseEdges(edges),
+    constraints,
+    constraintApplications: applications,
+    focusId: canvasState?.focusId ?? null,
+    canvasExpandedNodes: canvasState?.canvasExpandedNodes ?? ds.canvasExpandedNodes,
+    canvasNodePositions: canvasState?.canvasNodePositions ?? {},
+    canvasSelected: canvasState?.canvasSelected ?? null,
+    canvasAlgorithm: canvasState?.canvasAlgorithm ?? ds.canvasAlgorithm,
+    entityDrafts: canvasState?.entityDrafts ?? {},
+  };
+}
+
+/**
+ * Normalise edge records coming from SurrealDB.
+ * Record link fields like fromId/toId may come back as record objects
+ * rather than plain strings.
+ */
+function normaliseEdges(edges: Edge[]): Edge[] {
+  return edges.map((e) => ({
+    ...e,
+    id: recordIdToString(e.id),
+    fromId: recordIdToString(e.fromId),
+    toId: recordIdToString(e.toId),
+  }));
+}
+
+/** Convert a SurrealDB record ID (e.g. "tree_node:abc") to just the id part. */
+function recordIdToString(val: unknown): string {
+  if (typeof val === "string") {
+    // Strip table prefix if present: "tree_node:abc" → "abc"
+    const colonIdx = (val as string).indexOf(":");
+    if (colonIdx >= 0 && (val as string).startsWith("tree_node:")) {
+      return (val as string).slice(colonIdx + 1);
+    }
+    return val as string;
+  }
+  // SurrealDB SDK may return RecordId objects with .toString()
+  if (val && typeof val === "object" && "toString" in val) {
+    return recordIdToString(String(val));
+  }
+  return String(val);
+}
+
+/** Write a full WorkspaceState into SurrealDB (used for initial migration). */
+async function migrateToSurreal(state: WorkspaceState): Promise<void> {
+  // Write graph data to the default database
+  await useDatabase(DEFAULT_DB);
+
+  const flatNodes = flattenTree(state.treeNodes);
+  for (const node of flatNodes) {
+    await saveTreeNode(node);
+  }
+  for (const edge of state.edges) {
+    await saveEdge(edge);
+  }
+  for (const constraint of state.constraints) {
+    await saveConstraint(constraint);
+  }
+  for (const app of state.constraintApplications) {
+    await saveApplication(app);
+  }
+
+  // Write canvas state to the graph database
+  await saveCanvasState({
+    focusId: state.focusId,
+    canvasExpandedNodes: state.canvasExpandedNodes,
+    canvasNodePositions: state.canvasNodePositions,
+    canvasSelected: state.canvasSelected,
+    canvasAlgorithm: state.canvasAlgorithm,
+    entityDrafts: state.entityDrafts,
+  });
+
+  // Write global UI state
+  const uiState: UiState = {
+    tabs: state.tabs,
+    activeTabId: state.activeTabId,
+    personas: state.personas,
+    activePersona: state.activePersona,
+    workflows: state.workflows,
+    activeWorkflow: state.activeWorkflow,
+    connectedGraphs: state.connectedGraphs,
+  };
+  await saveWorkspaceUi(uiState);
 }
 
 // ---------------------------------------------------------------------------
