@@ -28,6 +28,8 @@ Each phase is independently shippable.
 - [ ] Update `addTab()` in `client.tsx`: new tabs get `[makeRootNode([])]`
 - [ ] Update canvas `addNode()`: use `WORKSPACE_ROOT_ID` as fallback parent instead of null
 - [ ] Update focus dropdown: filter root node from ancestor breadcrumbs
+- [ ] Add "inspect" button next to focus dropdown — inspects the currently focused node (or workspace root when at root)
+- [ ] Widen the connected-graphs dropdown so graph names fit on one line
 - [ ] Verify `buildTree`/`flattenTree` work unchanged (root is just a node with `parent: null`)
 - [ ] Verify sync works unchanged (root syncs as a regular FlatNode)
 
@@ -59,7 +61,8 @@ Each phase is independently shippable.
 | `src/ui/workspace.ts` | 1, 4 | Root node helpers, migration, `getConnectionConfig()` |
 | `src/ui/client.tsx` | 1, 4 | `addTab()` root node, `bootstrapConnections()` |
 | `src/ui/components/canvas.tsx` | 1 | `addNode()` fallback parent |
-| `src/ui/components/focus-dropdown.tsx` | 1 | Filter root from breadcrumbs |
+| `src/ui/components/focus-dropdown.tsx` | 1 | Filter root from breadcrumbs, inspect button |
+| `src/ui/components/workspace-bar.tsx` | 1 | Widen connected-graphs dropdown |
 | `src/ui/db/operations.ts` | 1 | No changes expected (buildTree/flattenTree work as-is) |
 | `src/ui/db/sync.ts` | 1 | No changes expected (root syncs as regular node) |
 | `src/graph/validate_workspace.ts` | 2 | `workspace.connections` type registration |
@@ -112,6 +115,12 @@ export async function connectRemote(id: string, config: ConnectionConfig): Promi
 export function disconnectRemote(id: string): void;
 export function getRemoteDb(id: string): Surreal | undefined;
 ```
+
+## Implementation Considerations
+
+- If a file is getting too large, split out logical modules rather than letting it grow unbounded.
+- Add sensible unit tests around new functionality and code — especially workspace root helpers, migration logic, and constraint validation.
+- Keep DESIGN.md and this plan up to date as implementation progresses — check off items, note any deviations or decisions made during implementation.
 
 ## Open Questions
 
