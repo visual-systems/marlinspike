@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
-import { useEffect, useState } from "@hono/hono/jsx/dom";
+import { useState } from "@hono/hono/jsx/dom";
 import {
   collectSubtreeIds,
   findNode,
@@ -14,12 +14,8 @@ import {
 export function FocusDropdown({ ws, update }: { ws: WorkspaceState; update: Updater }) {
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    document.addEventListener("click", close, { once: true });
-    return () => document.removeEventListener("click", close);
-  }, [open]);
+  // Ancestors: nodes in focusPath excluding the focus node itself and the workspace root
+  const rootId = getWorkspaceRootId(ws);
 
   // Path from root to current focus (all nodes, inclusive)
   const focusPath: TreeNode[] = ws.focusId ? findPath(ws.treeNodes, ws.focusId) : [];
@@ -67,8 +63,6 @@ export function FocusDropdown({ ws, update }: { ws: WorkspaceState; update: Upda
     "display:flex; align-items:center; padding:5px 10px; font-size:11px; color:#a0b4e0; user-select:none; white-space:nowrap; gap:4px;";
   const dividerStyle = "height:1px; background:#1a1a2e; margin:2px 0;";
 
-  // Ancestors: nodes in focusPath excluding the focus node itself and the workspace root
-  const rootId = getWorkspaceRootId(ws);
   const ancestors = focusPath.slice(0, -1).filter((n) => n.id !== rootId);
 
   const hasAbove = ancestors.length > 0 || ws.focusId !== null;
@@ -82,9 +76,20 @@ export function FocusDropdown({ ws, update }: { ws: WorkspaceState; update: Upda
       <div
         style={triggerStyle}
         title="Focus scope"
-        onClick={(e: MouseEvent) => {
+        onMouseDown={(e: MouseEvent) => {
           e.stopPropagation();
-          setOpen((prev) => !prev);
+          e.preventDefault();
+          setOpen((prev) => {
+            if (!prev) {
+              // Register close-on-outside-click after this event finishes bubbling.
+              // Done here rather than useEffect — Hono's useEffect([open]) is unreliable
+              // (see "Hono JSX DOM workaround" in client.tsx).
+              setTimeout(() => {
+                document.addEventListener("click", () => setOpen(false), { once: true });
+              }, 0);
+            }
+            return !prev;
+          });
         }}
       >
         <span>{label}</span>

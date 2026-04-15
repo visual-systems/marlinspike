@@ -658,13 +658,6 @@ function WorkspaceControls(
 function ConnectedGraphsBtn({ ws, update }: { ws: WorkspaceState; update: Updater }) {
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    document.addEventListener("click", close, { once: true });
-    return () => document.removeEventListener("click", close);
-  }, [open]);
-
   const connectedCount = ws.connectedGraphs.filter((g) => g.connected).length;
 
   function toggleGraph(id: string) {
@@ -684,9 +677,18 @@ function ConnectedGraphsBtn({ ws, update }: { ws: WorkspaceState; update: Update
       <div
         title="Connected graphs"
         style="display:flex; align-items:center; gap:4px; padding:0 8px; font-size:11px; color:#3a3a5a; cursor:pointer; user-select:none; height:100%; border-left:1px solid #1a1a2e;"
-        onClick={(e: MouseEvent) => {
+        onMouseDown={(e: MouseEvent) => {
           e.stopPropagation();
-          setOpen((prev) => !prev);
+          e.preventDefault();
+          setOpen((prev) => {
+            if (!prev) {
+              // See "Hono JSX DOM workaround" in client.tsx.
+              setTimeout(() => {
+                document.addEventListener("click", () => setOpen(false), { once: true });
+              }, 0);
+            }
+            return !prev;
+          });
         }}
       >
         <span>{connectedCount} graph{connectedCount !== 1 ? "s" : ""}</span>
