@@ -15,7 +15,6 @@ import {
   defaultConstraintsPanel,
   defaultPanel,
   getActiveTab,
-  getWorkspaceRootId,
   type ListEditorConfig,
   loadDatabaseSnapshot,
   loadState,
@@ -277,7 +276,7 @@ function WorkspaceBar(
           edges: [],
           constraints: [],
           constraintApplications: [],
-          focusId: null,
+          focusId: rootNodeId,
           canvasExpandedNodes: [],
           canvasNodePositions: {},
           canvasSelected: null,
@@ -630,20 +629,6 @@ function WorkspaceControls(
 
       {/* Right-side controls */}
       <div style="display:flex; align-items:stretch; margin-left:auto; flex-shrink:0;">
-        <div
-          style="display:flex; align-items:center; padding:0 8px; font-size:13px; color:#555; cursor:pointer; user-select:none; border-left:1px solid #1a1a2e; flex-shrink:0;"
-          title="Inspect focused node"
-          onMouseDown={(e: MouseEvent) => e.stopPropagation()}
-          onClick={(e: MouseEvent) => {
-            e.stopPropagation();
-            const nodeId = ws.focusId ?? getWorkspaceRootId(ws);
-            update((s) => ({ ...s, canvasSelected: { type: "node", id: nodeId } }));
-          }}
-          onMouseEnter={(e: MouseEvent) => (e.currentTarget as HTMLElement).style.color = "#a0b4e0"}
-          onMouseLeave={(e: MouseEvent) => (e.currentTarget as HTMLElement).style.color = "#555"}
-        >
-          ⓘ
-        </div>
         <FocusDropdown ws={ws} update={update} />
         <ConnectedGraphsBtn ws={ws} update={update} />
       </div>

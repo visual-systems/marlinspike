@@ -5,7 +5,6 @@ import {
   collectSubtreeIds,
   findNode,
   findPath,
-  getWorkspaceRootId,
   type TreeNode,
   type Updater,
   type WorkspaceState,
@@ -13,9 +12,6 @@ import {
 
 export function FocusDropdown({ ws, update }: { ws: WorkspaceState; update: Updater }) {
   const [open, setOpen] = useState(false);
-
-  // Ancestors: nodes in focusPath excluding the focus node itself and the workspace root
-  const rootId = getWorkspaceRootId(ws);
 
   // Path from root to current focus (all nodes, inclusive)
   const focusPath: TreeNode[] = ws.focusId ? findPath(ws.treeNodes, ws.focusId) : [];
@@ -32,7 +28,7 @@ export function FocusDropdown({ ws, update }: { ws: WorkspaceState; update: Upda
     const afterFocus = ws.focusId
       ? fullPath.slice(fullPath.findIndex((n) => n.id === ws.focusId) + 1)
       : fullPath;
-    pathToSelection = afterFocus.filter((n) => n.kind === "composite" && n.id !== rootId);
+    pathToSelection = afterFocus.filter((n) => n.kind === "composite");
   }
 
   function setFocus(id: string | null) {
@@ -63,7 +59,7 @@ export function FocusDropdown({ ws, update }: { ws: WorkspaceState; update: Upda
     "display:flex; align-items:center; padding:5px 10px; font-size:11px; color:#a0b4e0; user-select:none; white-space:nowrap; gap:4px;";
   const dividerStyle = "height:1px; background:#1a1a2e; margin:2px 0;";
 
-  const ancestors = focusPath.slice(0, -1).filter((n) => n.id !== rootId);
+  const ancestors = focusPath.slice(0, -1);
 
   const hasAbove = ancestors.length > 0 || ws.focusId !== null;
   const hasBelow = pathToSelection.length > 0;

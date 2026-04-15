@@ -35,7 +35,7 @@ function minimalWs(
     workflows: [],
     activeWorkflow: null,
     connectedGraphs: [],
-    focusId: null,
+    focusId: rootNodeId, // default: focused on workspace root (shows its children)
     canvasExpandedNodes: [],
     canvasNodePositions: {},
     canvasSelected: null,
@@ -160,13 +160,21 @@ Deno.test("defaultTreeNodes: returns tree wrapped in workspace root with given I
 // getFocusedRootNodes
 // ---------------------------------------------------------------------------
 
-Deno.test("getFocusedRootNodes: unfocused returns root's children, not root itself", () => {
-  const ws = minimalWs();
+Deno.test("getFocusedRootNodes: focused on workspace root returns its children", () => {
+  const ws = minimalWs(); // focusId = rootNodeId by default
   const focused = getFocusedRootNodes(ws);
   // Should return the children of the workspace root, not the root node
   assertEquals(focused.every((n) => n.id !== "test-root-id"), true);
   assertEquals(focused.length, 1);
   assertEquals(focused[0].id, "spike://acme/backend");
+});
+
+Deno.test("getFocusedRootNodes: virtual root (focusId=null) returns treeNodes including workspace root", () => {
+  const ws = minimalWs({ focusId: null });
+  const focused = getFocusedRootNodes(ws);
+  // At virtual root level, the workspace root itself is visible on the canvas
+  assertEquals(focused.length, 1);
+  assertEquals(focused[0].id, "test-root-id");
 });
 
 Deno.test("getFocusedRootNodes: focused on a composite returns its children", () => {

@@ -47,6 +47,42 @@ Each phase is independently shippable.
 - [x] Add 7 unit tests for constraint validation (`validate_workspace_test.ts`)
 - [ ] Verify: constraints panel auto-renders connection fields when applied to root
 
+### Phase 2.5: Virtual root, workspace visibility, and cleanup
+
+The workspace node should be a regular inspectable entity — not hidden behind a special button. Introduce a virtual root above the workspace node so that navigating "up" from the workspace reveals it on the canvas like any other node.
+
+#### Virtual root + workspace focus
+Simpler approach than adding another node layer: `focusId=null` IS the virtual root. No extra node needed.
+- Default `focusId` to workspaceRootId → users see workspace contents (same visual as before)
+- `focusId=null` → `getFocusedRootNodes()` returns `treeNodes` (shows workspace root on canvas for inspection)
+- Focus dropdown: "(root)" navigates to `null`, showing workspace; workspace root appears in ancestor breadcrumbs
+
+- [x] Default `focusId` to the workspace root node ID (not null) in all load paths + `defaultState()` + `addTab()`
+- [x] `getFocusedRootNodes()`: when `focusId=null`, return `ws.treeNodes` (shows workspace root on canvas); when focused on workspace root, return its children
+- [x] Remove the ⓘ inspect button next to the focus dropdown — users navigate up to virtual root to inspect the workspace
+- [x] Stop filtering workspace root from focus dropdown ancestors — it's now a navigable level
+- [x] Add virtual root test case to `workspace_test.ts`
+- [x] `deno task ci` passes — 304 tests, all checks green
+
+#### Code view integration
+- [ ] When focused on virtual root: code view emits `(def WorkspaceName [...])` showing the workspace as a definition
+- [ ] When focused on workspace (default): code view emits only the children — no wrapping workspace form
+- [ ] See open questions for design details on round-tripping, orphan defs, metadata
+
+#### Workspace constraint visibility
+- [ ] Ensure `workspace.connections` constraint is visible in the constraints panel when applied to the workspace node
+- [ ] Verify constraint fields render and are editable in the inspector
+
+#### Default database UUID
+- [ ] Replace `DEFAULT_DB = "default"` with a generated UUID
+- [ ] Update `loadStateAsync` migration: treat "default" as a legacy identifier, remap to UUID
+- [ ] Update all code paths that compare against the literal "default" string
+
+#### State corruption hardening
+- [ ] Add a validation pass on load: detect and repair double-wrapped roots, missing rootNodeIds, orphaned tabs
+- [ ] Add logging/diagnostics when validation repairs state (so we can track down remaining issues)
+- [ ] Consider adding a `structuredClone` barrier on state save to catch non-serializable values
+
 ### Phase 3: Connection pool
 - [ ] Refactor `surreal.ts`: split singleton into `localDb` + `remoteConnections` Map
 - [ ] Keep `getDb()` backward-compatible (returns local by default)

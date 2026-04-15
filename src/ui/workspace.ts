@@ -293,12 +293,13 @@ export function findPath(nodes: TreeNode[], targetId: string): TreeNode[] {
 }
 
 /** Returns the root nodes for the current focus level.
- *  When unfocused, returns the workspace root's children (hiding the root itself).
- *  When focused on a node, returns that node's children. */
+ *  - focusId === null: returns treeNodes as-is (shows the workspace root on the canvas,
+ *    allowing the user to inspect it). This is the "virtual root" level.
+ *  - focusId === workspaceRootId: returns the workspace root's children (the default view).
+ *  - focusId === other: returns that node's children. */
 export function getFocusedRootNodes(ws: WorkspaceState): TreeNode[] {
   if (ws.focusId == null) {
-    const root = getWorkspaceRoot(ws);
-    return root?.children ?? ws.treeNodes;
+    return ws.treeNodes;
   }
   return findNode(ws.treeNodes, ws.focusId)?.children ?? [];
 }
@@ -405,7 +406,7 @@ export function defaultState(): WorkspaceState {
       connected: true,
       required: true,
     }],
-    focusId: null,
+    focusId: rootNodeId,
     canvasExpandedNodes: treeNodes[0]?.children.map((n) => n.id) ?? [],
     canvasNodePositions: {},
     canvasSelected: null,
@@ -513,7 +514,9 @@ export function loadState(): WorkspaceState {
       const ds = defaultState();
       // Validate focusId — clear if the referenced node no longer exists
       const rawFocusId = (parsed.focusId as string | null | undefined) ?? null;
-      const focusId = rawFocusId && findNode(treeNodes, rawFocusId) ? rawFocusId : null;
+      const validFocusId = rawFocusId && findNode(treeNodes, rawFocusId) ? rawFocusId : null;
+      // Default to workspace root so users see graph contents; null = "virtual root" level
+      const focusId = validFocusId ?? wrapped.rootNodeId;
       // Validate canvasExpandedNodes — drop IDs that no longer exist
       const rawExpanded = (parsed.canvasExpandedNodes as string[] | undefined) ?? [];
       const canvasExpandedNodes = rawExpanded.filter((id) => findNode(treeNodes, id) !== null);
@@ -759,7 +762,8 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       // Overrides
       tabs,
       connectedGraphs,
-      focusId: canvasState?.focusId ?? null,
+      // Default to workspace root so users see graph contents; null = "virtual root" level
+      focusId: canvasState?.focusId ?? wrapped.rootNodeId,
       canvasExpandedNodes: canvasState?.canvasExpandedNodes ?? ds.canvasExpandedNodes,
       canvasNodePositions: canvasState?.canvasNodePositions ?? {},
       canvasSelected: canvasState?.canvasSelected ?? null,
@@ -830,12 +834,14 @@ export async function loadDatabaseSnapshot(
   });
   const canvasState = await loadCanvasState();
   const ds = defaultState();
+  const wrapped = ensureWorkspaceRoot(buildTree(flatNodes), rootNodeId || undefined);
   return {
-    treeNodes: ensureWorkspaceRoot(buildTree(flatNodes), rootNodeId || undefined).treeNodes,
+    treeNodes: wrapped.treeNodes,
     edges: normaliseEdges(edges),
     constraints,
     constraintApplications: applications,
-    focusId: canvasState?.focusId ?? null,
+    // Default to workspace root so users see graph contents; null = "virtual root" level
+    focusId: canvasState?.focusId ?? wrapped.rootNodeId,
     canvasExpandedNodes: canvasState?.canvasExpandedNodes ?? ds.canvasExpandedNodes,
     canvasNodePositions: canvasState?.canvasNodePositions ?? {},
     canvasSelected: canvasState?.canvasSelected ?? null,
