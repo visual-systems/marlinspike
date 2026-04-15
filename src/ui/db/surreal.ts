@@ -51,7 +51,6 @@ async function loadModules(): Promise<{ surreal: SurrealModule; wasm: WasmModule
 
 const NS = "marlinspike";
 const UI_DB = "_ui";
-const DEFAULT_DB = "default";
 
 let db: Surreal | null = null;
 
@@ -69,8 +68,8 @@ export async function initSurreal(): Promise<Surreal> {
   db = new surreal.Surreal({ engines: wasm.createWasmEngines() });
   await db.connect("mem://");
   console.log("[surreal] connected to mem://");
-  await db.use({ namespace: NS, database: DEFAULT_DB });
-  console.log("[surreal] using", NS, DEFAULT_DB);
+  await db.use({ namespace: NS, database: UI_DB });
+  console.log("[surreal] using", NS, UI_DB);
 
   return db;
 }
@@ -100,11 +99,6 @@ export async function useUiDb(): Promise<void> {
   await useDatabase(UI_DB);
 }
 
-/** Switch to the default graph database. */
-export async function useDefaultDb(): Promise<void> {
-  await useDatabase(DEFAULT_DB);
-}
-
 // ---------------------------------------------------------------------------
 // Export / Import — used by the persistence bridge
 // ---------------------------------------------------------------------------
@@ -132,5 +126,5 @@ export async function importDb(dump: string): Promise<void> {
   });
 }
 
-export { DEFAULT_DB, NS, UI_DB };
+export { NS, UI_DB };
 export type { Surreal, SurrealSession };

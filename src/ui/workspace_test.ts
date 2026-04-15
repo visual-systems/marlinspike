@@ -1,6 +1,8 @@
 import { assertEquals } from "@std/assert";
 import {
+  type ConstraintApplication,
   defaultTreeNodes,
+  ensureWorkspaceConstraint,
   ensureWorkspaceRoot,
   getFocusedRootNodes,
   getWorkspaceRoot,
@@ -8,6 +10,7 @@ import {
   makeRootNode,
   type WorkspaceState,
 } from "./workspace.ts";
+import { WORKSPACE_CONNECTIONS_CONSTRAINT } from "../graph/builtin_constraints.ts";
 
 // ---------------------------------------------------------------------------
 // Helper to build a minimal WorkspaceState for testing
@@ -21,7 +24,7 @@ function minimalWs(
     tabs: [{
       id: "t1",
       name: "Test",
-      databaseId: "default",
+      databaseId: "test-db-id",
       rootNodeId,
       panels: [],
     }],
@@ -181,4 +184,34 @@ Deno.test("getFocusedRootNodes: focused on a composite returns its children", ()
   const ws = minimalWs({ focusId: "spike://acme/backend" });
   const focused = getFocusedRootNodes(ws);
   assertEquals(focused.length, 2); // auth-service + frontend
+});
+
+// ---------------------------------------------------------------------------
+// ensureWorkspaceConstraint
+// ---------------------------------------------------------------------------
+
+Deno.test("ensureWorkspaceConstraint: adds constraint and application when missing", () => {
+  const result = ensureWorkspaceConstraint([], [], "root-1");
+  assertEquals(result.constraints.length, 1);
+  assertEquals(result.constraints[0].id, WORKSPACE_CONNECTIONS_CONSTRAINT.id);
+  assertEquals(result.constraintApplications.length, 1);
+  assertEquals(result.constraintApplications[0].constraintId, WORKSPACE_CONNECTIONS_CONSTRAINT.id);
+  assertEquals(result.constraintApplications[0].entityId, "root-1");
+});
+
+Deno.test("ensureWorkspaceConstraint: idempotent when already present", () => {
+  const app: ConstraintApplication = {
+    id: "existing-app",
+    constraintId: WORKSPACE_CONNECTIONS_CONSTRAINT.id,
+    entityId: "root-1",
+    version: 1,
+  };
+  const result = ensureWorkspaceConstraint(
+    [WORKSPACE_CONNECTIONS_CONSTRAINT],
+    [app],
+    "root-1",
+  );
+  assertEquals(result.constraints.length, 1);
+  assertEquals(result.constraintApplications.length, 1);
+  assertEquals(result.constraintApplications[0].id, "existing-app");
 });

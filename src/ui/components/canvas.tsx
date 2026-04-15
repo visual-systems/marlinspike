@@ -7,6 +7,7 @@ import {
   findNode,
   findParentOf,
   findPath,
+  getActiveTab,
   getFocusedRootNodes,
   getWorkspaceRootId,
   type Panel,
@@ -570,7 +571,7 @@ function CanvasInspector(
   const fakeTab: Tab = {
     id: "__canvas_tab__",
     name: "Canvas",
-    databaseId: "default",
+    databaseId: getActiveTab(ws).databaseId,
     rootNodeId: getWorkspaceRootId(ws),
     panels: [fakePanel],
   };
