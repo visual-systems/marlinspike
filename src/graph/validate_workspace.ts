@@ -136,6 +136,57 @@ const registry: Record<string, ConstraintTypeDefinition> = {
     },
   },
 
+  "workspace.connections": {
+    dataSchema: {
+      properties: {
+        url: { type: "string", default: "" },
+        namespace: { type: "string", default: "" },
+        database: { type: "string", default: "" },
+        username: { type: "string", default: "" },
+        password: { type: "string", default: "" },
+      },
+      required: ["url"],
+    },
+    evaluate(constraint, entity) {
+      const diags: Diagnostic[] = [];
+      const name = entity.label || entity.id;
+      const url = constraint.data.url;
+
+      if (typeof url !== "string" || url.trim().length === 0) {
+        diags.push({
+          code: constraint.id,
+          severity: "error",
+          message: `"${name}" connection requires a URL.`,
+          entityId: entity.id,
+        });
+        return diags;
+      }
+
+      // Validate URL format — must be ws://, wss://, http://, or https://
+      try {
+        const parsed = new URL(url);
+        if (!["ws:", "wss:", "http:", "https:"].includes(parsed.protocol)) {
+          diags.push({
+            code: constraint.id,
+            severity: "error",
+            message:
+              `"${name}" connection URL must use ws://, wss://, http://, or https:// (got "${parsed.protocol}").`,
+            entityId: entity.id,
+          });
+        }
+      } catch {
+        diags.push({
+          code: constraint.id,
+          severity: "error",
+          message: `"${name}" connection URL is not a valid URL.`,
+          entityId: entity.id,
+        });
+      }
+
+      return diags;
+    },
+  },
+
   "max-children": {
     dataSchema: {
       properties: {

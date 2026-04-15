@@ -40,6 +40,26 @@ let skipBaselineReset = false;
 // App root
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Hono JSX DOM workaround: state propagation to child components
+// ---------------------------------------------------------------------------
+// Hono's JSX DOM has two limitations that affect this app:
+//
+//  1. Child components do NOT receive updated props when the parent re-renders.
+//  2. useEffect([dep]) does NOT reliably fire after setState updates.
+//
+// To work around this, state changes are broadcast via a CustomEvent
+// ("ws-updated") carrying the latest WorkspaceState as `detail`. Child
+// components that need fresh state (currently Canvas) listen for this event
+// and store the state locally. The event is dispatched from two places:
+//
+//  - update() — via queueMicrotask inside the setWs updater (handles all
+//    user-initiated state changes; queueMicrotask ensures it fires after
+//    Hono commits the state).
+//  - useEffect([ws]) — as a fallback for the initial load, where setWs is
+//    called directly (not through update).
+// ---------------------------------------------------------------------------
+
 function App() {
   const [ws, setWs] = useState<WorkspaceState | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -97,13 +117,20 @@ function App() {
     }
   }, [ws]);
 
-  const update: Updater = (fn) => setWs((prev) => prev ? fn(prev) : prev);
+  const update: Updater = (fn) =>
+    setWs((prev) => {
+      if (!prev) return prev;
+      const next = fn(prev);
+      // See "Hono JSX DOM workaround" block comment above App.
+      queueMicrotask(() => {
+        globalThis.dispatchEvent(new CustomEvent("ws-updated", { detail: next }));
+      });
+      return next;
+    });
 
-  // Notify child components after Hono finishes its render cycle.
-  // Hono's JSX DOM does not re-render child components on prop changes,
-  // so we use a post-render event to nudge them.
+  // Fallback for initial load — see "Hono JSX DOM workaround" block comment above App.
   useEffect(() => {
-    if (ws) globalThis.dispatchEvent(new Event("ws-updated"));
+    if (ws) globalThis.dispatchEvent(new CustomEvent("ws-updated", { detail: ws }));
   }, [ws]);
 
   const showListEditor = (config: ListEditorConfig) => setListEditor(config);
@@ -604,13 +631,15 @@ function WorkspaceControls(
       {/* Right-side controls */}
       <div style="display:flex; align-items:stretch; margin-left:auto; flex-shrink:0;">
         <div
-          style="display:flex; align-items:center; padding:0 6px; font-size:11px; color:#555; cursor:pointer; user-select:none; border-left:1px solid #1a1a2e; flex-shrink:0;"
+          style="display:flex; align-items:center; padding:0 8px; font-size:13px; color:#555; cursor:pointer; user-select:none; border-left:1px solid #1a1a2e; flex-shrink:0;"
           title="Inspect focused node"
-          onClick={() => {
+          onMouseDown={(e: MouseEvent) => e.stopPropagation()}
+          onClick={(e: MouseEvent) => {
+            e.stopPropagation();
             const nodeId = ws.focusId ?? getWorkspaceRootId(ws);
             update((s) => ({ ...s, canvasSelected: { type: "node", id: nodeId } }));
           }}
-          onMouseEnter={(e: MouseEvent) => (e.currentTarget as HTMLElement).style.color = "#888"}
+          onMouseEnter={(e: MouseEvent) => (e.currentTarget as HTMLElement).style.color = "#a0b4e0"}
           onMouseLeave={(e: MouseEvent) => (e.currentTarget as HTMLElement).style.color = "#555"}
         >
           ⓘ

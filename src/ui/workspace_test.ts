@@ -72,13 +72,20 @@ Deno.test("ensureWorkspaceRoot: wraps plain nodes in a root with given ID", () =
   assertEquals(result.rootNodeId, "root-123");
 });
 
-Deno.test("ensureWorkspaceRoot: generates a UUID when no rootNodeId given", () => {
+Deno.test("ensureWorkspaceRoot: single node without rootNodeId uses node as root", () => {
   const nodes = [makeNode("a", "A", "leaf", [])];
   const result = ensureWorkspaceRoot(nodes);
   assertEquals(result.treeNodes.length, 1);
-  assertEquals(result.treeNodes[0].id, result.rootNodeId);
-  assertEquals(result.treeNodes[0].children, nodes);
-  // rootNodeId should be a non-empty string (UUID)
+  // Should NOT wrap — uses existing single node as root
+  assertEquals(result.treeNodes[0].id, "a");
+  assertEquals(result.rootNodeId, "a");
+});
+
+Deno.test("ensureWorkspaceRoot: multiple nodes without rootNodeId wraps with UUID", () => {
+  const nodes = [makeNode("a", "A", "leaf", []), makeNode("b", "B", "leaf", [])];
+  const result = ensureWorkspaceRoot(nodes);
+  assertEquals(result.treeNodes.length, 1);
+  assertEquals(result.treeNodes[0].children.length, 2);
   assertEquals(result.rootNodeId.length > 0, true);
 });
 
@@ -99,6 +106,28 @@ Deno.test("ensureWorkspaceRoot: wraps empty array", () => {
   assertEquals(result.treeNodes[0].children.length, 0);
 });
 
+Deno.test("ensureWorkspaceRoot: idempotent — second call does not double-wrap", () => {
+  const nodes = [makeNode("a", "A", "leaf", []), makeNode("b", "B", "leaf", [])];
+  const first = ensureWorkspaceRoot(nodes, "root-1");
+  // Simulate reload: rootNodeId matches → no-op
+  const second = ensureWorkspaceRoot(first.treeNodes, "root-1");
+  assertEquals(second.treeNodes.length, 1);
+  assertEquals(second.treeNodes[0].id, "root-1");
+  assertEquals(second.treeNodes[0].children.length, 2);
+});
+
+Deno.test("ensureWorkspaceRoot: idempotent — reload without rootNodeId does not double-wrap", () => {
+  // Simulate: root was created in a previous session, but rootNodeId was lost
+  const nodes = [makeNode("a", "A", "leaf", []), makeNode("b", "B", "leaf", [])];
+  const first = ensureWorkspaceRoot(nodes, "root-1");
+  // Simulate reload without rootNodeId (migration case)
+  const second = ensureWorkspaceRoot(first.treeNodes);
+  assertEquals(second.treeNodes.length, 1);
+  assertEquals(second.treeNodes[0].id, "root-1");
+  assertEquals(second.treeNodes[0].children.length, 2);
+  assertEquals(second.rootNodeId, "root-1");
+});
+
 // ---------------------------------------------------------------------------
 // getWorkspaceRoot
 // ---------------------------------------------------------------------------
@@ -109,10 +138,10 @@ Deno.test("getWorkspaceRoot: finds root in default state", () => {
   assertEquals(root?.id, "test-root-id");
 });
 
-Deno.test("getWorkspaceRoot: returns undefined when root node missing from tree", () => {
+Deno.test("getWorkspaceRoot: falls back to first node when rootNodeId not in tree", () => {
   const ws = minimalWs({ treeNodes: [makeNode("a", "A", "leaf", [])] });
   const root = getWorkspaceRoot(ws);
-  assertEquals(root, undefined);
+  assertEquals(root?.id, "a");
 });
 
 // ---------------------------------------------------------------------------

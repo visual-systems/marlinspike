@@ -33,13 +33,18 @@ Each phase is independently shippable.
 - [x] Add unit tests for workspace root helpers (`workspace_test.ts`)
 - [x] Verify `buildTree`/`flattenTree` work unchanged (root is just a node with `parent: null`)
 - [x] Verify sync works unchanged (root syncs as a regular FlatNode)
-- [x] `deno task ci` passes — 292 tests, all checks green
+- [x] Fix `ensureWorkspaceRoot` double-wrapping bug — single node without rootNodeId now reuses it as root
+- [x] Fix multi-tab rootNodeId backfill — inactive tabs no longer get active tab's rootNodeId
+- [x] Add idempotency migration tests for ensureWorkspaceRoot
+- [x] Clean up debug logging from client.tsx and workspace.ts
+- [x] `deno task ci` passes — 303 tests, all checks green
 
 ### Phase 2: `workspace.connections` constraint type
-- [ ] Register `workspace.connections` in constraint type registry (`validate_workspace.ts`)
-- [ ] Define data schema: url, namespace, database, username, password fields
-- [ ] Implement evaluator: validate url format and required fields
-- [ ] Add predefined constraint instance in `builtin_constraints.ts`
+- [x] Register `workspace.connections` in constraint type registry (`validate_workspace.ts`)
+- [x] Define data schema: url, namespace, database, username, password fields
+- [x] Implement evaluator: validate url format (ws/wss/http/https) and required fields
+- [x] Add predefined constraint instance in `builtin_constraints.ts`
+- [x] Add 7 unit tests for constraint validation (`validate_workspace_test.ts`)
 - [ ] Verify: constraints panel auto-renders connection fields when applied to root
 
 ### Phase 3: Connection pool
@@ -136,6 +141,12 @@ export function getRemoteDb(id: string): Surreal | undefined;
 - Should remote connection status be reactive (live query / subscription)? Defer — poll or manual refresh for now.
 - **Tab name on root node:** The tab's display name could live as a property on the root node (it's workspace metadata). Deferring for now — currently on Tab.
 - **databaseId on root node vs Tab:** The root node could own its database identity, but there's a bootstrap problem — you need to know which database to load *before* you can read the root node. For now, `databaseId` stays on Tab. Future: root nodes always live in local storage; their connection config (via constraints) determines what gets synced remotely.
+- **Code view and the workspace root:** The code view currently emits `(def Workspace [acme/backend])` which wraps the focused subtree in the root node. Several interrelated questions:
+  - Should the code view include the focused node as the outer form, or only its children? E.g. when focused on root, show `(def acme/backend [...])` directly rather than `(def Workspace [acme/backend])`.
+  - Want to be able to easily paste code into the code view (e.g. the quadratic-roots example). If the Workspace wrapper is omitted on emit, it should be inferred and re-inserted automatically on parse.
+  - What should happen to orphan definitions not referenced by the workspace root? Currently they'd be lost on round-trip.
+  - Should the root node be called "Workspace"? Probably should match the tab/workspace name rather than be generic. Or perhaps use a special form for the declaration — e.g. `(workspace "My Project" [...])` or metadata on `def`.
+  - How to show workspace metadata (especially db connections from constraints) in the code view? `def`/`defn` metadata maps would be a natural fit — e.g. `(def ^{:url "wss://..." :ns "prod"} my-workspace [...])`.
 
 ## Verification
 

@@ -174,8 +174,9 @@ export function makeRootNode(id: string, children: TreeNode[]): TreeNode {
 
 /** Get the workspace root node from a WorkspaceState (via the active tab's rootNodeId). */
 export function getWorkspaceRoot(ws: WorkspaceState): TreeNode | undefined {
-  const rootId = getActiveTab(ws).rootNodeId;
-  return ws.treeNodes.find((n) => n.id === rootId);
+  const rootId = getWorkspaceRootId(ws);
+  if (!rootId) return ws.treeNodes[0];
+  return ws.treeNodes.find((n) => n.id === rootId) ?? ws.treeNodes[0];
 }
 
 /**
@@ -188,10 +189,17 @@ export function ensureWorkspaceRoot(
   treeNodes: TreeNode[],
   rootNodeId?: string,
 ): { treeNodes: TreeNode[]; rootNodeId: string } {
-  // Already wrapped?
+  // Already wrapped — rootNodeId matches the single top-level node
   if (rootNodeId && treeNodes.length === 1 && treeNodes[0].id === rootNodeId) {
     return { treeNodes, rootNodeId };
   }
+  // No rootNodeId but there's exactly one top-level node — treat it as the root
+  // to avoid double-wrapping when rootNodeId is missing (pre-migration data that
+  // was already wrapped by a previous session).
+  if (!rootNodeId && treeNodes.length === 1) {
+    return { treeNodes, rootNodeId: treeNodes[0].id };
+  }
+  // Need to wrap: either multiple top-level nodes or empty tree
   const id = rootNodeId ?? crypto.randomUUID();
   return { treeNodes: [makeRootNode(id, treeNodes)], rootNodeId: id };
 }
@@ -295,9 +303,13 @@ export function getFocusedRootNodes(ws: WorkspaceState): TreeNode[] {
   return findNode(ws.treeNodes, ws.focusId)?.children ?? [];
 }
 
-/** Get the active tab's workspace root node ID. */
+/** Get the active tab's workspace root node ID.
+ *  Falls back to treeNodes[0].id if rootNodeId isn't set (pre-migration data). */
 export function getWorkspaceRootId(ws: WorkspaceState): string {
-  return getActiveTab(ws).rootNodeId;
+  const tabRootId = getActiveTab(ws).rootNodeId;
+  if (tabRootId) return tabRootId;
+  // Fallback: assume first top-level node is the root
+  return ws.treeNodes[0]?.id ?? "";
 }
 
 export function getActiveTab(ws: WorkspaceState): Tab {
@@ -712,11 +724,14 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
   console.log("[init] Canvas state:", canvasState ? "found" : "not found");
 
   if (uiState) {
-    // Backfill databaseId and rootNodeId on tabs that predate these fields
+    // Backfill databaseId and rootNodeId on tabs that predate these fields.
+    // Only the active tab gets the wrapped rootNodeId — inactive tabs will get
+    // their rootNodeId when their database is loaded via loadDatabaseSnapshot.
+    const activeTabId = uiState.activeTabId;
     const tabs = uiState.tabs.map((t: Tab) => ({
       ...t,
       databaseId: t.databaseId ?? DEFAULT_DB,
-      rootNodeId: t.rootNodeId || wrapped.rootNodeId,
+      rootNodeId: t.rootNodeId || (t.id === activeTabId ? wrapped.rootNodeId : ""),
     }));
     // Update connectedGraphs to show current database
     const activeTab = tabs.find((t: Tab) => t.id === uiState.activeTabId) ?? tabs[0];
@@ -816,7 +831,7 @@ export async function loadDatabaseSnapshot(
   const canvasState = await loadCanvasState();
   const ds = defaultState();
   return {
-    treeNodes: ensureWorkspaceRoot(buildTree(flatNodes), rootNodeId).treeNodes,
+    treeNodes: ensureWorkspaceRoot(buildTree(flatNodes), rootNodeId || undefined).treeNodes,
     edges: normaliseEdges(edges),
     constraints,
     constraintApplications: applications,

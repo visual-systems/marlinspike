@@ -37,6 +37,16 @@ export const JS_SCRIPT_CONSTRAINT: Constraint = {
   version: 1,
 };
 
+export const WORKSPACE_CONNECTIONS_CONSTRAINT: Constraint = {
+  id: "builtin/workspace-connections",
+  label: "Remote Connection",
+  uri: "spike://builtin/constraints/workspace-connections",
+  type: "workspace.connections",
+  targets: [{ type: "entity", class: "node" }],
+  data: { url: "", namespace: "", database: "", username: "", password: "" },
+  version: 1,
+};
+
 export const MAX_GROUP_SIZE_CONSTRAINT: Constraint = {
   id: "builtin/max-group-size",
   label: "Max Group Size (5)",
