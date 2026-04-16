@@ -14,7 +14,8 @@ import {
   withPanel,
   type WorkspaceState,
 } from "../workspace.ts";
-import { graphToSpike, spikeToGraph } from "../../code/spike-clojure.ts";
+import { graphToSpike } from "../../code/spike-clojure.ts";
+import { emitWorkspace, parseWorkspace } from "../../code/workspace-codec.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { IconBtn } from "./widgets.tsx";
 import { TOKEN_COLORS, tokenise, tokeniseJson } from "../lib/spike-tokenise.ts";
@@ -49,13 +50,12 @@ export function computeValidity(
   text: string,
   codeEntityId: string | undefined,
   codeEntityKind: "node" | "edge" | undefined,
-  treeNodes: WorkspaceState["treeNodes"],
-  edges: WorkspaceState["edges"],
+  ws: WorkspaceState,
 ): ValidityState {
   if (codeEntityId && codeEntityKind === "node") {
     try {
       const parsed = JSON.parse(text) as Record<string, unknown>;
-      const node = findNode(treeNodes, codeEntityId);
+      const node = findNode(ws.treeNodes, codeEntityId);
       if (JSON.stringify(parsed) === JSON.stringify(node?.data ?? {})) {
         return { state: "valid-applied" };
       }
@@ -67,7 +67,7 @@ export function computeValidity(
   if (codeEntityId && codeEntityKind === "edge") {
     try {
       const parsed = JSON.parse(text) as Record<string, unknown>;
-      const edge = edges.find((e) => e.id === codeEntityId);
+      const edge = ws.edges.find((e) => e.id === codeEntityId);
       if (JSON.stringify(parsed) === JSON.stringify(edge?.data ?? {})) {
         return { state: "valid-applied" };
       }
@@ -76,11 +76,12 @@ export function computeValidity(
       return { state: "invalid", error: String(err) };
     }
   }
-  // Full-graph mode
-  const { treeNodes: parsedNodes, edges: parsedEdges, errors } = spikeToGraph(text);
+  // Full-graph mode: parse and re-wrap so both sides canonicalise the same way,
+  // then compare against the actual workspace in its always-wrapped form.
+  const { treeNodes: parsedTree, edges: parsedEdges, errors } = parseWorkspace(text, ws);
   if (errors.length > 0) return { state: "invalid", error: errors.join("; ") };
-  const parsedCanonical = graphToSpike(parsedNodes, parsedEdges);
-  const wsCanonical = graphToSpike(treeNodes, edges);
+  const parsedCanonical = graphToSpike(parsedTree, parsedEdges);
+  const wsCanonical = graphToSpike(ws.treeNodes, ws.edges);
   if (parsedCanonical === wsCanonical) return { state: "valid-applied" };
   return { state: "valid-unapplied" };
 }
@@ -230,7 +231,7 @@ export function CodePanel(
         return JSON.stringify(e?.data ?? {}, null, 2);
       }
     }
-    return graphToSpike(s.treeNodes, s.edges);
+    return emitWorkspace(s);
   }
 
   function applyCode(code: string) {
@@ -288,32 +289,33 @@ export function CodePanel(
       return;
     }
 
-    // Full-graph mode
-    const { treeNodes, edges, errors } = spikeToGraph(code);
+    // Full-graph mode — parse and re-wrap in the workspace root so the tab's
+    // rootNodeId and any root-level constraints remain stable.
+    const { treeNodes, edges, errors } = parseWorkspace(code, ws);
     if (errors.length > 0) {
       setValidity({ state: "invalid", error: errors.join("; ") });
       return;
     }
-    // Canonical formatting: re-derive from the parsed graph
-    const canonical = graphToSpike(treeNodes, edges);
-    if (el) {
-      el.value = canonical;
-      setDisplayCode(canonical);
-    }
+    // Canonical formatting: re-derive using the same focus-aware emit used by
+    // deriveDoc, so what lands in the textarea matches what the view shows.
+    update((s) => {
+      const nextExpanded = s.canvasExpandedNodes.filter((id) => findNode(treeNodes, id) !== null);
+      const focusStillValid = s.focusId ? findNode(treeNodes, s.focusId) !== null : true;
+      const nextState: WorkspaceState = {
+        ...s,
+        treeNodes,
+        edges,
+        canvasExpandedNodes: nextExpanded,
+        focusId: focusStillValid ? s.focusId : null,
+      };
+      const canonical = emitWorkspace(nextState);
+      if (el) {
+        el.value = canonical;
+        setDisplayCode(canonical);
+      }
+      return nextState;
+    });
     setValidity({ state: "valid-applied" });
-    if (treeNodes.length > 0) {
-      update((s) => {
-        const nextExpanded = s.canvasExpandedNodes.filter((id) => findNode(treeNodes, id) !== null);
-        const focusStillValid = s.focusId ? findNode(treeNodes, s.focusId) !== null : true;
-        return {
-          ...s,
-          treeNodes,
-          edges,
-          canvasExpandedNodes: nextExpanded,
-          focusId: focusStillValid ? s.focusId : null,
-        };
-      });
-    }
   }
 
   function syncScroll() {
@@ -336,7 +338,7 @@ export function CodePanel(
     }
     // Live validity check
     setValidity(
-      computeValidity(value, panel.codeEntityId, panel.codeEntityKind, ws.treeNodes, ws.edges),
+      computeValidity(value, panel.codeEntityId, panel.codeEntityKind, ws),
     );
   }
 

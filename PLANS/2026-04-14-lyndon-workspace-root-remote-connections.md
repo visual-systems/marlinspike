@@ -65,9 +65,12 @@ Simpler approach than adding another node layer: `focusId=null` IS the virtual r
 - [x] `deno task ci` passes — 304 tests, all checks green
 
 #### Code view integration
-- [ ] When focused on virtual root: code view emits `(def WorkspaceName [...])` showing the workspace as a definition
-- [ ] When focused on workspace (default): code view emits only the children — no wrapping workspace form
-- [ ] See open questions for design details on round-tripping, orphan defs, metadata
+- [x] When focused on virtual root: code view emits `(def WorkspaceName [...])` showing the workspace as a definition
+- [x] When focused on workspace (default) or deeper: code view emits only the children — no wrapping workspace form
+- [x] On apply, re-wrap parsed result in the existing workspace root so `rootNodeId` stays stable across round-trips
+- [x] If user includes the `Workspace` form explicitly (virtual-root view), detect + unwrap it so the parser's label-derived id doesn't overwrite the UUID
+- [x] Extract pure helpers to `src/code/workspace-codec.ts` with 10 unit tests covering both focus modes
+- [ ] Open questions (round-tripping paste-in, orphan defs, workspace-name-as-label, constraint metadata emission) — deferred; these are independent design choices that can be revisited once remote connections are wired up
 
 #### Workspace constraint visibility
 - [ ] Ensure `workspace.connections` constraint is visible in the constraints panel when applied to the workspace node
@@ -79,9 +82,10 @@ Simpler approach than adding another node layer: `focusId=null` IS the virtual r
 - [ ] Update all code paths that compare against the literal "default" string
 
 #### State corruption hardening
-- [ ] Add a validation pass on load: detect and repair double-wrapped roots, missing rootNodeIds, orphaned tabs
-- [ ] Add logging/diagnostics when validation repairs state (so we can track down remaining issues)
-- [ ] Consider adding a `structuredClone` barrier on state save to catch non-serializable values
+- [~] Can't replicate — deferred. User unable to reproduce the corruption symptoms that motivated this, so not worth speculative defenses right now. Revisit if symptoms reappear.
+  - ~~Add a validation pass on load: detect and repair double-wrapped roots, missing rootNodeIds, orphaned tabs~~
+  - ~~Add logging/diagnostics when validation repairs state~~
+  - ~~Consider adding a `structuredClone` barrier on state save to catch non-serializable values~~
 
 ### Phase 3: Connection pool
 - [ ] Refactor `surreal.ts`: split singleton into `localDb` + `remoteConnections` Map

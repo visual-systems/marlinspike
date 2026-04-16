@@ -530,21 +530,9 @@ export function ValidityStates() {
   const rootNodeId = base.tabs[0].rootNodeId;
   const ws: WorkspaceState = { ...base, treeNodes: defaultTreeNodes(rootNodeId), edges: [] };
 
-  const vApplied = computeValidity(
-    VALID_APPLIED_CODE,
-    undefined,
-    undefined,
-    ws.treeNodes,
-    ws.edges,
-  );
-  const vUnapplied = computeValidity(
-    VALID_UNAPPLIED_CODE,
-    undefined,
-    undefined,
-    ws.treeNodes,
-    ws.edges,
-  );
-  const vInvalid = computeValidity(INVALID_CODE, undefined, undefined, ws.treeNodes, ws.edges);
+  const vApplied = computeValidity(VALID_APPLIED_CODE, undefined, undefined, ws);
+  const vUnapplied = computeValidity(VALID_UNAPPLIED_CODE, undefined, undefined, ws);
+  const vInvalid = computeValidity(INVALID_CODE, undefined, undefined, ws);
 
   const DOT = (state: string) => {
     const color = state === "valid-applied"
