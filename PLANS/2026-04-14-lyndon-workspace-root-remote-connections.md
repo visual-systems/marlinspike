@@ -142,6 +142,32 @@ Currently spike-clojure captures only the core graph structure — node labels, 
 - How much of this belongs in spike-clojure vs. a separate "workspace file format"? The code view is meant for interactive editing; a full serialisation format might warrant its own codec.
 - Edge metadata syntax — Clojure has no native edge concept; any encoding is a convention. Should it be readable as valid Clojure, or can we extend the syntax?
 
+### Phase 6: Blank-slate bootstrapping
+
+The first-run experience is currently janky — `defaultState()` creates a tab called "Main" pre-populated with a fake `acme/backend` project tree (auth-service, token-validator, ingress, frontend). This is confusing for new users and has no relation to anything they're trying to do.
+
+#### Goals
+- First launch should present a clean, empty workspace — not a demo project the user has to delete
+- Example projects should be available but opt-in, not forced on the user
+- The bootstrapping path should feel intentional, not accidental
+
+#### Default state
+- [ ] `defaultState()` creates a single tab with `name: null` ("Untitled"), an empty workspace root, and no children
+- [ ] Remove `defaultTreeNodes()` sample data — it was useful for development but is now noise for real users
+- [ ] Remove hardcoded personas ("Architect", "Developer", "Reviewer") and workflows ("Explore", "Design", "Build") from default state — these should come from user configuration or be empty
+- [ ] Keep `workspace.connections` constraint applied to the root (it's structural, not sample data)
+
+#### Example projects
+- [ ] Add an "Examples" mechanism — loadable sample workspaces that demonstrate the tool's capabilities
+- [ ] Candidates: quadratic-roots (dataflow), a simple service topology (structural), an OIDC flow (mixed)
+- [ ] UI affordance: a way to load an example into a new tab (could be a menu, a welcome screen, or a command)
+- [ ] Examples should be defined as spike-clojure source text, parsed via `spikeToGraph` — dogfooding the codec
+
+#### Design questions
+- Should the first-run show a welcome/onboarding screen, or just an empty canvas? An empty canvas is honest but potentially confusing; a minimal welcome overlay could orient the user without polluting the workspace.
+- Should `defaultTreeNodes()` be kept as a test utility (renamed to `exampleTreeNodes()` or similar), or should tests that need sample data construct their own?
+- How should examples interact with tabs — always a new tab, or replace the current empty one?
+
 ## Key files
 
 | File | Phase | Changes |
