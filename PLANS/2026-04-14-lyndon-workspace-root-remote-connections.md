@@ -84,7 +84,11 @@ Simpler approach than adding another node layer: `focusId=null` IS the virtual r
 #### Workspace constraint visibility
 - [x] Ensure `workspace.connections` constraint is visible in the constraints panel when applied to the workspace node
 - [x] Move schema-driven data fields (url, namespace, database, username, password) to the entity inspector — the constraint inspector shows the schema/rules, not the data that satisfies them. Extensible data lives on the entity's `data` bag; the constraint declares what shape that data must have. Note: constraints should also be able to constrain core entity properties (label, kind, etc.), not just `data` — but user-defined/extensible fields always go in `data`.
-- [ ] Verify constraint fields render and are editable in the entity inspector when the workspace root is selected
+- [x] Verify constraint fields render and are editable in the entity inspector when the workspace root is selected
+- [ ] Should be able to see when inspecting an entity which constraints are failing and why - need to explore UI for this
+- [ ] Could we use some clojure type / spec conventions for encoding this in the code view?
+- [ ] The workspace.connection constraint may be inappropriate for general workspaces - probabaly need another simpler "workspace" constraint for local workspaces? Or use the local connection properties in workspace.connection. not sure.
+- [ ] Should be able to view the constraints associated with a constraint - checks, schemas, etc. if it is a "built-in" constraint where the code can't be seen then there should be user-visable documentation that can be viewed and possibly a schema based interface for interacting with the constraint from an entity.
 
 #### Default database UUID
 - [x] Replace `DEFAULT_DB = "default"` with a generated UUID
@@ -98,11 +102,11 @@ Simpler approach than adding another node layer: `focusId=null` IS the virtual r
   - ~~Consider adding a `structuredClone` barrier on state save to catch non-serializable values~~
 
 ### Phase 3: Connection pool
-- [ ] Refactor `surreal.ts`: split singleton into `localDb` + `remoteConnections` Map
-- [ ] Keep `getDb()` backward-compatible (returns local by default)
-- [ ] Add `connectRemote(id, config)`, `disconnectRemote(id)`, `getRemoteDb(id)`
-- [ ] `useDatabase()` / `useUiDb()` always target local instance
-- [ ] Verify all existing functionality unchanged
+- [x] Refactor `surreal.ts`: rename `db` → `localDb`, add `remoteConnections` Map
+- [x] Unified `getDb(connectionId?)` — no arg returns local, with id returns remote; all 27 existing call sites unchanged
+- [x] Add `connectRemote(id, config)` / `disconnectRemote(id)` for lifecycle management
+- [x] `useDatabase()` / `useUiDb()` unchanged (always target local instance)
+- [x] Verify all existing functionality unchanged (`deno task ci`) — 340 tests pass
 
 ### Phase 4: Wire remote connections
 - [ ] Add `getConnectionConfig(ws)` helper to read connection config from root node constraints
@@ -225,15 +229,20 @@ On load, `ensureWorkspaceRoot(treeNodes, tab.rootNodeId)` wraps if needed. If th
 let localDb: Surreal | null = null;
 const remoteConnections = new Map<string, Surreal>();
 
-// getDb() returns localDb by default — all 27 call sites unchanged
-export function getDb(): Surreal {
-  return localDb!;
+// Unified acquisition — no arg returns local, with id returns remote
+export function getDb(connectionId?: string): Surreal {
+  if (!connectionId) {
+    if (!localDb) throw new Error("SurrealDB not initialised");
+    return localDb;
+  }
+  const remote = remoteConnections.get(connectionId);
+  if (!remote) throw new Error(`No remote connection: ${connectionId}`);
+  return remote;
 }
 
-// New functions for remote management
+// Lifecycle management — separate from acquisition
 export async function connectRemote(id: string, config: ConnectionConfig): Promise<Surreal>;
 export function disconnectRemote(id: string): void;
-export function getRemoteDb(id: string): Surreal | undefined;
 ```
 
 ## Implementation Considerations
