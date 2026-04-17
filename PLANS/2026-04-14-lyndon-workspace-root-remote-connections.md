@@ -83,12 +83,13 @@ Simpler approach than adding another node layer: `focusId=null` IS the virtual r
 
 #### Workspace constraint visibility
 - [ ] Ensure `workspace.connections` constraint is visible in the constraints panel when applied to the workspace node
-- [ ] Verify constraint fields render and are editable in the inspector
+- [ ] Move schema-driven data fields (url, namespace, database, username, password) to the entity inspector — the constraint inspector should show the schema/rules, not the data that satisfies them. Data lives on the entity's `data` bag; the constraint just declares what shape that data must have.
+- [ ] Verify constraint fields render and are editable in the entity inspector when the workspace root is selected
 
 #### Default database UUID
-- [ ] Replace `DEFAULT_DB = "default"` with a generated UUID
-- [ ] Update `loadStateAsync` migration: treat "default" as a legacy identifier, remap to UUID
-- [ ] Update all code paths that compare against the literal "default" string
+- [x] Replace `DEFAULT_DB = "default"` with a generated UUID
+- [x] Update `loadStateAsync` migration: treat "default" as a legacy identifier, remap to UUID
+- [x] Update all code paths that compare against the literal "default" string
 
 #### State corruption hardening
 - [~] Can't replicate — deferred. User unable to reproduce the corruption symptoms that motivated this, so not worth speculative defenses right now. Revisit if symptoms reappear.
