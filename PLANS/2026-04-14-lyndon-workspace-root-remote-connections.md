@@ -56,6 +56,7 @@ The workspace node should be a regular inspectable entity — not hidden behind 
 
 #### Virtual root + workspace focus
 Simpler approach than adding another node layer: `focusId=null` IS the virtual root. No extra node needed.
+
 - Default `focusId` to workspaceRootId → users see workspace contents (same visual as before)
 - `focusId=null` → `getFocusedRootNodes()` returns `treeNodes` (shows workspace root on canvas for inspection)
 - Focus dropdown: "(root)" navigates to `null`, showing workspace; workspace root appears in ancestor breadcrumbs
