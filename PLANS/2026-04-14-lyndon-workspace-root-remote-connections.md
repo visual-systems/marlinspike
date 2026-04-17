@@ -101,6 +101,38 @@ Simpler approach than adding another node layer: `focusId=null` IS the virtual r
 - [ ] Handle connection errors gracefully with diagnostics
 - [ ] Reconnect when constraint data changes
 
+### Phase 5: Full-fidelity code round-trip (data, metadata, constraints)
+
+Currently spike-clojure captures only the core graph structure — node labels, hierarchy, and dataflow edges. Everything else (version numbers, `data` bags, ports, URIs, constraints, constraint applications) is silently dropped on emit and lost on round-trip. This phase makes the code view a complete representation of the workspace.
+
+#### Node metadata
+- [ ] Emit `data` as a trailing map on `def`/`defn` forms — e.g. `(def name {:key "val"})` for leaves, or a kwargs-style block for composites
+- [ ] Emit `uri` when present — e.g. `:uri "spike://..."` inside the data/meta map
+- [ ] ~~Emit `version`~~ — **No.** Version is an internal reactivity/debugging signal, not domain data. It should not appear in the code view, serialised output, or data inspector. The merger can continue bumping it internally for change detection.
+- [ ] Preserve `ports` through round-trip (currently only `{:ports ...}` attr-map on defn is handled; standalone port declarations on def composites are not)
+- [ ] Parse all of the above back on apply, merging with existing node state
+
+#### Edge metadata
+- [ ] Emit edge `label` and `data` — edges currently carry no payload in the code view
+- [ ] Consider syntax: inline annotation on the call site (e.g. `(f ^{:label "transforms"} x)`), or a separate `(edge from to {:label "..." ...})` form
+- [ ] ~~Emit edge `version`~~ — same as nodes: internal only
+
+#### Constraints and applications
+- [ ] Emit constraints as top-level forms — e.g. `(constraint "workspace.connections" {:url "wss://..." ...})`
+- [ ] Emit constraint applications linking constraints to their target entities
+- [ ] Parse constraints back on apply, preserving constraint ids through round-trip
+- [ ] Consider whether constraint definitions belong in the code view at all, or only their applications (the "this node has these constraints" relationship)
+
+#### Workspace-level state
+- [ ] Emit workspace-level properties that live on the root node's `data` (connection config, etc.)
+- [ ] Consider what workspace state is structural (belongs in code) vs. ephemeral (canvas positions, expanded nodes, selections — clearly not in code)
+
+#### Design questions
+- What is the right syntax for node data? Options: trailing map `(def name {...data})`, kwargs before children `(def name :key val [...])`, or reader metadata `^{...} name`. Each has trade-offs for readability and Clojure-likeness.
+- **Decision: version is internal.** It's a reactivity/change-detection counter, not domain data. It should not appear in emitted code, serialised formats, or the data inspector. Round-trips bump it as a side-effect — that's fine, it's what it's for.
+- How much of this belongs in spike-clojure vs. a separate "workspace file format"? The code view is meant for interactive editing; a full serialisation format might warrant its own codec.
+- Edge metadata syntax — Clojure has no native edge concept; any encoding is a convention. Should it be readable as valid Clojure, or can we extend the syntax?
+
 ## Key files
 
 | File | Phase | Changes |
@@ -187,6 +219,21 @@ export function getRemoteDb(id: string): Surreal | undefined;
   - What should happen to orphan definitions not referenced by the workspace root? Currently they'd be lost on round-trip.
   - Should the root node be called "Workspace"? Probably should match the tab/workspace name rather than be generic. Or perhaps use a special form for the declaration — e.g. `(workspace "My Project" [...])` or metadata on `def`.
   - How to show workspace metadata (especially db connections from constraints) in the code view? `def`/`defn` metadata maps would be a natural fit — e.g. `(def ^{:url "wss://..." :ns "prod"} my-workspace [...])`.
+- **Reference semantics & identity (future scope):** How UUIDs / identity interact with how one entity references another is a bigger design question than this branch. Goals we'd like the eventual design to satisfy:
+  - Able to write and export **lightweight encodings** without UUID encumbrance when identity-through-rename isn't required (common case: pasting/exporting snippets).
+  - Able to **unambiguously reference** a specific entity in a graph even when labels collide or change.
+  - Able to **garbage-collect** entities no longer reachable (orphans).
+  - Able to opt in to **ID-rich forms** when explicitness is needed (e.g. preserving identity across renames, cross-workspace refs, constraint-application targets).
+
+  Candidate approaches to explore:
+  - Default symbolic references (by label) with optional `^{:uuid "..."}` metadata only on the entities that need it — emitter chooses minimal form.
+  - First-class reference literal — e.g. `#ref "uuid"` as a tagged form, usable anywhere a symbol is accepted.
+  - Mixed: symbolic references resolve by name in scope; `#ref` disambiguates when names collide or cross scopes.
+  - "Identity map" sidecar form — separates identity from structure, e.g. a trailing `(bindings …)` block or file-level map from label/path → UUID.
+
+  Relevant tensions: lightness vs. rename-safety, local readability vs. cross-workspace interop, how to represent references inside constraint applications and ports.
+- **Non-UUID GUIDs:** The `^{:id "..."}` metadata currently only emits when the id matches the UUID v4 pattern (`looksLikeUuid`). If we adopt other globally-unique identifier formats (e.g. ULIDs, nanoids, content-addressed hashes), the emit gate will need broadening. The question is whether `looksLikeUuid` should become a more general `isOpaqueId` check, or whether the emitter should use a different heuristic (e.g. "id !== label" plus a registry of known derivable patterns like `spike://`).
+- **View pane UI conflict:** * the title bar of view panes intersects the mode selection dropdowns etc. Looks bad. Perhaps when they overlap the margin above the view pane can increase so it "ducks" under those elements?
 
 ## Verification
 

@@ -35,6 +35,42 @@ import { parse } from "../graph/base_lisp.ts";
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Return the def/defn name form, optionally prefixed with `^{:id "..."}`
+ * reader metadata.
+ *
+ * Metadata is only emitted when the node's id is a genuine UUID — an opaque
+ * identifier that can't be derived from the label. Label-derived ids (the
+ * common case for in-source definitions) stay implicit, keeping the text
+ * clean. The user can work in bare-label form until an entity needs to be
+ * referenced externally, at which point a real UUID is assigned.
+ */
+function nameWithIdMeta(node: TreeNode): string {
+  if (!looksLikeUuid(node.id)) return node.label;
+  return `^{:id ${JSON.stringify(node.id)}} ${node.label}`;
+}
+
+/** UUID pattern check — reused by emit (suppress metadata) and codec (id generation). */
+function looksLikeUuid(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+}
+
+/**
+ * Pull an `:id` string out of a symbol's reader metadata, if present.
+ * Returns `undefined` when there is no metadata, no `:id` key, or the value
+ * is not a string — callers fall back to label-as-id in those cases.
+ */
+function extractIdMeta(nameForm: SExp): string | undefined {
+  const meta = nameForm.meta;
+  if (!meta || meta.type !== "map") return undefined;
+  for (const [k, v] of meta.entries) {
+    if (k.type === "keyword" && k.value === "id" && v.type === "string") {
+      return v.value;
+    }
+  }
+  return undefined;
+}
+
 /** Kahn's topological sort. Returns IDs in dependency order. */
 function topoSort(ids: string[], edges: Edge[]): string[] {
   const inDegree = new Map<string, number>(ids.map((id) => [id, 0]));
@@ -185,9 +221,10 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
     ? null
     : terminalIds.map((id) => [`:${nodeById.get(id)!.label}`, returnRef(id)] as [string, string]);
 
+  const nameForm = nameWithIdMeta(container);
   if (letIds.length === 0) {
     const returnExpr = mapEntries ? formatMap(mapEntries, "  ") : callExpr(terminalIds[0]);
-    return `(defn ${container.label}${attrMap}\n  [${paramList}]\n  ${returnExpr})`;
+    return `(defn ${nameForm}${attrMap}\n  [${paramList}]\n  ${returnExpr})`;
   }
 
   // Format let bindings: first on same line as `[`, rest indented to align
@@ -199,7 +236,7 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
     .join("\n") + "]";
 
   const returnExpr = mapEntries ? formatMap(mapEntries, "    ") : callExpr(terminalIds[0]);
-  return `(defn ${container.label}${attrMap}\n  [${paramList}]\n  (let ${letBlock}\n    ${returnExpr}))`;
+  return `(defn ${nameForm}${attrMap}\n  [${paramList}]\n  (let ${letBlock}\n    ${returnExpr}))`;
 }
 
 // ---------------------------------------------------------------------------
@@ -227,7 +264,7 @@ export function graphToSpike(nodes: TreeNode[], edges: Edge[]): string {
     emitted.add(node.id);
 
     if (node.kind === "leaf") {
-      lines.push(`(def ${node.label})`);
+      lines.push(`(def ${nameWithIdMeta(node)})`);
       return;
     }
 
@@ -249,7 +286,7 @@ export function graphToSpike(nodes: TreeNode[], edges: Edge[]): string {
       lines.push(emitDefnForm(node, localEdges));
     } else {
       const refs = node.children.map((c) => c.label).join(" ");
-      lines.push(`(def ${node.label} [${refs}])`);
+      lines.push(`(def ${nameWithIdMeta(node)} [${refs}])`);
     }
   }
 
@@ -306,12 +343,17 @@ export function spikeToGraph(
       nodeArgOrders: Map<string, string[]>;
     }
   >();
+  // Label → explicit UUID pulled from `^{:uuid "..."}` reader metadata on the
+  // def/defn name. When absent, the node falls back to label-as-id.
+  const nameId = new Map<string, string>();
 
   for (const form of forms) {
     if (form.type !== "list" || form.items.length < 2) continue;
     const [head, nameForm] = form.items;
     if (head.type !== "symbol" || nameForm.type !== "symbol") continue;
     const name = nameForm.value;
+    const uuid = extractIdMeta(nameForm);
+    if (uuid) nameId.set(name, uuid);
 
     if (head.value === "def") {
       // (def name [child ...]) or bare (def name) for leaf nodes
@@ -424,7 +466,7 @@ export function spikeToGraph(
       version: 1,
     }));
     builtDefn.set(name, {
-      id: name,
+      id: nameId.get(name) ?? name,
       label: name,
       kind: "composite",
       children,
@@ -454,7 +496,7 @@ export function spikeToGraph(
     if (visited.has(name)) {
       errors.push(`Cycle detected at "${name}"`);
       const stub: TreeNode = {
-        id: name,
+        id: nameId.get(name) ?? name,
         label: name,
         kind: "leaf",
         children: [],
@@ -468,7 +510,7 @@ export function spikeToGraph(
     const childNames = defs.get(name) ?? [];
     const children = childNames.map((n) => makeDefNode(n, new Set(visited)));
     const node: TreeNode = {
-      id: name,
+      id: nameId.get(name) ?? name,
       label: name,
       kind: children.length > 0 ? "composite" : "leaf",
       children,

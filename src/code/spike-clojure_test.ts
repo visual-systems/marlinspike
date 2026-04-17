@@ -643,3 +643,118 @@ Deno.test("def referencing a defn child resolves as composite, not leaf", () => 
   // Binding-name-as-identity: `v (validate input)` creates node "v" (fn=validate)
   assertEquals(edges.some((e) => e.fromId === "v" && e.toId === "respond"), true);
 });
+
+// ---------------------------------------------------------------------------
+// :id reader metadata
+//
+// When a node has a genuine UUID as its id, the emitter preserves it by
+// prefixing the def/defn name with `^{:id "..."}` reader metadata. The
+// parser reads the id back so round-trips keep the original identity.
+// Nodes with label-derived ids (the common case) emit without metadata.
+// ---------------------------------------------------------------------------
+
+const TEST_UUID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+const TEST_UUID_2 = "11111111-2222-4333-8444-555555555555";
+const TEST_UUID_3 = "66666666-7777-4888-9999-aaaaaaaaaaaa";
+
+Deno.test("id meta: emits ^{:id} when node has a UUID id", () => {
+  const node: TreeNode = {
+    id: TEST_UUID,
+    label: "Workspace",
+    kind: "leaf",
+    children: [],
+    data: {},
+    version: 1,
+  };
+  const clj = graphToSpike([node], []);
+  assertEquals(clj, `(def ^{:id "${TEST_UUID}"} Workspace)`);
+});
+
+Deno.test("id meta: not emitted when id is label-derived (not a UUID)", () => {
+  const clj = graphToSpike(
+    [{ id: "Workspace", label: "Workspace", kind: "leaf", children: [], data: {}, version: 1 }],
+    [],
+  );
+  assertEquals(clj, `(def Workspace)`);
+});
+
+Deno.test("id meta: not emitted for non-UUID ids like spike:// URIs", () => {
+  const clj = graphToSpike(
+    [{
+      id: "spike://acme/backend",
+      label: "acme/backend",
+      kind: "leaf",
+      children: [],
+      data: {},
+      version: 1,
+    }],
+    [],
+  );
+  assertEquals(clj, `(def acme/backend)`);
+});
+
+Deno.test("id meta: emits on composite (def name [...])", () => {
+  const node: TreeNode = {
+    id: TEST_UUID,
+    label: "Workspace",
+    kind: "composite",
+    children: [
+      { id: "child", label: "child", kind: "leaf", children: [], data: {}, version: 1 },
+    ],
+    data: {},
+    version: 1,
+  };
+  const clj = graphToSpike([node], []);
+  assertEquals(clj.includes(`(def ^{:id "${TEST_UUID}"} Workspace [child])`), true);
+});
+
+Deno.test("id meta: emits on defn name", () => {
+  const node: TreeNode = {
+    id: TEST_UUID,
+    label: "pipeline",
+    kind: "composite",
+    children: [
+      { id: TEST_UUID_2, label: "A", kind: "leaf", children: [], data: {}, version: 1 },
+      { id: TEST_UUID_3, label: "B", kind: "leaf", children: [], data: {}, version: 1 },
+    ],
+    data: {},
+    version: 1,
+  };
+  const clj = graphToSpike([node], [
+    { id: "A-B", fromId: TEST_UUID_2, toId: TEST_UUID_3, label: "", data: {}, version: 1 },
+  ]);
+  assertEquals(clj.includes(`(defn ^{:id "${TEST_UUID}"} pipeline`), true);
+});
+
+Deno.test("id meta: parser extracts :id and sets it as node id", () => {
+  const src = `(def ^{:id "${TEST_UUID}"} Workspace [child])
+(def child)`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const ws = treeNodes.find((n) => n.label === "Workspace")!;
+  assertEquals(ws.id, TEST_UUID);
+  assertEquals(ws.label, "Workspace");
+});
+
+Deno.test("id meta: parser ignores non-string :id values", () => {
+  const src = `(def ^{:id 42} Name)`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  // Falls back to label-as-id.
+  assertEquals(treeNodes[0].id, "Name");
+});
+
+Deno.test("id meta: round-trip preserves UUID id", () => {
+  const node: TreeNode = {
+    id: TEST_UUID,
+    label: "OriginalName",
+    kind: "leaf",
+    children: [],
+    data: {},
+    version: 1,
+  };
+  const clj = graphToSpike([node], []);
+  const { treeNodes } = spikeToGraph(clj);
+  assertEquals(treeNodes[0].id, TEST_UUID);
+  assertEquals(treeNodes[0].label, "OriginalName");
+});
