@@ -7,12 +7,15 @@
 
 Each tab's graph is currently a forest (`treeNodes: TreeNode[]` — an array of root-level nodes). To support remote SurrealDB connections, we need a place to store connection configuration. Rather than adding a separate config layer, we extend the graph model: each tab gets an explicit **workspace root node** whose `data` properties hold connection config, validated by a constraint. This is consistent with the project philosophy — constraints drive schema, nodes are uniform, and the root is embeddable in other graphs via ports.
 
+Alongside the structural change, the code view needs to become a full-fidelity representation of the workspace — able to round-trip identity, data, and metadata without silent loss. The Spike-Clojure codec uses `^{:id "..."}` reader metadata for UUID-bearing entities and label-derived identity for everything else, keeping the common case clean while supporting stable identity when needed.
+
 ## Goal
 
 1. Introduce a workspace root node (structural change to tree model)
 2. Add a `workspace.connections` constraint type with schema-driven editing
 3. Refactor `surreal.ts` from a singleton into a connection pool
 4. Wire remote connections through the pool based on root node config
+5. Full-fidelity code round-trip — emit and parse node data, edge metadata, constraints, and other domain state through the code view
 
 Each phase is independently shippable.
 
