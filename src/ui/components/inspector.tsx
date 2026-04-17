@@ -23,7 +23,8 @@ import {
 } from "../workspace.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { IconBtn, PropLabel, SmallBtn } from "./widgets.tsx";
-import { ConstraintsAttachedSection } from "./constraints-panel.tsx";
+import { ConstraintsAttachedSection, DataField } from "./constraints-panel.tsx";
+import { getEntityDataSchema } from "../../graph/validate_workspace.ts";
 
 // ---------------------------------------------------------------------------
 // Inspector (dispatch)
@@ -389,6 +390,9 @@ export function NodeInspector(
         onInspectConstraint={onInspectConstraint}
       />
 
+      {/* Schema-driven fields from applied constraints */}
+      <EntityConstraintFields entityId={node.id} ws={ws} update={update} />
+
       {/* Data */}
       <div style="display:flex; flex-direction:column; gap:4px;">
         <div style="display:flex; align-items:center; justify-content:space-between;">
@@ -432,6 +436,68 @@ export function NodeInspector(
         <SmallBtn label="Save data" onClick={saveData} />
       </div>
     </InspectorShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Entity constraint fields — schema-driven fields from applied constraints
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders schema-driven data fields for all constraints applied to an entity
+ * that have an `entityDataSchema`. Fields edit `entity.data`, not `constraint.data`.
+ */
+function EntityConstraintFields(
+  { entityId, ws, update }: { entityId: string; ws: WorkspaceState; update: Updater },
+) {
+  // Collect entityDataSchemas from all constraints applied to this entity.
+  const appliedConstraints = ws.constraintApplications
+    .filter((app) => app.entityId === entityId)
+    .map((app) => ws.constraints.find((c) => c.id === app.constraintId))
+    .filter((c): c is NonNullable<typeof c> => c != null);
+
+  const schemas = appliedConstraints
+    .map((c) => ({ constraint: c, schema: getEntityDataSchema(c.type) }))
+    .filter((s): s is { constraint: typeof s.constraint; schema: NonNullable<typeof s.schema> } =>
+      s.schema != null && Object.keys(s.schema.properties).length > 0
+    );
+
+  if (schemas.length === 0) return null;
+
+  function setField(key: string, value: unknown) {
+    update((s) =>
+      withNodeMutation(s, (nodes) =>
+        updateNodeInTree(nodes, entityId, (n) => ({
+          ...n,
+          data: { ...n.data, [key]: value },
+          version: n.version + 1,
+        })))
+    );
+  }
+
+  // Collect all fields across all applied constraint schemas.
+  const allFields: Array<
+    { key: string; schema: import("../../graph/validate_workspace.ts").DataPropertySchema }
+  > = [];
+  const entity = findNode(ws.treeNodes, entityId);
+  for (const { schema } of schemas) {
+    for (const [key, prop] of Object.entries(schema.properties)) {
+      allFields.push({ key, schema: prop });
+    }
+  }
+
+  return (
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      {allFields.map(({ key, schema }) => (
+        <DataField
+          key={key}
+          fieldKey={key}
+          schema={schema}
+          value={entity?.data[key]}
+          onChange={(v) => setField(key, v)}
+        />
+      ))}
+    </div>
   );
 }
 

@@ -560,7 +560,7 @@ function ConstraintDataFields(
   );
 }
 
-function DataField(
+export function DataField(
   { fieldKey, schema, value, onChange }: {
     fieldKey: string;
     schema: DataPropertySchema;

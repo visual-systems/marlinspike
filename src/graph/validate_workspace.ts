@@ -32,8 +32,14 @@ export interface ConstraintDataSchema {
 }
 
 interface ConstraintTypeDefinition {
-  /** Declares the expected shape of constraint.data for this type. */
+  /** Schema for the constraint's own configuration (edited on the constraint inspector). */
   dataSchema: ConstraintDataSchema;
+  /**
+   * Schema for entity data that this constraint type requires (edited on the entity inspector).
+   * When a constraint with an entityDataSchema is applied to an entity, the entity inspector
+   * renders these fields against `entity.data`. The evaluator reads from `entity.data` too.
+   */
+  entityDataSchema?: ConstraintDataSchema;
   evaluate: Evaluator;
 }
 
@@ -137,7 +143,8 @@ const registry: Record<string, ConstraintTypeDefinition> = {
   },
 
   "workspace.connections": {
-    dataSchema: {
+    dataSchema: { properties: {} },
+    entityDataSchema: {
       properties: {
         url: { type: "string", default: "" },
         namespace: { type: "string", default: "" },
@@ -150,7 +157,7 @@ const registry: Record<string, ConstraintTypeDefinition> = {
     evaluate(constraint, entity) {
       const diags: Diagnostic[] = [];
       const name = entity.label || entity.id;
-      const url = constraint.data.url;
+      const url = entity.data.url;
 
       if (typeof url !== "string" || url.trim().length === 0) {
         diags.push({
@@ -222,11 +229,20 @@ export function registeredConstraintTypes(): string[] {
 }
 
 /**
- * Returns the data schema for a constraint type, or null if the type is unknown.
- * Used by the UI to render type-specific configuration fields.
+ * Returns the constraint-config data schema for a constraint type, or null if unknown.
+ * Used by the UI to render type-specific configuration fields on the constraint inspector.
  */
 export function getConstraintDataSchema(type: string): ConstraintDataSchema | null {
   return registry[type]?.dataSchema ?? null;
+}
+
+/**
+ * Returns the entity data schema for a constraint type, or null if the type
+ * doesn't impose entity-level data requirements.
+ * Used by the entity inspector to render schema-driven fields on `entity.data`.
+ */
+export function getEntityDataSchema(type: string): ConstraintDataSchema | null {
+  return registry[type]?.entityDataSchema ?? null;
 }
 
 function findEntity(ws: WorkspaceState, entityId: string): Entity | undefined {
