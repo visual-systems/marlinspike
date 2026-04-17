@@ -83,7 +83,7 @@ Simpler approach than adding another node layer: `focusId=null` IS the virtual r
 
 #### Workspace constraint visibility
 - [ ] Ensure `workspace.connections` constraint is visible in the constraints panel when applied to the workspace node
-- [ ] Move schema-driven data fields (url, namespace, database, username, password) to the entity inspector — the constraint inspector should show the schema/rules, not the data that satisfies them. Data lives on the entity's `data` bag; the constraint just declares what shape that data must have.
+- [ ] Move schema-driven data fields (url, namespace, database, username, password) to the entity inspector — the constraint inspector should show the schema/rules, not the data that satisfies them. Extensible data lives on the entity's `data` bag; the constraint declares what shape that data must have. Note: constraints should also be able to constrain core entity properties (label, kind, etc.), not just `data` — but user-defined/extensible fields always go in `data`.
 - [ ] Verify constraint fields render and are editable in the entity inspector when the workspace root is selected
 
 #### Default database UUID
