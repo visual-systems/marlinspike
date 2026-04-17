@@ -60,7 +60,6 @@ Simpler approach than adding another node layer: `focusId=null` IS the virtual r
 - Default `focusId` to workspaceRootId → users see workspace contents (same visual as before)
 - `focusId=null` → `getFocusedRootNodes()` returns `treeNodes` (shows workspace root on canvas for inspection)
 - Focus dropdown: "(root)" navigates to `null`, showing workspace; workspace root appears in ancestor breadcrumbs
-
 - [x] Default `focusId` to the workspace root node ID (not null) in all load paths + `defaultState()` + `addTab()`
 - [x] `getFocusedRootNodes()`: when `focusId=null`, return `ws.treeNodes` (shows workspace root on canvas); when focused on workspace root, return its children
 - [x] Remove the ⓘ inspect button next to the focus dropdown — users navigate up to virtual root to inspect the workspace
