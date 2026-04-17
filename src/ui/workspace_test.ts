@@ -57,7 +57,7 @@ Deno.test("makeRootNode: creates a root with given ID", () => {
   const children = [makeNode("a", "A", "leaf", [])];
   const root = makeRootNode("my-root-id", children);
   assertEquals(root.id, "my-root-id");
-  assertEquals(root.label, "Workspace");
+  assertEquals(root.label, "Untitled");
   assertEquals(root.kind, "composite");
   assertEquals(root.children, children);
 });

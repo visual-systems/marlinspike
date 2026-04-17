@@ -143,7 +143,7 @@ export function parseWorkspace(
   // produced no root-shaped node at the top level, wrap the result back under
   // the existing root so downstream invariants hold.
   if (!findNode(nextTreeNodes, rootId)) {
-    nextTreeNodes = [makeRootNode(rootId, nextTreeNodes)];
+    nextTreeNodes = [makeRootNode(rootId, nextTreeNodes, rootLabel)];
   }
 
   return { treeNodes: nextTreeNodes, edges: mergedEdges, errors: [] };

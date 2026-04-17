@@ -23,6 +23,7 @@ import {
   PANEL_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
   type Tab,
+  updateNodeInTree,
   type Updater,
   withPanel,
   type WorkspaceState,
@@ -464,10 +465,22 @@ function TabItem(
 
   function finishRename() {
     const val = inputRef.current?.value.trim() ?? "";
-    update((s) => ({
-      ...s,
-      tabs: s.tabs.map((t) => t.id === tab.id ? { ...t, name: val || null } : t),
-    }));
+    update((s) => {
+      const rootId = tab.rootNodeId;
+      const rootLabel = val || "Untitled";
+      return {
+        ...s,
+        tabs: s.tabs.map((t) => t.id === tab.id ? { ...t, name: val || null } : t),
+        // Keep workspace root label in sync with tab name
+        treeNodes: isActive
+          ? updateNodeInTree(
+            s.treeNodes,
+            rootId,
+            (n) => ({ ...n, label: rootLabel, version: n.version + 1 }),
+          )
+          : s.treeNodes,
+      };
+    });
     setRenaming(false);
   }
 

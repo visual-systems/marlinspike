@@ -160,11 +160,15 @@ export interface ListEditorConfig {
 // Workspace root node
 // ---------------------------------------------------------------------------
 
-/** Create a workspace root node with the given ID and children. */
-export function makeRootNode(id: string, children: TreeNode[]): TreeNode {
+/** Create a workspace root node with the given ID, label, and children. */
+export function makeRootNode(
+  id: string,
+  children: TreeNode[],
+  label = "Untitled",
+): TreeNode {
   return {
     id,
-    label: "Workspace",
+    label,
     kind: "composite",
     children,
     data: {},

@@ -301,8 +301,17 @@ export function CodePanel(
     update((s) => {
       const nextExpanded = s.canvasExpandedNodes.filter((id) => findNode(treeNodes, id) !== null);
       const focusStillValid = s.focusId ? findNode(treeNodes, s.focusId) !== null : true;
+      // Sync root node label → tab name
+      const rootNode = findNode(treeNodes, tab.rootNodeId);
+      const rootLabel = rootNode?.label;
+      const nextTabs = rootLabel
+        ? s.tabs.map((t) =>
+          t.id === tab.id ? { ...t, name: rootLabel === "Untitled" ? null : rootLabel } : t
+        )
+        : s.tabs;
       const nextState: WorkspaceState = {
         ...s,
+        tabs: nextTabs,
         treeNodes,
         edges,
         canvasExpandedNodes: nextExpanded,

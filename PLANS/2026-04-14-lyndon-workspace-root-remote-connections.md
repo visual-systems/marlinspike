@@ -75,6 +75,12 @@ Simpler approach than adding another node layer: `focusId=null` IS the virtual r
 - [x] Extract pure helpers to `src/code/workspace-codec.ts` with 10 unit tests covering both focus modes
 - [ ] Open questions (round-tripping paste-in, orphan defs, workspace-name-as-label, constraint metadata emission) — deferred; these are independent design choices that can be revisited once remote connections are wired up
 
+#### Workspace root label = tab name
+- [x] Root node label should reflect the tab's display name, not a generic "Workspace"
+- [x] Renaming the tab updates the root node label
+- [x] Renaming the root node in code updates the tab name
+- [x] New tabs / null tab names fall back to "Untitled"
+
 #### Workspace constraint visibility
 - [ ] Ensure `workspace.connections` constraint is visible in the constraints panel when applied to the workspace node
 - [ ] Verify constraint fields render and are editable in the inspector

@@ -60,8 +60,8 @@ function wsWithFocus(focusId: string | null): WorkspaceState {
 
 Deno.test("emitWorkspace: focused on workspace root omits the wrapper", () => {
   const code = emitWorkspace(wsWithFocus(ROOT_ID));
-  // The `Workspace` wrapper form must not appear when we're inside it.
-  assertEquals(code.includes("(def Workspace"), false);
+  // The wrapper form must not appear when we're inside it.
+  assertEquals(code.includes("(def Untitled"), false);
   // Children should still be emitted.
   assertEquals(code.includes("acme/backend"), true);
 });
@@ -69,15 +69,15 @@ Deno.test("emitWorkspace: focused on workspace root omits the wrapper", () => {
 Deno.test("emitWorkspace: virtual root (focusId=null) includes the wrapper", () => {
   const code = emitWorkspace(wsWithFocus(null));
   // At the virtual root the workspace IS the focused entity, so it shows up.
-  // Emits with ^{:id "..."} metadata since root id differs from label.
-  assertEquals(/\(def\s+\^\{:id\s+"[^"]+"\}\s+Workspace/.test(code), true);
+  // Emits with ^{:id "..."} metadata since root id is a UUID.
+  assertEquals(/\(def\s+\^\{:id\s+"[^"]+"\}\s+Untitled/.test(code), true);
   assertEquals(code.includes("acme/backend"), true);
 });
 
 Deno.test("emitWorkspace: focused on a child node emits only workspace children", () => {
   const code = emitWorkspace(wsWithFocus("spike://acme/backend"));
   // Same as focused-on-root: no wrapper. We're still "inside" the workspace.
-  assertEquals(code.includes("(def Workspace"), false);
+  assertEquals(code.includes("(def Untitled"), false);
 });
 
 // ---------------------------------------------------------------------------
@@ -91,19 +91,19 @@ Deno.test("parseWorkspace: re-wraps unwrapped input in existing root", () => {
   assertEquals(treeNodes.length, 1);
   // Root node id is preserved — not replaced by the parsed node's label-based id.
   assertEquals(treeNodes[0].id, ROOT_ID);
-  assertEquals(treeNodes[0].label, "Workspace");
+  assertEquals(treeNodes[0].label, "Untitled");
   assertEquals(treeNodes[0].children.length, 1);
   assertEquals(treeNodes[0].children[0].label, "hello");
 });
 
-Deno.test("parseWorkspace: unwraps explicit Workspace form and preserves root id", () => {
+Deno.test("parseWorkspace: unwraps explicit root form and preserves root id", () => {
   const ws = wsWithFocus(null);
   const code = `(def child)
-(def Workspace [child])`;
+(def Untitled [child])`;
   const { treeNodes, errors } = parseWorkspace(code, ws);
   assertEquals(errors, []);
   assertEquals(treeNodes.length, 1);
-  // The explicit `(def Workspace [...])` form's id would be "Workspace" from
+  // The explicit `(def Untitled [...])` form's id would be "Untitled" from
   // the parser; we must replace it with the preserved UUID.
   assertEquals(treeNodes[0].id, ROOT_ID);
   assertEquals(treeNodes[0].children.length, 1);
