@@ -39,20 +39,40 @@ jobs:
             echo "No matching plan file for branch: $BRANCH"
           fi
 
+      - name: Build preview URL
+        id: preview
+        run: |
+          BRANCH="${{ github.head_ref || github.ref_name }}"
+          SLUG=$(echo "$BRANCH" | tr '/' '-' | tr '[:upper:]' '[:lower:]')
+          URL="https://marlinspike--${SLUG}.sordina.deno.net"
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
       - name: Update PR description from plan
         if: steps.plan.outputs.found == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           BRANCH="${{ github.head_ref || github.ref_name }}"
-          PLAN_BODY=$(cat "${{ steps.plan.outputs.file }}")
+          PREVIEW_URL="${{ steps.preview.outputs.url }}"
+          PLAN_FILE="${{ steps.plan.outputs.file }}"
+
+          # Inject preview URL into plan body
+          if grep -q '^\*\*Branch Preview:\*\*' "$PLAN_FILE"; then
+            # Replace existing placeholder line
+            PLAN_BODY=$(sed "s|^\*\*Branch Preview:\*\*.*|\*\*Branch Preview:\*\* ${PREVIEW_URL}|" "$PLAN_FILE")
+          else
+            # Insert after the first heading
+            PLAN_BODY=$(sed "0,/^# /{/^# /a\\
+          **Branch Preview:** ${PREVIEW_URL}
+          }" "$PLAN_FILE")
+          fi
 
           PR_NUMBER=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null)
 
           if [ -n "$PR_NUMBER" ]; then
-            PR_TITLE=$(grep -m1 '^# ' "${{ steps.plan.outputs.file }}" | sed 's/^# //')
+            PR_TITLE=$(grep -m1 '^# ' "$PLAN_FILE" | sed 's/^# //')
             gh pr edit "$PR_NUMBER" --title "$PR_TITLE" --body "$PLAN_BODY"
-            echo "Updated PR #$PR_NUMBER with title '$PR_TITLE' and contents of ${{ steps.plan.outputs.file }}"
+            echo "Updated PR #$PR_NUMBER with title '$PR_TITLE' and preview URL: $PREVIEW_URL"
           else
             echo "No open PR found for $BRANCH — description will be set when a PR is opened"
           fi
