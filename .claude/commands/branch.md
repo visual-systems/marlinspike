@@ -36,6 +36,7 @@ Create the file `PLANS/{date}-{user-slug}-{branch-slug}.md` with the following s
 
 **Branch:** {user-slug}/{branch-slug}
 **Date:** {date}
+**Branch Preview:** <!-- replace me -->
 
 ## Context
 <!-- Why is this work being done? What problem does it solve? -->
