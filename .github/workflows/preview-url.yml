@@ -1,0 +1,36 @@
+name: Find Deno Deploy Preview URL
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  find-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for deployment
+        run: sleep 30
+
+      - name: Query deployments
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "=== All deployments for this SHA ==="
+          gh api repos/${{ github.repository }}/deployments \
+            --jq '.[] | select(.sha == "${{ github.event.pull_request.head.sha }}") | {id, environment, description, created_at}' \
+            | head -40
+
+          echo ""
+          echo "=== Deployment statuses ==="
+          for id in $(gh api repos/${{ github.repository }}/deployments \
+            --jq '.[] | select(.sha == "${{ github.event.pull_request.head.sha }}") | .id'); do
+            echo "--- Deployment $id ---"
+            gh api repos/${{ github.repository }}/deployments/$id/statuses \
+              --jq '.[] | {state, environment_url, log_url, description}' \
+              | head -20
+          done
+
+          echo ""
+          echo "=== Predicted branch URL ==="
+          SLUG=$(echo "${{ github.head_ref }}" | tr '/' '-' | tr '[:upper:]' '[:lower:]')
+          echo "https://marlinspike--${SLUG}.sordina.deno.net"
