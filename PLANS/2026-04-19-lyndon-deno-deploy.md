@@ -34,5 +34,5 @@ fresh and committed so Deno Deploy can serve them.
 - [x] README URLs point to `marlinspike.sordina.deno.net`
 - [x] DESIGN.md section 6.8 reflects current deployment approach
 - [x] `deno task ci` passes — 358 tests green
-- [ ] After merge + push to main, verify `https://marlinspike.sordina.deno.net` serves the app
-- [ ] Verify `/health` endpoint responds
+- [x] After merge + push to main, verify `https://marlinspike.sordina.deno.net` serves the app
+- [x] Verify `/health` endpoint responds
