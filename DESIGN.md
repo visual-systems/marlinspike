@@ -625,11 +625,6 @@ deployment. No GitHub Action or `deployctl` CLI needed.
 
 `dist/` is gitignored — Deno Deploy builds it automatically on each deployment.
 
-#### Known issues
-
-- `@deno/emit` is imported unconditionally in `mod.tsx` even though it's only used in dev mode.
-  Consider making the import dynamic or removing the dev fallback entirely.
-
 ### 6.9 Collaboration
 
 Collaboration is real-time, CRDT-backed, per-subgraph-URI. Multiple users edit simultaneously.
@@ -829,7 +824,7 @@ In pipeline view, edge types introduced by topology schemas are rendered distinc
 
 ## 9. Frontend Authoring
 
-### 8.1 Concept
+### 9.1 Concept
 
 A graph's top-level port nodes define its external interface — inputs it accepts and outputs it
 produces. This interface is already schema-typed. A frontend is therefore just a **rendering of that
@@ -839,7 +834,7 @@ cases.
 This means the same system used to design a distributed backend can also produce its UI. The graph
 is a full-stack artifact.
 
-### 8.2 Form Generation
+### 9.2 Form Generation
 
 For simple cases, tools like **react-jsonschema-form** (rjsf) can generate a working frontend
 directly from the JSON Schema of the top-level input port nodes. This is the zero-effort path —
@@ -855,7 +850,7 @@ Graph top-level ports
 The generated form submits to the graph's runtime target (e.g. an HTTP port node), and renders
 responses from output port schemas. No frontend code needs to be written.
 
-### 8.3 Frontend as a Graph Layer
+### 9.3 Frontend as a Graph Layer
 
 For richer UIs, the frontend itself can be authored as a graph layer — a subgraph whose nodes are UI
 components (input, display, layout) and whose edges are data bindings. This subgraph is connected to
@@ -865,7 +860,7 @@ This is the same model as the rest of the system: the frontend subgraph is just 
 node, with its own port nodes, alternative implementations (e.g. a `web` impl and a `mobile` impl),
 and schema constraints (e.g. a `ui.form` schema that validates component compatibility).
 
-### 8.4 Port Schema → UI Component Mapping
+### 9.4 Port Schema → UI Component Mapping
 
 Port schemas declare not just data types but UI hints, allowing the form generator to produce
 appropriate components:
@@ -892,7 +887,7 @@ appropriate components:
 These `ui:` hints follow the rjsf convention and are optional — the generator falls back to sensible
 defaults for plain JSON Schema types.
 
-### 8.5 Frontend Runtime Target
+### 9.5 Frontend Runtime Target
 
 A dedicated frontend runtime target consumes a graph with UI port schemas and emits a deployable
 frontend artifact:
@@ -906,7 +901,7 @@ frontend artifact:
 The `rjsf` target is the quick-start path. The `web` and `mobile` targets are for production
 frontends authored as graph layers.
 
-### 8.6 Implications
+### 9.6 Implications
 
 - **Prototyping becomes trivial** — define your port schemas, select the `rjsf` target, get a
   working UI immediately
