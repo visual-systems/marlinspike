@@ -15,20 +15,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "=== All deployments for this SHA ==="
-          gh api repos/${{ github.repository }}/deployments \
-            --jq '.[] | select(.sha == "${{ github.event.pull_request.head.sha }}") | {id, environment, description, created_at}' \
-            | head -40
+          echo "=== All deployments (last 10) ==="
+          gh api repos/${{ github.repository }}/deployments --jq '.[0:10]' | head -80
 
           echo ""
-          echo "=== Deployment statuses ==="
-          for id in $(gh api repos/${{ github.repository }}/deployments \
-            --jq '.[] | select(.sha == "${{ github.event.pull_request.head.sha }}") | .id'); do
-            echo "--- Deployment $id ---"
-            gh api repos/${{ github.repository }}/deployments/$id/statuses \
-              --jq '.[] | {state, environment_url, log_url, description}' \
-              | head -20
-          done
+          echo "=== Commit statuses ==="
+          gh api repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }} \
+            --jq '.[] | {state, target_url, context, description}' | head -40
+
+          echo ""
+          echo "=== Combined status ==="
+          gh api repos/${{ github.repository }}/commits/${{ github.event.pull_request.head.sha }}/status \
+            --jq '{state, total_count, statuses: [.statuses[] | {context, target_url, state}]}' | head -40
+
+          echo ""
+          echo "=== Check runs ==="
+          gh api repos/${{ github.repository }}/commits/${{ github.event.pull_request.head.sha }}/check-runs \
+            --jq '.check_runs[] | {name, status, conclusion, details_url, html_url}' | head -40
+
+          echo ""
+          echo "=== Environments ==="
+          gh api repos/${{ github.repository }}/environments --jq '.environments[] | {name, html_url}' 2>/dev/null | head -20
 
           echo ""
           echo "=== Predicted branch URL ==="
