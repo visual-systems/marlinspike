@@ -21,6 +21,7 @@ fresh and committed so Deno Deploy can serve them.
 - [x] Update README URLs (`marlinspike.deno.dev` → `marlinspike.sordina.deno.net`)
 - [x] Rewrite DESIGN.md section 6.8 to reflect native Deno Deploy integration
 - [x] Add `dist/` to `.gitignore` — Deno Deploy runs the build command automatically
+- [x] Lazy-import `@deno/emit` — only loaded in dev mode
 - [x] `deno task ci` passes
 
 ## Open Questions
@@ -34,5 +35,6 @@ fresh and committed so Deno Deploy can serve them.
 - [x] README URLs point to `marlinspike.sordina.deno.net`
 - [x] DESIGN.md section 6.8 reflects current deployment approach
 - [x] `deno task ci` passes — 358 tests green
+- [x] Lazy-import `@deno/emit` verified on branch preview
 - [x] After merge + push to main, verify `https://marlinspike.sordina.deno.net` serves the app
 - [x] Verify `/health` endpoint responds
