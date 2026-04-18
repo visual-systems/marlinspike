@@ -16,6 +16,63 @@ workspace — able to round-trip identity, data, and metadata without silent los
 codec uses `^{:id "..."}` reader metadata for UUID-bearing entities and label-derived identity for
 everything else, keeping the common case clean while supporting stable identity when needed.
 
+## Deferred
+
+Items not completed in this branch, grouped by theme. These are independently pursuable in future
+branches.
+
+### Constraint UX
+
+- **Diagnostics UI:** When inspecting an entity, show which constraints are failing and why
+  (severity, message). Currently diagnostics are computed but not surfaced in the inspector.
+- **Constraint documentation viewer:** Builtin constraints whose code isn't visible should have
+  user-facing documentation — schema description, validation rules, examples. Could be a panel or
+  tooltip on the constraint label.
+- **Clojure spec conventions:** Could constraints be encoded in the code view using Clojure-like
+  spec forms? Design question — constraints are currently graph-level metadata, not code-level.
+
+### Code round-trip (Phase 5 remainder)
+
+- **Ports on def composites:** `defn` already round-trips ports via `{:ports ...}` attr-map and
+  `^Type` param hints. Plain `def` composites don't have an equivalent encoding yet.
+- **Constraints/applications in code view:** Should constraints be emitted as top-level forms (e.g.
+  `(constraint "workspace.connections" {...})`)? Or only their applications? Design decision needed
+  — constraints are metadata about validation, not structural data.
+- **Workspace-level state encoding:** What workspace state is structural (belongs in code) vs.
+  ephemeral (canvas positions, expanded nodes, selections)? Root node data is already emitted via
+  `^{...}` at virtual root level.
+
+### Blank-slate bootstrapping (Phase 6)
+
+- **Empty default workspace:** `defaultState()` should create a single "Untitled" tab with an empty
+  workspace root, not a demo project the user has to delete.
+- **Remove sample data:** `defaultTreeNodes()` sample tree, hardcoded personas ("Architect",
+  "Developer", "Reviewer"), and workflows ("Explore", "Design", "Build") should be removed or made
+  opt-in.
+- **Example projects:** Loadable sample workspaces defined as spike-clojure source text, parsed via
+  `spikeToGraph`. Candidates: quadratic-roots (dataflow), service topology (structural), OIDC flow
+  (mixed). UI affordance TBD.
+
+### Open questions carried forward
+
+- **Multiple connections per workspace:** The current singleton `data.connection` key supports one
+  remote. Multiple named connections (`connections: { prod: {...}, staging: {...} }`) would need a
+  different UI pattern and connection pool wiring changes.
+- **Multiple local databases:** `connectRemote` assumes WebSocket URLs. A `connectLocal(id)` or
+  `local://` scheme could spin up additional `mem://` instances for multi-user or offline scenarios.
+- **Auth credentials:** Currently stored in node data (local IndexedDB). Future: credential store,
+  OAuth flow, or environment-variable references.
+- **Reactive connection status:** Currently no live feedback on connection health. Poll or manual
+  refresh for now; live query/subscription deferred.
+- **Workspace root deletion:** Should auto-recreate if deleted. Not yet enforced.
+- **Reference semantics & identity:** How UUIDs interact with cross-workspace references,
+  garbage collection, and lightweight export. See Open Questions for candidate approaches.
+- **Reuse & instantiation:** Templates, remote template sources, macro expansion — a general
+  mechanism for reusing graph structures. Intersects identity, connection pool, and code view.
+- **Non-UUID GUIDs:** `looksLikeUuid` gate may need broadening for ULIDs, nanoids, or
+  content-addressed hashes.
+- **View pane UI conflict:** Title bar of view panes intersects mode selection dropdowns.
+
 ## Goal
 
 1. Introduce a workspace root node (structural change to tree model)
