@@ -7,7 +7,9 @@ import {
   findNode,
   findParentOf,
   findPath,
+  getActiveTab,
   getFocusedRootNodes,
+  getWorkspaceRootId,
   type Panel,
   type Tab,
   type TreeNode,
@@ -569,7 +571,8 @@ function CanvasInspector(
   const fakeTab: Tab = {
     id: "__canvas_tab__",
     name: "Canvas",
-    databaseId: "default",
+    databaseId: getActiveTab(ws).databaseId,
+    rootNodeId: getWorkspaceRootId(ws),
     panels: [fakePanel],
   };
 
@@ -837,7 +840,7 @@ interface InteractionState {
 }
 
 export function Canvas(
-  { ws, update, diagnostics = {}, highlightEntityIds, onExecute }: {
+  { ws: wsProp, update, diagnostics = {}, highlightEntityIds, onExecute }: {
     ws: WorkspaceState;
     update: Updater;
     diagnostics?: DiagnosticMap;
@@ -845,15 +848,14 @@ export function Canvas(
     onExecute?: () => void;
   },
 ) {
-  // Force re-render when parent state changes — Hono's JSX DOM does not
-  // re-render child components on prop changes, so we listen for a post-render
-  // event dispatched by App after setWs.
-  const [, nudge] = useState(0);
+  // Receive fresh ws via CustomEvent — see "Hono JSX DOM workaround" in client.tsx.
+  const [wsFromEvent, setWsFromEvent] = useState<WorkspaceState | null>(null);
   useEffect(() => {
-    const handler = () => nudge((n) => n + 1);
+    const handler = (e: Event) => setWsFromEvent((e as CustomEvent).detail);
     globalThis.addEventListener("ws-updated", handler);
     return () => globalThis.removeEventListener("ws-updated", handler);
   }, []);
+  const ws = wsFromEvent ?? wsProp;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -1239,18 +1241,8 @@ export function Canvas(
     const id = crypto.randomUUID();
     const newNode: TreeNode = { id, label: "", kind: "leaf", children: [], data: {}, version: 1 };
     // When focused, "root canvas level" maps to inside the focused node
-    const effectiveParentId = parentId ?? ws.focusId ?? null;
-    if (effectiveParentId === null) {
-      update((s) => ({
-        ...s,
-        treeNodes: [...s.treeNodes, newNode],
-        canvasNodePositions: {
-          ...s.canvasNodePositions,
-          [id]: { x: localX, y: localY, pinned: true },
-        },
-        canvasSelected: { type: "node", id },
-      }));
-    } else {
+    const effectiveParentId = parentId ?? ws.focusId ?? getWorkspaceRootId(ws);
+    {
       update((s) => {
         function addChild(nodes: TreeNode[]): TreeNode[] {
           return nodes.map((n) =>

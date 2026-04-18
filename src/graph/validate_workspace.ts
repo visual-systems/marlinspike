@@ -23,7 +23,13 @@ export type DataPropertySchema =
   | { type: "integer"; minimum?: number; default?: number }
   | { type: "number"; minimum?: number; default?: number }
   | { type: "string"; default?: string }
-  | { type: "boolean"; default?: boolean };
+  | { type: "boolean"; default?: boolean }
+  | {
+    type: "object";
+    default?: Record<string, unknown>;
+    properties?: Record<string, DataPropertySchema>;
+    required?: string[];
+  };
 
 /** Declares the shape of a constraint type's `data` field. */
 export interface ConstraintDataSchema {
@@ -32,8 +38,14 @@ export interface ConstraintDataSchema {
 }
 
 interface ConstraintTypeDefinition {
-  /** Declares the expected shape of constraint.data for this type. */
+  /** Schema for the constraint's own configuration (edited on the constraint inspector). */
   dataSchema: ConstraintDataSchema;
+  /**
+   * Schema for entity data that this constraint type requires (edited on the entity inspector).
+   * When a constraint with an entityDataSchema is applied to an entity, the entity inspector
+   * renders these fields against `entity.data`. The evaluator reads from `entity.data` too.
+   */
+  entityDataSchema?: ConstraintDataSchema;
   evaluate: Evaluator;
 }
 
@@ -136,6 +148,68 @@ const registry: Record<string, ConstraintTypeDefinition> = {
     },
   },
 
+  "workspace.connections": {
+    dataSchema: { properties: {} },
+    entityDataSchema: {
+      properties: {
+        connection: {
+          type: "object",
+          default: { url: "", namespace: "", database: "", username: "", password: "" },
+          properties: {
+            url: { type: "string", default: "" },
+            namespace: { type: "string", default: "" },
+            database: { type: "string", default: "" },
+            username: { type: "string", default: "" },
+            password: { type: "string", default: "" },
+          },
+          required: ["url"],
+        },
+      },
+      required: ["connection"],
+    },
+    evaluate(constraint, entity) {
+      const diags: Diagnostic[] = [];
+      const name = entity.label || entity.id;
+      const conn = entity.data.connection;
+      const url = typeof conn === "object" && conn !== null
+        ? (conn as Record<string, unknown>).url
+        : undefined;
+
+      if (typeof url !== "string" || url.trim().length === 0) {
+        diags.push({
+          code: constraint.id,
+          severity: "error",
+          message: `"${name}" connection requires a URL.`,
+          entityId: entity.id,
+        });
+        return diags;
+      }
+
+      // Validate URL format — must be ws://, wss://, http://, or https://
+      try {
+        const parsed = new URL(url);
+        if (!["ws:", "wss:", "http:", "https:"].includes(parsed.protocol)) {
+          diags.push({
+            code: constraint.id,
+            severity: "error",
+            message:
+              `"${name}" connection URL must use ws://, wss://, http://, or https:// (got "${parsed.protocol}").`,
+            entityId: entity.id,
+          });
+        }
+      } catch {
+        diags.push({
+          code: constraint.id,
+          severity: "error",
+          message: `"${name}" connection URL is not a valid URL.`,
+          entityId: entity.id,
+        });
+      }
+
+      return diags;
+    },
+  },
+
   "max-children": {
     dataSchema: {
       properties: {
@@ -171,11 +245,20 @@ export function registeredConstraintTypes(): string[] {
 }
 
 /**
- * Returns the data schema for a constraint type, or null if the type is unknown.
- * Used by the UI to render type-specific configuration fields.
+ * Returns the constraint-config data schema for a constraint type, or null if unknown.
+ * Used by the UI to render type-specific configuration fields on the constraint inspector.
  */
 export function getConstraintDataSchema(type: string): ConstraintDataSchema | null {
   return registry[type]?.dataSchema ?? null;
+}
+
+/**
+ * Returns the entity data schema for a constraint type, or null if the type
+ * doesn't impose entity-level data requirements.
+ * Used by the entity inspector to render schema-driven fields on `entity.data`.
+ */
+export function getEntityDataSchema(type: string): ConstraintDataSchema | null {
+  return registry[type]?.entityDataSchema ?? null;
 }
 
 function findEntity(ws: WorkspaceState, entityId: string): Entity | undefined {

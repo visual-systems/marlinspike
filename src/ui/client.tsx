@@ -14,21 +14,33 @@ import {
   defaultCodePanel,
   defaultConstraintsPanel,
   defaultPanel,
+  ensureWorkspaceConstraint,
   getActiveTab,
+  getConnectionConfig,
   type ListEditorConfig,
   loadDatabaseSnapshot,
   loadState,
   loadStateAsync,
+  makeRootNode,
   PANEL_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
   type Tab,
+  updateNodeInTree,
   type Updater,
   withPanel,
   type WorkspaceState,
 } from "./workspace.ts";
 import { flushSync, scheduleSyncToDb, setSyncBaseline } from "./db/sync.ts";
 import { createDatabase } from "./db/operations.ts";
-import { exportDb, useDatabase, useUiDb } from "./db/surreal.ts";
+import {
+  type ConnectionConfig,
+  connectRemote,
+  disconnectRemote,
+  exportDb,
+  remoteConnectionIds,
+  useDatabase,
+  useUiDb,
+} from "./db/surreal.ts";
 import { saveDump } from "./db/bridge.ts";
 
 // Module-level flag: skip baseline reset when addTab handles its own persistence
@@ -36,6 +48,26 @@ let skipBaselineReset = false;
 
 // ---------------------------------------------------------------------------
 // App root
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Hono JSX DOM workaround: state propagation to child components
+// ---------------------------------------------------------------------------
+// Hono's JSX DOM has two limitations that affect this app:
+//
+//  1. Child components do NOT receive updated props when the parent re-renders.
+//  2. useEffect([dep]) does NOT reliably fire after setState updates.
+//
+// To work around this, state changes are broadcast via a CustomEvent
+// ("ws-updated") carrying the latest WorkspaceState as `detail`. Child
+// components that need fresh state (currently Canvas) listen for this event
+// and store the state locally. The event is dispatched from two places:
+//
+//  - update() — via queueMicrotask inside the setWs updater (handles all
+//    user-initiated state changes; queueMicrotask ensures it fires after
+//    Hono commits the state).
+//  - useEffect([ws]) — as a fallback for the initial load, where setWs is
+//    called directly (not through update).
 // ---------------------------------------------------------------------------
 
 function App() {
@@ -95,13 +127,107 @@ function App() {
     }
   }, [ws]);
 
-  const update: Updater = (fn) => setWs((prev) => prev ? fn(prev) : prev);
-
-  // Notify child components after Hono finishes its render cycle.
-  // Hono's JSX DOM does not re-render child components on prop changes,
-  // so we use a post-render event to nudge them.
+  // ---------------------------------------------------------------------------
+  // Remote connections — bootstrap on load, reconnect when config changes
+  // ---------------------------------------------------------------------------
+  const remoteConfigRef = useRef<string>(""); // JSON snapshot for change detection
   useEffect(() => {
-    if (ws) globalThis.dispatchEvent(new Event("ws-updated"));
+    if (!ws) return;
+    const config = getConnectionConfig(ws);
+    const configJson = config ? JSON.stringify(config) : "";
+
+    // Skip if nothing changed
+    if (configJson === remoteConfigRef.current) return;
+    remoteConfigRef.current = configJson;
+
+    if (!config) {
+      // No remote URL — disconnect any active remote and keep local-only connectedGraphs
+      for (const id of remoteConnectionIds()) {
+        disconnectRemote(id);
+      }
+      setWs((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          connectedGraphs: prev.connectedGraphs.filter((g) => g.required),
+        };
+      });
+      return;
+    }
+
+    // Attempt remote connection
+    const connConfig: ConnectionConfig = {
+      url: config.url,
+      namespace: config.namespace,
+      database: config.database,
+      username: config.username,
+      password: config.password,
+    };
+
+    // Disconnect any stale remotes that don't match the current entityId
+    for (const id of remoteConnectionIds()) {
+      if (id !== config.entityId) disconnectRemote(id);
+    }
+
+    connectRemote(config.entityId, connConfig)
+      .then(() => {
+        console.log(`[remote] Connected: ${config.url}`);
+        setWs((prev) => {
+          if (!prev) return prev;
+          const existing = prev.connectedGraphs.filter(
+            (g) => g.id !== config.entityId,
+          );
+          return {
+            ...prev,
+            connectedGraphs: [
+              ...existing,
+              {
+                id: config.entityId,
+                label: config.url,
+                connected: true,
+                required: false,
+              },
+            ],
+          };
+        });
+      })
+      .catch((err) => {
+        console.error(`[remote] Connection failed: ${config.url}`, err);
+        setWs((prev) => {
+          if (!prev) return prev;
+          const existing = prev.connectedGraphs.filter(
+            (g) => g.id !== config.entityId,
+          );
+          return {
+            ...prev,
+            connectedGraphs: [
+              ...existing,
+              {
+                id: config.entityId,
+                label: `${config.url} (failed: ${String(err).slice(0, 60)})`,
+                connected: false,
+                required: false,
+              },
+            ],
+          };
+        });
+      });
+  }, [ws]);
+
+  const update: Updater = (fn) =>
+    setWs((prev) => {
+      if (!prev) return prev;
+      const next = fn(prev);
+      // See "Hono JSX DOM workaround" block comment above App.
+      queueMicrotask(() => {
+        globalThis.dispatchEvent(new CustomEvent("ws-updated", { detail: next }));
+      });
+      return next;
+    });
+
+  // Fallback for initial load — see "Hono JSX DOM workaround" block comment above App.
+  useEffect(() => {
+    if (ws) globalThis.dispatchEvent(new CustomEvent("ws-updated", { detail: ws }));
   }, [ws]);
 
   const showListEditor = (config: ListEditorConfig) => setListEditor(config);
@@ -217,6 +343,7 @@ function WorkspaceBar(
 
       const uuid = await createDatabase("Untitled");
       const tabId = crypto.randomUUID();
+      const rootNodeId = crypto.randomUUID();
       // Snapshot current tab's data before switching
       update((s) => {
         const currentTab = getActiveTab(s);
@@ -238,15 +365,15 @@ function WorkspaceBar(
             id: tabId,
             name: null,
             databaseId: uuid,
+            rootNodeId,
             panels: [defaultPanel()],
           }],
           activeTabId: tabId,
-          // New empty database
-          treeNodes: [],
+          // New empty database with workspace root + builtin constraint
+          treeNodes: [makeRootNode(rootNodeId, [])],
           edges: [],
-          constraints: [],
-          constraintApplications: [],
-          focusId: null,
+          ...ensureWorkspaceConstraint([], [], rootNodeId),
+          focusId: rootNodeId,
           canvasExpandedNodes: [],
           canvasNodePositions: {},
           canvasSelected: null,
@@ -389,7 +516,7 @@ function TabItem(
       if (currentWs._snapshotCache[tab.databaseId]) {
         targetData = currentWs._snapshotCache[tab.databaseId];
       } else {
-        targetData = await loadDatabaseSnapshot(tab.databaseId);
+        targetData = await loadDatabaseSnapshot(tab.databaseId, tab.rootNodeId);
       }
 
       // 4. Update state atomically
@@ -434,10 +561,22 @@ function TabItem(
 
   function finishRename() {
     const val = inputRef.current?.value.trim() ?? "";
-    update((s) => ({
-      ...s,
-      tabs: s.tabs.map((t) => t.id === tab.id ? { ...t, name: val || null } : t),
-    }));
+    update((s) => {
+      const rootId = tab.rootNodeId;
+      const rootLabel = val || "Untitled";
+      return {
+        ...s,
+        tabs: s.tabs.map((t) => t.id === tab.id ? { ...t, name: val || null } : t),
+        // Keep workspace root label in sync with tab name
+        treeNodes: isActive
+          ? updateNodeInTree(
+            s.treeNodes,
+            rootId,
+            (n) => ({ ...n, label: rootLabel, version: n.version + 1 }),
+          )
+          : s.treeNodes,
+      };
+    });
     setRenaming(false);
   }
 
@@ -613,22 +752,47 @@ function WorkspaceControls(
 function ConnectedGraphsBtn({ ws, update }: { ws: WorkspaceState; update: Updater }) {
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    document.addEventListener("click", close, { once: true });
-    return () => document.removeEventListener("click", close);
-  }, [open]);
-
   const connectedCount = ws.connectedGraphs.filter((g) => g.connected).length;
 
   function toggleGraph(id: string) {
-    update((s) => ({
-      ...s,
-      connectedGraphs: s.connectedGraphs.map((g) =>
-        g.id === id && !g.required ? { ...g, connected: !g.connected } : g
-      ),
-    }));
+    const graph = ws.connectedGraphs.find((g) => g.id === id);
+    if (!graph || graph.required) return;
+
+    if (graph.connected) {
+      // Disconnect remote
+      disconnectRemote(id);
+      update((s) => ({
+        ...s,
+        connectedGraphs: s.connectedGraphs.map((g) => g.id === id ? { ...g, connected: false } : g),
+      }));
+    } else {
+      // Reconnect — read config from root node and connect
+      const config = getConnectionConfig(ws);
+      if (config && config.entityId === id) {
+        connectRemote(id, {
+          url: config.url,
+          namespace: config.namespace,
+          database: config.database,
+          username: config.username,
+          password: config.password,
+        }).then(() => {
+          update((s) => ({
+            ...s,
+            connectedGraphs: s.connectedGraphs.map((g) =>
+              g.id === id ? { ...g, connected: true, label: config.url } : g
+            ),
+          }));
+        }).catch((err) => {
+          console.error(`[remote] Reconnect failed: ${config.url}`, err);
+          update((s) => ({
+            ...s,
+            connectedGraphs: s.connectedGraphs.map((g) =>
+              g.id === id ? { ...g, connected: false, label: `${config.url} (failed)` } : g
+            ),
+          }));
+        });
+      }
+    }
   }
 
   return (
@@ -639,9 +803,18 @@ function ConnectedGraphsBtn({ ws, update }: { ws: WorkspaceState; update: Update
       <div
         title="Connected graphs"
         style="display:flex; align-items:center; gap:4px; padding:0 8px; font-size:11px; color:#3a3a5a; cursor:pointer; user-select:none; height:100%; border-left:1px solid #1a1a2e;"
-        onClick={(e: MouseEvent) => {
+        onMouseDown={(e: MouseEvent) => {
           e.stopPropagation();
-          setOpen((prev) => !prev);
+          e.preventDefault();
+          setOpen((prev) => {
+            if (!prev) {
+              // See "Hono JSX DOM workaround" in client.tsx.
+              setTimeout(() => {
+                document.addEventListener("click", () => setOpen(false), { once: true });
+              }, 0);
+            }
+            return !prev;
+          });
         }}
       >
         <span>{connectedCount} graph{connectedCount !== 1 ? "s" : ""}</span>
@@ -649,7 +822,7 @@ function ConnectedGraphsBtn({ ws, update }: { ws: WorkspaceState; update: Update
       </div>
       {open && (
         <div
-          style="position:absolute; top:100%; right:0; min-width:180px; background:#0d0d1e; border:1px solid #252538; z-index:200; display:flex; flex-direction:column; box-shadow:0 4px 12px rgba(0,0,0,0.5);"
+          style="position:absolute; top:100%; right:0; min-width:280px; background:#0d0d1e; border:1px solid #252538; z-index:200; display:flex; flex-direction:column; box-shadow:0 4px 12px rgba(0,0,0,0.5);"
           onClick={(e: MouseEvent) => e.stopPropagation()}
         >
           {ws.connectedGraphs.map((graph) => (

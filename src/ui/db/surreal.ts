@@ -2,6 +2,11 @@
 /**
  * SurrealDB connection manager.
  *
+ * Manages a local embedded (WASM/mem://) connection and an open set of remote
+ * connections. All database acquisition goes through `getDb(connectionId?)`:
+ *   - No argument → local embedded instance
+ *   - With connection id → remote instance from the pool
+ *
  * At runtime in the browser the SDK is loaded dynamically from esm.sh
  * because @deno/emit cannot bundle npm packages. Type-only imports from
  * the npm specifiers are used for compile-time checking and are erased
@@ -46,18 +51,29 @@ async function loadModules(): Promise<{ surreal: SurrealModule; wasm: WasmModule
 }
 
 // ---------------------------------------------------------------------------
-// Connection singleton
+// Connection config
+// ---------------------------------------------------------------------------
+
+export interface ConnectionConfig {
+  url: string;
+  namespace?: string;
+  database?: string;
+  username?: string;
+  password?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Local embedded connection
 // ---------------------------------------------------------------------------
 
 const NS = "marlinspike";
 const UI_DB = "_ui";
-const DEFAULT_DB = "default";
 
-let db: Surreal | null = null;
+let localDb: Surreal | null = null;
 
 /** Initialise the SurrealDB embedded connection (in-memory). */
 export async function initSurreal(): Promise<Surreal> {
-  if (db) return db;
+  if (localDb) return localDb;
 
   const { surreal, wasm } = await loadModules();
   console.log("[surreal] modules loaded");
@@ -66,43 +82,112 @@ export async function initSurreal(): Promise<Surreal> {
   // that causes IndexedDB transactions to expire. Using mem:// until we add
   // a remote SurrealDB backend for proper persistence.
   // See: https://github.com/surrealdb/surrealdb/issues/5712
-  db = new surreal.Surreal({ engines: wasm.createWasmEngines() });
-  await db.connect("mem://");
+  localDb = new surreal.Surreal({ engines: wasm.createWasmEngines() });
+  await localDb.connect("mem://");
   console.log("[surreal] connected to mem://");
-  await db.use({ namespace: NS, database: DEFAULT_DB });
-  console.log("[surreal] using", NS, DEFAULT_DB);
+  await localDb.use({ namespace: NS, database: UI_DB });
+  console.log("[surreal] using", NS, UI_DB);
 
-  return db;
-}
-
-/** Returns the initialised Surreal instance. Throws if not yet initialised. */
-export function getDb(): Surreal {
-  if (!db) throw new Error("SurrealDB not initialised — call initSurreal() first");
-  return db;
+  return localDb;
 }
 
 // ---------------------------------------------------------------------------
-// Session helpers — each database gets its own session
+// Remote connections pool
+// ---------------------------------------------------------------------------
+
+const remoteConnections = new Map<string, Surreal>();
+
+/**
+ * Establish a remote SurrealDB connection and add it to the pool.
+ * If a connection with this id already exists, it is disconnected first.
+ */
+export async function connectRemote(id: string, config: ConnectionConfig): Promise<Surreal> {
+  // Tear down existing connection with this id, if any
+  if (remoteConnections.has(id)) {
+    disconnectRemote(id);
+  }
+
+  const { surreal } = await loadModules();
+  const conn = new surreal.Surreal();
+  await conn.connect(config.url);
+  console.log(`[surreal] remote ${id}: connected to ${config.url}`);
+
+  if (config.username && config.password) {
+    await conn.signin(
+      {
+        username: config.username,
+        password: config.password,
+      } as Parameters<typeof conn.signin>[0],
+    );
+    console.log(`[surreal] remote ${id}: signed in as ${config.username}`);
+  }
+
+  if (config.namespace || config.database) {
+    await conn.use({
+      namespace: config.namespace,
+      database: config.database,
+    });
+    console.log(
+      `[surreal] remote ${id}: using ${config.namespace ?? "-"}/${config.database ?? "-"}`,
+    );
+  }
+
+  remoteConnections.set(id, conn);
+  return conn;
+}
+
+/** Disconnect and remove a remote connection from the pool. No-op if not found. */
+export function disconnectRemote(id: string): void {
+  const conn = remoteConnections.get(id);
+  if (!conn) return;
+  try {
+    conn.close();
+  } catch {
+    // Best-effort cleanup
+  }
+  remoteConnections.delete(id);
+  console.log(`[surreal] remote ${id}: disconnected`);
+}
+
+/** Returns the ids of all active remote connections. */
+export function remoteConnectionIds(): string[] {
+  return [...remoteConnections.keys()];
+}
+
+// ---------------------------------------------------------------------------
+// Unified acquisition
 // ---------------------------------------------------------------------------
 
 /**
- * Create (or reuse) a session scoped to a specific database within the
- * marlinspike namespace.  The returned session can be used for all
- * CRUD operations against that database.
+ * Returns a Surreal instance. No argument returns the local embedded instance;
+ * with a connection id, returns the corresponding remote instance from the pool.
+ */
+export function getDb(connectionId?: string): Surreal {
+  if (!connectionId) {
+    if (!localDb) throw new Error("SurrealDB not initialised — call initSurreal() first");
+    return localDb;
+  }
+  const remote = remoteConnections.get(connectionId);
+  if (!remote) throw new Error(`No remote connection: ${connectionId}`);
+  return remote;
+}
+
+// ---------------------------------------------------------------------------
+// Session helpers — target the local instance
+// ---------------------------------------------------------------------------
+
+/**
+ * Switch the local connection to a specific database within the
+ * marlinspike namespace.
  */
 export async function useDatabase(database: string): Promise<void> {
   const conn = getDb();
   await conn.use({ namespace: NS, database });
 }
 
-/** Switch to the shared UI-state database. */
+/** Switch the local connection to the shared UI-state database. */
 export async function useUiDb(): Promise<void> {
   await useDatabase(UI_DB);
-}
-
-/** Switch to the default graph database. */
-export async function useDefaultDb(): Promise<void> {
-  await useDatabase(DEFAULT_DB);
 }
 
 // ---------------------------------------------------------------------------
@@ -132,5 +217,5 @@ export async function importDb(dump: string): Promise<void> {
   });
 }
 
-export { DEFAULT_DB, NS, UI_DB };
+export { NS, UI_DB };
 export type { Surreal, SurrealSession };

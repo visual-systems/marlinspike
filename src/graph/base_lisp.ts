@@ -18,16 +18,16 @@
  */
 
 export type SExp =
-  | { type: "symbol"; value: string }
-  | { type: "keyword"; value: string }
-  | { type: "string"; value: string }
-  | { type: "number"; value: number }
-  | { type: "boolean"; value: boolean }
-  | { type: "nil" }
-  | { type: "list"; items: SExp[] }
-  | { type: "vector"; items: SExp[] }
-  | { type: "map"; entries: [SExp, SExp][] }
-  | { type: "tagged"; tag: string; value: SExp };
+  | { type: "symbol"; value: string; meta?: SExp }
+  | { type: "keyword"; value: string; meta?: SExp }
+  | { type: "string"; value: string; meta?: SExp }
+  | { type: "number"; value: number; meta?: SExp }
+  | { type: "boolean"; value: boolean; meta?: SExp }
+  | { type: "nil"; meta?: SExp }
+  | { type: "list"; items: SExp[]; meta?: SExp }
+  | { type: "vector"; items: SExp[]; meta?: SExp }
+  | { type: "map"; entries: [SExp, SExp][]; meta?: SExp }
+  | { type: "tagged"; tag: string; value: SExp; meta?: SExp };
 
 export class ParseError extends Error {
   constructor(message: string, public readonly pos: number) {
@@ -67,7 +67,54 @@ class Reader {
     if (ch === '"') return this.readString();
     if (ch === ":") return this.readKeyword();
     if (ch === "#") return this.readTagged();
+    if (ch === "^" && this.peekIsMetaMap()) return this.readReaderMeta();
     return this.readAtom();
+  }
+
+  /**
+   * Does `^` at the current position introduce reader metadata (`^{...}`)?
+   *
+   * We only treat `^` as a reader-metadata macro when the very next
+   * non-whitespace form is a map literal. This keeps `^Type` in param
+   * positions (e.g. `^float x`) reading as a symbol prefix, preserving
+   * spike-clojure's existing port-type-hint handling.
+   *
+   * Full Clojure `^` semantics (keyword/symbol/string meta) are future work —
+   * tracked in the plan's "reference semantics" open question.
+   */
+  private peekIsMetaMap(): boolean {
+    let peek = this.pos + 1; // past '^'
+    while (peek < this.input.length) {
+      const c = this.input[peek];
+      if (c === ";") {
+        while (peek < this.input.length && this.input[peek] !== "\n") peek++;
+      } else if (c === "," || /\s/.test(c)) {
+        peek++;
+      } else {
+        break;
+      }
+    }
+    return peek < this.input.length && this.input[peek] === "{";
+  }
+
+  private readReaderMeta(): SExp {
+    const start = this.pos;
+    this.pos++; // consume '^'
+    this.skipGarbage();
+    if (this.pos >= this.input.length || this.input[this.pos] !== "{") {
+      throw new ParseError("Expected `{` after `^` for reader metadata", start);
+    }
+    const meta = this.readMap();
+    this.skipGarbage();
+    if (this.pos >= this.input.length) {
+      throw new ParseError("Expected form after `^{...}` metadata", start);
+    }
+    const value = this.readOne();
+    // Merge: later metadata maps take precedence over earlier ones (Clojure convention).
+    const combined: SExp = value.meta && value.meta.type === "map" && meta.type === "map"
+      ? { ...value, meta: mergeMetaMaps(value.meta, meta) }
+      : { ...value, meta };
+    return combined;
   }
 
   private readList(): SExp {
@@ -242,6 +289,31 @@ function isDelimiter(ch: string): boolean {
   return /[\s,()[\]{}"`;]/.test(ch);
 }
 
+/**
+ * Merge two metadata map SExps. Later (outer) entries win for the same key,
+ * matching Clojure's right-to-left stacking of `^{...}` readers.
+ */
+function mergeMetaMaps(
+  earlier: SExp & { type: "map" },
+  later: SExp & { type: "map" },
+): SExp {
+  const result: [SExp, SExp][] = [...earlier.entries];
+  for (const [k, v] of later.entries) {
+    const idx = result.findIndex(([ek]) => sameKey(ek, k));
+    if (idx >= 0) result[idx] = [k, v];
+    else result.push([k, v]);
+  }
+  return { type: "map", entries: result };
+}
+
+function sameKey(a: SExp, b: SExp): boolean {
+  if (a.type !== b.type) return false;
+  if (a.type === "keyword" && b.type === "keyword") return a.value === b.value;
+  if (a.type === "symbol" && b.type === "symbol") return a.value === b.value;
+  if (a.type === "string" && b.type === "string") return a.value === b.value;
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -270,6 +342,11 @@ export function parseOne(input: string): SExp {
 
 /** Render an SExp back to a base-lisp string. */
 export function print(sexp: SExp): string {
+  const prefix = sexp.meta ? `^${print({ ...sexp.meta, meta: undefined })} ` : "";
+  return prefix + printBody(sexp);
+}
+
+function printBody(sexp: SExp): string {
   switch (sexp.type) {
     case "symbol":
       return sexp.value;

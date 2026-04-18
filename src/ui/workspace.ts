@@ -46,8 +46,10 @@ export interface Tab {
   id: string;
   /** Display name. Null means unnamed — UI shows "Untitled" as placeholder. */
   name: string | null;
-  /** SurrealDB database identifier (UUID or "default" for the initial database). */
+  /** SurrealDB database identifier (UUID). */
   databaseId: string;
+  /** ID of this tab's workspace root node. Every tab's treeNodes has exactly one root. */
+  rootNodeId: string;
   panels: Panel[];
 }
 
@@ -155,6 +157,121 @@ export interface ListEditorConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Workspace root node
+// ---------------------------------------------------------------------------
+
+/** Create a workspace root node with the given ID, label, and children. */
+export function makeRootNode(
+  id: string,
+  children: TreeNode[],
+  label = "Untitled",
+): TreeNode {
+  return {
+    id,
+    label,
+    kind: "composite",
+    children,
+    data: {},
+    version: 1,
+  };
+}
+
+/** Get the workspace root node from a WorkspaceState (via the active tab's rootNodeId). */
+export function getWorkspaceRoot(ws: WorkspaceState): TreeNode | undefined {
+  const rootId = getWorkspaceRootId(ws);
+  if (!rootId) return ws.treeNodes[0];
+  return ws.treeNodes.find((n) => n.id === rootId) ?? ws.treeNodes[0];
+}
+
+/**
+ * Ensure treeNodes are wrapped in a root node.
+ * If the tree already has a single root matching `rootNodeId`, returns as-is.
+ * Otherwise wraps in a new root node. If no `rootNodeId` is provided, generates one.
+ * Returns both the wrapped tree and the root ID used.
+ */
+export function ensureWorkspaceRoot(
+  treeNodes: TreeNode[],
+  rootNodeId?: string,
+): { treeNodes: TreeNode[]; rootNodeId: string } {
+  // Already wrapped — rootNodeId matches the single top-level node
+  if (rootNodeId && treeNodes.length === 1 && treeNodes[0].id === rootNodeId) {
+    return { treeNodes, rootNodeId };
+  }
+  // No rootNodeId but there's exactly one top-level node — treat it as the root
+  // to avoid double-wrapping when rootNodeId is missing (pre-migration data that
+  // was already wrapped by a previous session).
+  if (!rootNodeId && treeNodes.length === 1) {
+    return { treeNodes, rootNodeId: treeNodes[0].id };
+  }
+  // Need to wrap: either multiple top-level nodes or empty tree
+  const id = rootNodeId ?? crypto.randomUUID();
+  return { treeNodes: [makeRootNode(id, treeNodes)], rootNodeId: id };
+}
+
+/**
+ * Ensure the workspace.connections constraint exists and is applied to the workspace root.
+ * Idempotent — returns inputs unchanged if already present.
+ */
+export function ensureWorkspaceConstraint(
+  constraints: Constraint[],
+  constraintApplications: ConstraintApplication[],
+  rootNodeId: string,
+): { constraints: Constraint[]; constraintApplications: ConstraintApplication[] } {
+  const cId = WORKSPACE_CONNECTIONS_CONSTRAINT.id;
+  const hasConstraint = constraints.some((c) => c.id === cId);
+  const hasApplication = constraintApplications.some(
+    (a) => a.constraintId === cId && a.entityId === rootNodeId,
+  );
+  return {
+    constraints: hasConstraint ? constraints : [...constraints, WORKSPACE_CONNECTIONS_CONSTRAINT],
+    constraintApplications: hasApplication ? constraintApplications : [...constraintApplications, {
+      id: crypto.randomUUID(),
+      constraintId: cId,
+      entityId: rootNodeId,
+      version: 1,
+    }],
+  };
+}
+
+/**
+ * Read the connection config from the workspace root node's data.
+ * Returns null if the root has no workspace.connections constraint applied
+ * or if the URL is empty (purely local workspace).
+ */
+export function getConnectionConfig(
+  ws: WorkspaceState,
+): {
+  entityId: string;
+  url: string;
+  namespace?: string;
+  database?: string;
+  username?: string;
+  password?: string;
+} | null {
+  const rootId = getWorkspaceRootId(ws);
+  const cId = WORKSPACE_CONNECTIONS_CONSTRAINT.id;
+  const app = ws.constraintApplications.find(
+    (a) => a.constraintId === cId && a.entityId === rootId,
+  );
+  if (!app) return null;
+  const root = getWorkspaceRoot(ws);
+  if (!root) return null;
+  const conn = root.data.connection;
+  if (typeof conn !== "object" || conn === null) return null;
+  const c = conn as Record<string, unknown>;
+  const url = typeof c.url === "string" ? c.url.trim() : "";
+  if (!url) return null;
+  return {
+    entityId: rootId,
+    url,
+    namespace: typeof c.namespace === "string" ? c.namespace || undefined : undefined,
+    database: typeof c.database === "string" ? c.database || undefined : undefined,
+    username: typeof c.username === "string" ? c.username || undefined : undefined,
+    password: typeof c.password === "string" ? c.password || undefined : undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -242,10 +359,25 @@ export function findPath(nodes: TreeNode[], targetId: string): TreeNode[] {
   return [];
 }
 
-/** Returns the root nodes for the current focus level. If focusId is null, returns top-level treeNodes. */
+/** Returns the root nodes for the current focus level.
+ *  - focusId === null: returns treeNodes as-is (shows the workspace root on the canvas,
+ *    allowing the user to inspect it). This is the "virtual root" level.
+ *  - focusId === workspaceRootId: returns the workspace root's children (the default view).
+ *  - focusId === other: returns that node's children. */
 export function getFocusedRootNodes(ws: WorkspaceState): TreeNode[] {
-  if (ws.focusId == null) return ws.treeNodes;
+  if (ws.focusId == null) {
+    return ws.treeNodes;
+  }
   return findNode(ws.treeNodes, ws.focusId)?.children ?? [];
+}
+
+/** Get the active tab's workspace root node ID.
+ *  Falls back to treeNodes[0].id if rootNodeId isn't set (pre-migration data). */
+export function getWorkspaceRootId(ws: WorkspaceState): string {
+  const tabRootId = getActiveTab(ws).rootNodeId;
+  if (tabRootId) return tabRootId;
+  // Fallback: assume first top-level node is the root
+  return ws.treeNodes[0]?.id ?? "";
 }
 
 export function getActiveTab(ws: WorkspaceState): Tab {
@@ -266,8 +398,8 @@ export function makeNode(
   return { id, label, kind, children, data: {}, version: 1, uri };
 }
 
-export function defaultTreeNodes(): TreeNode[] {
-  return [
+export function defaultTreeNodes(rootNodeId: string): TreeNode[] {
+  return ensureWorkspaceRoot([
     makeNode("spike://acme/backend", "acme/backend", "composite", [
       makeNode("spike://acme/backend/auth-service", "auth-service", "composite", [
         makeNode(
@@ -280,7 +412,7 @@ export function defaultTreeNodes(): TreeNode[] {
       ]),
       makeNode("spike://acme/backend/frontend", "frontend", "composite", []),
     ], "spike://acme/backend"),
-  ];
+  ], rootNodeId).treeNodes;
 }
 
 export function defaultPanel(): Panel {
@@ -316,25 +448,39 @@ export function defaultCodePanel(): Panel {
 
 export function defaultState(): WorkspaceState {
   const tabId = crypto.randomUUID();
+  const rootNodeId = crypto.randomUUID();
+  const databaseId = crypto.randomUUID();
+  const treeNodes = defaultTreeNodes(rootNodeId);
   return {
-    tabs: [{ id: tabId, name: "Main", databaseId: DEFAULT_DB, panels: [defaultPanel()] }],
+    tabs: [{
+      id: tabId,
+      name: "Main",
+      databaseId,
+      rootNodeId,
+      panels: [defaultPanel()],
+    }],
     activeTabId: tabId,
-    treeNodes: defaultTreeNodes(),
+    treeNodes,
     edges: [],
-    constraints: [],
-    constraintApplications: [],
+    constraints: [WORKSPACE_CONNECTIONS_CONSTRAINT],
+    constraintApplications: [{
+      id: crypto.randomUUID(),
+      constraintId: WORKSPACE_CONNECTIONS_CONSTRAINT.id,
+      entityId: rootNodeId,
+      version: 1,
+    }],
     personas: ["Architect", "Developer", "Reviewer"],
     activePersona: "Architect",
     workflows: ["Explore", "Design", "Build"],
     activeWorkflow: "Explore",
     connectedGraphs: [{
-      id: DEFAULT_DB,
-      label: `localStorage/Default (${DEFAULT_DB.slice(0, 8)})`,
+      id: databaseId,
+      label: `localStorage/Default (${databaseId.slice(0, 8)})`,
       connected: true,
       required: true,
     }],
-    focusId: null,
-    canvasExpandedNodes: defaultTreeNodes().map((n) => n.id),
+    focusId: rootNodeId,
+    canvasExpandedNodes: treeNodes[0]?.children.map((n) => n.id) ?? [],
     canvasNodePositions: {},
     canvasSelected: null,
     canvasAlgorithm: "SDF",
@@ -417,31 +563,55 @@ export function loadState(): WorkspaceState {
         return {
           id: t.id as string,
           name: t.name as string,
-          databaseId: (t.databaseId as string | undefined) ?? "default",
+          databaseId: (t.databaseId as string | undefined) ?? "default", // legacy fallback
+          rootNodeId: (t.rootNodeId as string | undefined) ?? "",
           panels,
         };
       });
       if (tabs.length === 0) return defaultState();
       const rawNodes = parsed.treeNodes as Record<string, unknown>[] | undefined;
-      const treeNodes = rawNodes ? rawNodes.map(parseNode) : defaultTreeNodes();
+      const parsedNodes = rawNodes ? rawNodes.map(parseNode) : [];
+      // Ensure workspace root — backfill rootNodeId on tab if missing
+      const existingRootId = tabs[0].rootNodeId || undefined;
+      const wrapped = ensureWorkspaceRoot(
+        parsedNodes.length > 0
+          ? parsedNodes
+          : defaultTreeNodes(existingRootId ?? crypto.randomUUID()),
+        existingRootId,
+      );
+      const treeNodes = wrapped.treeNodes;
+      // Backfill rootNodeId on all tabs (migration from before rootNodeId existed)
+      for (const tab of tabs) {
+        if (!tab.rootNodeId) tab.rootNodeId = wrapped.rootNodeId;
+      }
       const ds = defaultState();
       // Validate focusId — clear if the referenced node no longer exists
       const rawFocusId = (parsed.focusId as string | null | undefined) ?? null;
-      const focusId = rawFocusId && findNode(treeNodes, rawFocusId) ? rawFocusId : null;
+      const validFocusId = rawFocusId && findNode(treeNodes, rawFocusId) ? rawFocusId : null;
+      // Default to workspace root so users see graph contents; null = "virtual root" level
+      const focusId = validFocusId ?? wrapped.rootNodeId;
       // Validate canvasExpandedNodes — drop IDs that no longer exist
       const rawExpanded = (parsed.canvasExpandedNodes as string[] | undefined) ?? [];
       const canvasExpandedNodes = rawExpanded.filter((id) => findNode(treeNodes, id) !== null);
+      // Ensure workspace.connections constraint is present and applied to the root
+      const parsedConstraints =
+        ((parsed.constraints as Record<string, unknown>[] | undefined) ?? [])
+          .map(parseConstraint);
+      const parsedApps = (
+        (parsed.constraintApplications as Record<string, unknown>[] | undefined) ?? []
+      ).map(parseConstraintApplication);
+      const wsConstraint = ensureWorkspaceConstraint(
+        parsedConstraints,
+        parsedApps,
+        wrapped.rootNodeId,
+      );
       return {
         tabs,
         activeTabId: (parsed.activeTabId as string | undefined) ?? tabs[0].id,
         treeNodes,
         edges: (parsed.edges as Edge[] | undefined) ?? [],
-        constraints: ((parsed.constraints as Record<string, unknown>[] | undefined) ?? []).map(
-          parseConstraint,
-        ),
-        constraintApplications: (
-          (parsed.constraintApplications as Record<string, unknown>[] | undefined) ?? []
-        ).map(parseConstraintApplication),
+        constraints: wsConstraint.constraints,
+        constraintApplications: wsConstraint.constraintApplications,
         personas: (parsed.personas as string[] | undefined) ?? ds.personas,
         activePersona: (parsed.activePersona as string | null | undefined) ?? null,
         workflows: (parsed.workflows as string[] | undefined) ?? ds.workflows,
@@ -469,6 +639,7 @@ export function loadState(): WorkspaceState {
 // Async load (SurrealDB with localStorage migration)
 // ---------------------------------------------------------------------------
 
+import { WORKSPACE_CONNECTIONS_CONSTRAINT } from "../graph/builtin_constraints.ts";
 import { exportDb, getDb, importDb, initSurreal, useDatabase, useUiDb } from "./db/surreal.ts";
 import {
   buildTree,
@@ -490,7 +661,6 @@ import {
   saveWorkspaceUi,
   type UiState,
 } from "./db/operations.ts";
-import { DEFAULT_DB } from "./db/surreal.ts";
 import { loadDump, saveDump } from "./db/bridge.ts";
 
 /**
@@ -529,7 +699,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
 
   if (!hasDefault) {
     // First launch — create default DB and attempt localStorage migration
-    const defaultUuid = DEFAULT_DB;
+    const defaultUuid = crypto.randomUUID();
     await initGraphSchema(defaultUuid);
 
     // Register it
@@ -541,12 +711,13 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
 
     // Check for existing localStorage data to migrate
     const existingState = loadState();
-    const hasExistingData = existingState.treeNodes.length > 0 &&
-      !(existingState.treeNodes.length === 1 &&
-        existingState.treeNodes[0].id === "spike://acme/backend");
+    const rootChildren = getWorkspaceRoot(existingState)?.children ?? existingState.treeNodes;
+    const hasExistingData = rootChildren.length > 0 &&
+      !(rootChildren.length === 1 &&
+        rootChildren[0].id === "spike://acme/backend");
 
     const stateToMigrate = hasExistingData ? existingState : defaultState();
-    await migrateToSurreal(stateToMigrate);
+    await migrateToSurreal(stateToMigrate, defaultUuid);
 
     // Persist initial dumps to IndexedDB
     await persistInitialDumps(defaultUuid);
@@ -576,7 +747,8 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
 
   // 4. Load UI state to find active tab / database
   const uiState = await loadWorkspaceUi();
-  let activeDatabaseId = DEFAULT_DB;
+  // Fall back to the first registered database if no active tab specifies one
+  let activeDatabaseId = dbs[0]?.uuid ?? crypto.randomUUID();
   if (uiState) {
     console.log("[init] UI state loaded:", {
       activeTabId: uiState.activeTabId,
@@ -627,29 +799,40 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     applications: applications.length,
   });
 
-  const treeNodes = buildTree(flatNodes);
+  // Ensure workspace root — backfill rootNodeId on tabs if missing
+  const existingRootId =
+    uiState?.tabs?.find((t: Tab) => t.id === uiState.activeTabId)?.rootNodeId ||
+    undefined;
+  const wrapped = ensureWorkspaceRoot(buildTree(flatNodes), existingRootId);
+  const treeNodes = wrapped.treeNodes;
   const canvasState = await loadCanvasState();
   console.log("[init] Canvas state:", canvasState ? "found" : "not found");
 
   if (uiState) {
-    // Backfill databaseId on tabs that predate this field
+    // Backfill databaseId and rootNodeId on tabs that predate these fields.
+    // Only the active tab gets the wrapped rootNodeId — inactive tabs will get
+    // their rootNodeId when their database is loaded via loadDatabaseSnapshot.
+    const activeTabId = uiState.activeTabId;
+    const fallbackDbId = dbs[0]?.uuid ?? activeDatabaseId;
     const tabs = uiState.tabs.map((t: Tab) => ({
       ...t,
-      databaseId: t.databaseId ?? DEFAULT_DB,
+      databaseId: t.databaseId ?? fallbackDbId,
+      rootNodeId: t.rootNodeId || (t.id === activeTabId ? wrapped.rootNodeId : ""),
     }));
     // Update connectedGraphs to show current database
     const activeTab = tabs.find((t: Tab) => t.id === uiState.activeTabId) ?? tabs[0];
     const dbEntry = dbs.find((d) => d.uuid === activeTab?.databaseId);
+    const activeDbId = activeTab?.databaseId ?? fallbackDbId;
     const connectedGraphs = [{
-      id: activeTab?.databaseId ?? DEFAULT_DB,
-      label: `localStorage/${dbEntry?.name ?? "Default"} (${
-        (activeTab?.databaseId ?? DEFAULT_DB).slice(0, 8)
-      })`,
+      id: activeDbId,
+      label: `localStorage/${dbEntry?.name ?? "Default"} (${activeDbId.slice(0, 8)})`,
       connected: true,
       required: true,
     }];
 
     const ds = defaultState();
+    // Ensure workspace.connections constraint is present and applied to the root
+    const wsConstraint = ensureWorkspaceConstraint(constraints, applications, wrapped.rootNodeId);
     return {
       ...ds,
       // UI-only fields from SurrealDB (tabs, personas, workflows, etc.)
@@ -658,12 +841,13 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       // Graph data loaded from SurrealDB — must override any stale fields in uiState
       treeNodes,
       edges: normaliseEdges(edges),
-      constraints,
-      constraintApplications: applications,
+      constraints: wsConstraint.constraints,
+      constraintApplications: wsConstraint.constraintApplications,
       // Overrides
       tabs,
       connectedGraphs,
-      focusId: canvasState?.focusId ?? null,
+      // Default to workspace root so users see graph contents; null = "virtual root" level
+      focusId: canvasState?.focusId ?? wrapped.rootNodeId,
       canvasExpandedNodes: canvasState?.canvasExpandedNodes ?? ds.canvasExpandedNodes,
       canvasNodePositions: canvasState?.canvasNodePositions ?? {},
       canvasSelected: canvasState?.canvasSelected ?? null,
@@ -675,12 +859,13 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
 
   // No UI state saved yet — return defaults with loaded graph data
   const ds = defaultState();
+  const wsConstraint2 = ensureWorkspaceConstraint(constraints, applications, wrapped.rootNodeId);
   return {
     ...ds,
     treeNodes,
     edges: normaliseEdges(edges),
-    constraints,
-    constraintApplications: applications,
+    constraints: wsConstraint2.constraints,
+    constraintApplications: wsConstraint2.constraintApplications,
   };
 }
 
@@ -704,6 +889,7 @@ async function persistInitialDumps(graphDatabaseId: string): Promise<void> {
 /** Load graph + canvas data for a specific database. Restores from IndexedDB dump if needed. */
 export async function loadDatabaseSnapshot(
   databaseId: string,
+  rootNodeId?: string,
 ): Promise<DatabaseSnapshot> {
   console.log(`[snapshot] Loading database ${databaseId}...`);
   // Restore from IndexedDB dump if this database hasn't been loaded yet
@@ -733,12 +919,15 @@ export async function loadDatabaseSnapshot(
   });
   const canvasState = await loadCanvasState();
   const ds = defaultState();
+  const wrapped = ensureWorkspaceRoot(buildTree(flatNodes), rootNodeId || undefined);
+  const wsConstraint = ensureWorkspaceConstraint(constraints, applications, wrapped.rootNodeId);
   return {
-    treeNodes: buildTree(flatNodes),
+    treeNodes: wrapped.treeNodes,
     edges: normaliseEdges(edges),
-    constraints,
-    constraintApplications: applications,
-    focusId: canvasState?.focusId ?? null,
+    constraints: wsConstraint.constraints,
+    constraintApplications: wsConstraint.constraintApplications,
+    // Default to workspace root so users see graph contents; null = "virtual root" level
+    focusId: canvasState?.focusId ?? wrapped.rootNodeId,
     canvasExpandedNodes: canvasState?.canvasExpandedNodes ?? ds.canvasExpandedNodes,
     canvasNodePositions: canvasState?.canvasNodePositions ?? {},
     canvasSelected: canvasState?.canvasSelected ?? null,
@@ -779,9 +968,9 @@ function recordIdToString(val: unknown): string {
 }
 
 /** Write a full WorkspaceState into SurrealDB (used for initial migration). */
-async function migrateToSurreal(state: WorkspaceState): Promise<void> {
-  // Write graph data to the default database
-  await useDatabase(DEFAULT_DB);
+async function migrateToSurreal(state: WorkspaceState, databaseId: string): Promise<void> {
+  // Write graph data to the target database
+  await useDatabase(databaseId);
 
   const flatNodes = flattenTree(state.treeNodes);
   for (const node of flatNodes) {
