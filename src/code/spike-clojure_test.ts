@@ -758,3 +758,259 @@ Deno.test("id meta: round-trip preserves UUID id", () => {
   assertEquals(treeNodes[0].id, TEST_UUID);
   assertEquals(treeNodes[0].label, "OriginalName");
 });
+
+// ---------------------------------------------------------------------------
+// Node metadata: data fields and uri
+// ---------------------------------------------------------------------------
+
+Deno.test("node meta: emits data fields in reader metadata", () => {
+  const node: TreeNode = {
+    id: "my-service",
+    label: "my-service",
+    kind: "leaf",
+    children: [],
+    data: { description: "A service", priority: 5 },
+    version: 1,
+  };
+  const clj = graphToSpike([node], []);
+  assertEquals(clj, `(def ^{:description "A service" :priority 5} my-service)`);
+});
+
+Deno.test("node meta: emits uri in reader metadata", () => {
+  const node: TreeNode = {
+    id: "backend",
+    label: "backend",
+    kind: "composite",
+    children: [
+      { id: "child", label: "child", kind: "leaf", children: [], data: {}, version: 1 },
+    ],
+    uri: "spike://acme/backend",
+    data: {},
+    version: 1,
+  };
+  const clj = graphToSpike([node], []);
+  assertEquals(clj, `(def ^{:uri "spike://acme/backend"} backend [child])`);
+});
+
+Deno.test("node meta: emits id + uri + data together", () => {
+  const node: TreeNode = {
+    id: TEST_UUID,
+    label: "my-node",
+    kind: "leaf",
+    children: [],
+    uri: "spike://example",
+    data: { color: "red" },
+    version: 1,
+  };
+  const clj = graphToSpike([node], []);
+  assertEquals(
+    clj,
+    `(def ^{:id "${TEST_UUID}" :uri "spike://example" :color "red"} my-node)`,
+  );
+});
+
+Deno.test("node meta: empty strings in data are not emitted", () => {
+  const node: TreeNode = {
+    id: "svc",
+    label: "svc",
+    kind: "leaf",
+    children: [],
+    data: { name: "ok", empty: "" },
+    version: 1,
+  };
+  const clj = graphToSpike([node], []);
+  assertEquals(clj, `(def ^{:name "ok"} svc)`);
+});
+
+Deno.test("node meta: internal data keys (fn, argOrder) are not emitted", () => {
+  const node: TreeNode = {
+    id: "x1",
+    label: "x1",
+    kind: "leaf",
+    children: [],
+    data: { fn: "divide", argOrder: ["a", "b"], visible: true },
+    version: 1,
+  };
+  const clj = graphToSpike([node], []);
+  assertEquals(clj, `(def ^{:visible true} x1)`);
+});
+
+Deno.test("node meta: parser extracts uri from metadata", () => {
+  const src = `(def ^{:uri "spike://acme/backend"} backend [child])\n(def child)`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const node = treeNodes.find((n) => n.label === "backend")!;
+  assertEquals(node.uri, "spike://acme/backend");
+});
+
+Deno.test("node meta: parser extracts data fields from metadata", () => {
+  const src = `(def ^{:description "A service" :priority 5} my-service)`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  assertEquals(treeNodes[0].data.description, "A service");
+  assertEquals(treeNodes[0].data.priority, 5);
+});
+
+Deno.test("node meta: round-trip preserves data and uri", () => {
+  const node: TreeNode = {
+    id: TEST_UUID,
+    label: "my-node",
+    kind: "leaf",
+    children: [],
+    uri: "spike://example",
+    data: { color: "red", count: 3 },
+    version: 1,
+  };
+  const clj = graphToSpike([node], []);
+  const { treeNodes } = spikeToGraph(clj);
+  assertEquals(treeNodes[0].id, TEST_UUID);
+  assertEquals(treeNodes[0].uri, "spike://example");
+  assertEquals(treeNodes[0].data.color, "red");
+  assertEquals(treeNodes[0].data.count, 3);
+});
+
+Deno.test("node meta: defn container preserves data and uri", () => {
+  const container: TreeNode = {
+    id: TEST_UUID,
+    label: "pipeline",
+    kind: "composite",
+    children: [
+      { id: "A", label: "A", kind: "leaf", children: [], data: {}, version: 1 },
+      { id: "B", label: "B", kind: "leaf", children: [], data: {}, version: 1 },
+    ],
+    uri: "spike://pipes/main",
+    data: { env: "prod" },
+    version: 1,
+  };
+  const edges: Edge[] = [
+    { id: "A-B", fromId: "A", toId: "B", label: "", data: {}, version: 1 },
+  ];
+  const clj = graphToSpike([container], edges);
+  // Verify emitted text includes the metadata
+  assertEquals(clj.includes(`:id "${TEST_UUID}"`), true);
+  assertEquals(clj.includes(`:uri "spike://pipes/main"`), true);
+  assertEquals(clj.includes(`:env "prod"`), true);
+  // Verify round-trip
+  const { treeNodes } = spikeToGraph(clj);
+  const p = treeNodes.find((n) => n.label === "pipeline")!;
+  assertEquals(p.id, TEST_UUID);
+  assertEquals(p.uri, "spike://pipes/main");
+  assertEquals(p.data.env, "prod");
+});
+
+// ---------------------------------------------------------------------------
+// Edge metadata: label and data via reader metadata on call arguments
+// ---------------------------------------------------------------------------
+
+Deno.test("edge meta: emits label as reader metadata on argument", () => {
+  const container: TreeNode = {
+    id: "flow",
+    label: "flow",
+    kind: "composite",
+    children: [
+      { id: "src", label: "src", kind: "leaf", children: [], data: {}, version: 1 },
+      { id: "mid", label: "mid", kind: "leaf", children: [], data: {}, version: 1 },
+      { id: "dst", label: "dst", kind: "leaf", children: [], data: {}, version: 1 },
+    ],
+    ports: [{ name: "src", direction: "in" }],
+    data: {},
+    version: 1,
+  };
+  const edges: Edge[] = [
+    { id: "src-mid", fromId: "src", toId: "mid", label: "transforms", data: {}, version: 1 },
+    { id: "mid-dst", fromId: "mid", toId: "dst", label: "", data: {}, version: 1 },
+  ];
+  const clj = graphToSpike([container], edges);
+  // src is an input param, so it appears as a bare symbol in the call to mid
+  assertEquals(clj.includes(`^{:label "transforms"} src`), true);
+});
+
+Deno.test("edge meta: emits data fields alongside label", () => {
+  const container: TreeNode = {
+    id: "flow",
+    label: "flow",
+    kind: "composite",
+    children: [
+      { id: "A", label: "A", kind: "leaf", children: [], data: {}, version: 1 },
+      { id: "B", label: "B", kind: "leaf", children: [], data: {}, version: 1 },
+    ],
+    data: {},
+    version: 1,
+  };
+  const edges: Edge[] = [{
+    id: "A-B",
+    fromId: "A",
+    toId: "B",
+    label: "conn",
+    data: { weight: 3 },
+    version: 1,
+  }];
+  const clj = graphToSpike([container], edges);
+  assertEquals(clj.includes(`:label "conn"`), true);
+  assertEquals(clj.includes(`:weight 3`), true);
+});
+
+Deno.test("edge meta: not emitted when edge has empty label and data", () => {
+  const container: TreeNode = {
+    id: "flow",
+    label: "flow",
+    kind: "composite",
+    children: [
+      { id: "A", label: "A", kind: "leaf", children: [], data: {}, version: 1 },
+      { id: "B", label: "B", kind: "leaf", children: [], data: {}, version: 1 },
+    ],
+    data: {},
+    version: 1,
+  };
+  const edges: Edge[] = [
+    { id: "A-B", fromId: "A", toId: "B", label: "", data: {}, version: 1 },
+  ];
+  const clj = graphToSpike([container], edges);
+  // Should NOT have ^{ on arguments
+  assertEquals(clj.includes("^{"), false);
+});
+
+Deno.test("edge meta: parser extracts label from argument metadata", () => {
+  const src = `(defn flow\n  [A]\n  (B ^{:label "transforms"} A))`;
+  const { edges, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const edge = edges.find((e) => e.fromId === "A" && e.toId === "B");
+  assertEquals(edge?.label, "transforms");
+});
+
+Deno.test("edge meta: parser extracts data from argument metadata", () => {
+  const src = `(defn flow\n  [A]\n  (B ^{:label "conn" :weight 3} A))`;
+  const { edges, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const edge = edges.find((e) => e.fromId === "A" && e.toId === "B");
+  assertEquals(edge?.label, "conn");
+  assertEquals(edge?.data.weight, 3);
+});
+
+Deno.test("edge meta: round-trip preserves edge label and data", () => {
+  const container: TreeNode = {
+    id: "flow",
+    label: "flow",
+    kind: "composite",
+    children: [
+      { id: "A", label: "A", kind: "leaf", children: [], data: {}, version: 1 },
+      { id: "B", label: "B", kind: "leaf", children: [], data: {}, version: 1 },
+    ],
+    data: {},
+    version: 1,
+  };
+  const edges: Edge[] = [{
+    id: "A-B",
+    fromId: "A",
+    toId: "B",
+    label: "transforms",
+    data: { weight: 5 },
+    version: 1,
+  }];
+  const clj = graphToSpike([container], edges);
+  const parsed = spikeToGraph(clj);
+  assertEquals(parsed.errors, []);
+  const edge = parsed.edges.find((e) => e.fromId === "A" && e.toId === "B");
+  assertEquals(edge?.label, "transforms");
+  assertEquals(edge?.data.weight, 5);
+});

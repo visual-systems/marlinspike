@@ -35,19 +35,57 @@ import { parse } from "../graph/base_lisp.ts";
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Data keys that are internal to the codec or the reactivity system and should not be emitted. */
+const INTERNAL_DATA_KEYS = new Set(["fn", "argOrder"]);
+
 /**
- * Return the def/defn name form, optionally prefixed with `^{:id "..."}`
- * reader metadata.
+ * Return the def/defn name form, optionally prefixed with `^{...}` reader
+ * metadata containing `:id`, `:uri`, and user data fields.
  *
- * Metadata is only emitted when the node's id is a genuine UUID — an opaque
- * identifier that can't be derived from the label. Label-derived ids (the
- * common case for in-source definitions) stay implicit, keeping the text
- * clean. The user can work in bare-label form until an entity needs to be
- * referenced externally, at which point a real UUID is assigned.
+ * Metadata is emitted when the node carries information beyond its label:
+ *   - `:id` — only when the node's id is a genuine UUID (opaque, not label-derived)
+ *   - `:uri` — when the node has a URI
+ *   - user data fields — non-empty values from `node.data`, excluding codec-internal
+ *     keys (`fn`, `argOrder`) which are reconstructed from call syntax
+ *
+ * When there is nothing to emit, returns the bare label.
  */
 function nameWithIdMeta(node: TreeNode): string {
-  if (!looksLikeUuid(node.id)) return node.label;
-  return `^{:id ${JSON.stringify(node.id)}} ${node.label}`;
+  const entries: string[] = [];
+  if (looksLikeUuid(node.id)) {
+    entries.push(`:id ${JSON.stringify(node.id)}`);
+  }
+  if (node.uri) {
+    entries.push(`:uri ${JSON.stringify(node.uri)}`);
+  }
+  for (const [k, v] of Object.entries(node.data)) {
+    if (INTERNAL_DATA_KEYS.has(k)) continue;
+    const emitted = emitDataValue(v);
+    if (emitted !== null) entries.push(`:${k} ${emitted}`);
+  }
+  if (entries.length === 0) return node.label;
+  return `^{${entries.join(" ")}} ${node.label}`;
+}
+
+/** Emit a data value as a Clojure literal. Returns null for values that can't be represented. */
+function emitDataValue(v: unknown): string | null {
+  if (typeof v === "string") return v === "" ? null : JSON.stringify(v);
+  if (typeof v === "number") return String(v);
+  if (typeof v === "boolean") return String(v);
+  if (v === null) return "nil";
+  if (Array.isArray(v)) {
+    const items = v.map(emitDataValue).filter((x): x is string => x !== null);
+    return `[${items.join(" ")}]`;
+  }
+  if (typeof v === "object") {
+    const pairs: string[] = [];
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      const emitted = emitDataValue(val);
+      if (emitted !== null) pairs.push(`:${k} ${emitted}`);
+    }
+    return pairs.length > 0 ? `{${pairs.join(" ")}}` : null;
+  }
+  return null;
 }
 
 /** UUID pattern check — reused by emit (suppress metadata) and codec (id generation). */
@@ -69,6 +107,82 @@ function extractIdMeta(nameForm: SExp): string | undefined {
     }
   }
   return undefined;
+}
+
+/** Metadata keys that are handled specially (not stored in node.data). */
+const SPECIAL_META_KEYS = new Set(["id", "uri"]);
+
+/**
+ * Extract all metadata from a name form's reader metadata.
+ * Returns `{ uri, data }` where data contains all non-special keyword entries.
+ */
+function extractNameMeta(nameForm: SExp): {
+  uri: string | undefined;
+  data: Record<string, unknown>;
+} {
+  const meta = nameForm.meta;
+  if (!meta || meta.type !== "map") return { uri: undefined, data: {} };
+  let uri: string | undefined;
+  const data: Record<string, unknown> = {};
+  for (const [k, v] of meta.entries) {
+    if (k.type !== "keyword") continue;
+    if (k.value === "uri" && v.type === "string") {
+      uri = v.value;
+    } else if (!SPECIAL_META_KEYS.has(k.value)) {
+      data[k.value] = sexpToValue(v);
+    }
+  }
+  return { uri, data };
+}
+
+/** Convert a SExp value to a plain JS value for storage in node.data. */
+function sexpToValue(sexp: SExp): unknown {
+  switch (sexp.type) {
+    case "string":
+      return sexp.value;
+    case "number":
+      return sexp.value;
+    case "boolean":
+      return sexp.value;
+    case "nil":
+      return null;
+    case "keyword":
+      return sexp.value;
+    case "symbol":
+      return sexp.value;
+    case "vector":
+      return sexp.items.map(sexpToValue);
+    case "map": {
+      const obj: Record<string, unknown> = {};
+      for (const [k, v] of sexp.entries) {
+        const key = k.type === "keyword" ? k.value : k.type === "string" ? k.value : String(k);
+        obj[key] = sexpToValue(v);
+      }
+      return obj;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * Extract edge metadata from `^{:label "..." :key val}` reader metadata on
+ * a call argument. Returns empty label and data when no metadata is present.
+ */
+function extractEdgeMeta(arg: SExp): { label: string; data: Record<string, unknown> } {
+  const meta = arg.meta;
+  if (!meta || meta.type !== "map") return { label: "", data: {} };
+  let label = "";
+  const data: Record<string, unknown> = {};
+  for (const [k, v] of meta.entries) {
+    if (k.type !== "keyword") continue;
+    if (k.value === "label" && v.type === "string") {
+      label = v.value;
+    } else {
+      data[k.value] = sexpToValue(v);
+    }
+  }
+  return { label, data };
 }
 
 /** Kahn's topological sort. Returns IDs in dependency order. */
@@ -168,6 +282,29 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
     incomingArgs.get(e.toId)?.push(binding(e.fromId));
   }
 
+  // Edge lookup by (fromId, toId) for metadata emission
+  const edgeLookup = new Map<string, Edge>();
+  for (const e of edges) {
+    edgeLookup.set(`${e.fromId}->${e.toId}`, e);
+  }
+
+  /** Emit an argument, prefixed with ^{...} reader metadata if the edge carries label/data. */
+  function emitArg(argLabel: string, targetId: string): string {
+    const argId = [...nodeById.entries()].find(([_, n]) => n.label === argLabel)?.[0];
+    const expr = nodeById.has(argLabel) && isInlineable(argLabel) ? callExpr(argLabel) : argLabel;
+    if (!argId) return expr;
+    const edge = edgeLookup.get(`${argId}->${targetId}`);
+    if (!edge) return expr;
+    const metaEntries: string[] = [];
+    if (edge.label) metaEntries.push(`:label ${JSON.stringify(edge.label)}`);
+    for (const [k, v] of Object.entries(edge.data)) {
+      const emitted = emitDataValue(v);
+      if (emitted !== null) metaEntries.push(`:${k} ${emitted}`);
+    }
+    if (metaEntries.length === 0) return expr;
+    return `^{${metaEntries.join(" ")}} ${expr}`;
+  }
+
   // Build the call expression for a node, recursively inlining inline-able args.
   // Uses data.argOrder (preserves literal values) when available, otherwise falls
   // back to edge-derived incomingArgs.
@@ -176,7 +313,7 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
     const fn = (node.data.fn as string | undefined) ?? node.label;
     const argOrder = node.data.argOrder as string[] | undefined;
     const rawArgs = argOrder ?? incomingArgs.get(id) ?? [];
-    const args = rawArgs.map((a) => nodeById.has(a) && isInlineable(a) ? callExpr(a) : a);
+    const args = rawArgs.map((a) => emitArg(a, id));
     return args.length > 0 ? `(${fn} ${args.join(" ")})` : `(${fn})`;
   }
 
@@ -337,15 +474,17 @@ export function spikeToGraph(
     string,
     {
       nodes: string[];
-      edges: Array<{ from: string; to: string }>;
+      edges: ParsedEdge[];
       ports: Port[];
       nodeFunctions: Map<string, string>;
       nodeArgOrders: Map<string, string[]>;
     }
   >();
-  // Label → explicit UUID pulled from `^{:uuid "..."}` reader metadata on the
+  // Label → explicit UUID pulled from `^{:id "..."}` reader metadata on the
   // def/defn name. When absent, the node falls back to label-as-id.
   const nameId = new Map<string, string>();
+  // Label → { uri, data } extracted from the name's reader metadata.
+  const nameMeta = new Map<string, { uri: string | undefined; data: Record<string, unknown> }>();
 
   for (const form of forms) {
     if (form.type !== "list" || form.items.length < 2) continue;
@@ -354,6 +493,10 @@ export function spikeToGraph(
     const name = nameForm.value;
     const uuid = extractIdMeta(nameForm);
     if (uuid) nameId.set(name, uuid);
+    const meta = extractNameMeta(nameForm);
+    if (meta.uri || Object.keys(meta.data).length > 0) {
+      nameMeta.set(name, meta);
+    }
 
     if (head.value === "def") {
       // (def name [child ...]) or bare (def name) for leaf nodes
@@ -465,22 +608,24 @@ export function spikeToGraph(
       },
       version: 1,
     }));
+    const meta = nameMeta.get(name);
     builtDefn.set(name, {
       id: nameId.get(name) ?? name,
       label: name,
       kind: "composite",
       children,
       ports: ports.length > 0 ? ports : undefined,
-      data: {},
+      data: meta?.data ?? {},
       version: 1,
+      ...(meta?.uri ? { uri: meta.uri } : {}),
     });
-    for (const { from, to } of rawEdges) {
+    for (const pe of rawEdges) {
       allEdges.push({
-        id: `${from}-${to}`,
-        fromId: from,
-        toId: to,
-        label: "",
-        data: {},
+        id: `${pe.from}-${pe.to}`,
+        fromId: pe.from,
+        toId: pe.to,
+        label: pe.label,
+        data: pe.data,
         version: 1,
       });
     }
@@ -509,13 +654,15 @@ export function spikeToGraph(
     visited.add(name);
     const childNames = defs.get(name) ?? [];
     const children = childNames.map((n) => makeDefNode(n, new Set(visited)));
+    const meta = nameMeta.get(name);
     const node: TreeNode = {
       id: nameId.get(name) ?? name,
       label: name,
       kind: children.length > 0 ? "composite" : "leaf",
       children,
-      data: {},
+      data: meta?.data ?? {},
       version: 1,
+      ...(meta?.uri ? { uri: meta.uri } : {}),
     };
     builtDef.set(name, node);
     return node;
@@ -554,19 +701,26 @@ export function spikeToGraph(
  *
  * Returns node labels and edges (from-label → to-label).
  */
+interface ParsedEdge {
+  from: string;
+  to: string;
+  label: string;
+  data: Record<string, unknown>;
+}
+
 function parseLetForm(
   letParts: SExp[],
   paramNames: string[] = [],
 ): {
   nodes: string[];
-  edges: Array<{ from: string; to: string }>;
+  edges: ParsedEdge[];
   errors: string[];
   nodeFunctions: Map<string, string>;
   nodeArgOrders: Map<string, string[]>;
 } {
   const errors: string[] = [];
   const nodeLabels = new Set<string>();
-  const edges: Array<{ from: string; to: string }> = [];
+  const edges: ParsedEdge[] = [];
   // Maps node label → function name when they differ (e.g. node "x1" calls "divide")
   const nodeFunctions = new Map<string, string>();
   // Maps node label → ordered arg list (symbolic labels + literal reprs).
@@ -630,15 +784,21 @@ function parseLetForm(
 
     // First pass: resolve all arguments to determine their labels/literals.
     // Nested calls are recursively expanded, creating their own nodes and edges.
-    const resolvedArgs: Array<{ label: string | null; literal: string | null }> = [];
+    const resolvedArgs: Array<{
+      label: string | null;
+      literal: string | null;
+      edgeMeta: { label: string; data: Record<string, unknown> };
+    }> = [];
     for (const arg of callExpr.items.slice(1)) {
+      // Extract edge metadata from ^{...} reader metadata on the argument
+      const edgeMeta = extractEdgeMeta(arg);
       if (arg.type === "number") {
-        resolvedArgs.push({ label: null, literal: String(arg.value) });
+        resolvedArgs.push({ label: null, literal: String(arg.value), edgeMeta });
       } else if (arg.type === "string") {
-        resolvedArgs.push({ label: null, literal: JSON.stringify(arg.value) });
+        resolvedArgs.push({ label: null, literal: JSON.stringify(arg.value), edgeMeta });
       } else {
         const srcLabel = resolveArg(arg);
-        resolvedArgs.push({ label: srcLabel, literal: null });
+        resolvedArgs.push({ label: srcLabel, literal: null, edgeMeta });
       }
     }
 
@@ -671,7 +831,12 @@ function parseLetForm(
         const key = `${a.label}->${nodeLabel}`;
         if (!seenEdges.has(key) && !wouldCreateCycle(a.label, nodeLabel)) {
           seenEdges.add(key);
-          edges.push({ from: a.label, to: nodeLabel });
+          edges.push({
+            from: a.label,
+            to: nodeLabel,
+            label: a.edgeMeta.label,
+            data: a.edgeMeta.data,
+          });
         }
         argList.push(a.label);
       }

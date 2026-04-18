@@ -178,22 +178,20 @@ complete representation of the workspace.
 
 #### Node metadata
 
-- [ ] Emit `data` as a trailing map on `def`/`defn` forms — e.g. `(def name {:key "val"})` for
-      leaves, or a kwargs-style block for composites
-- [ ] Emit `uri` when present — e.g. `:uri "spike://..."` inside the data/meta map
+- [x] Emit `data` fields via `^{...}` reader metadata on def/defn name — e.g. `(def ^{:key "val"} name)`. Internal keys (`fn`, `argOrder`) excluded; empty strings suppressed. Parsed back via `extractNameMeta`.
+- [x] Emit `uri` via `:uri` key in the same reader metadata — e.g. `^{:id "..." :uri "spike://..."}`. Parsed back and set on `node.uri`.
 - [ ] ~~Emit `version`~~ — **No.** Version is an internal reactivity/debugging signal, not domain
       data. It should not appear in the code view, serialised output, or data inspector. The merger
       can continue bumping it internally for change detection.
-- [ ] Preserve `ports` through round-trip (currently only `{:ports ...}` attr-map on defn is
-      handled; standalone port declarations on def composites are not)
-- [ ] Parse all of the above back on apply, merging with existing node state
+- [ ] Preserve `ports` through round-trip for def composites (defn already handles ports via `{:ports ...}` attr-map and `^Type` param hints)
+- [x] Parse node data/uri back on apply — `sexpToValue` converts arbitrary SExp values (strings, numbers, booleans, vectors, maps) to JS values for `node.data`
 
 #### Edge metadata
 
-- [ ] Emit edge `label` and `data` — edges currently carry no payload in the code view
-- [ ] Consider syntax: inline annotation on the call site (e.g. `(f ^{:label "transforms"} x)`), or
-      a separate `(edge from to {:label "..." ...})` form
+- [x] Emit edge `label` and `data` via `^{...}` reader metadata on call arguments — e.g. `(f ^{:label "transforms" :weight 3} x)`. Only emitted when edge carries non-empty label or data.
+- [x] **Decision: inline annotation syntax.** `^{...}` reader metadata on the argument symbol in call expressions. Natural Clojure idiom, leverages existing reader metadata support.
 - [ ] ~~Emit edge `version`~~ — same as nodes: internal only
+- [x] Parse edge metadata back via `extractEdgeMeta` on each call argument; label and data fields populated on parsed edges
 
 #### Constraints and applications
 
@@ -206,15 +204,13 @@ complete representation of the workspace.
 
 #### Workspace-level state
 
-- [ ] Emit workspace-level properties that live on the root node's `data` (connection config, etc.)
+- [ ] Emit workspace-level properties that live on the root node's `data` (connection config, etc.) — partially done: root node data is emitted via the same `^{...}` mechanism when viewed at virtual root level
 - [ ] Consider what workspace state is structural (belongs in code) vs. ephemeral (canvas positions,
       expanded nodes, selections — clearly not in code)
 
 #### Design questions
 
-- What is the right syntax for node data? Options: trailing map `(def name {...data})`, kwargs
-  before children `(def name :key val [...])`, or reader metadata `^{...} name`. Each has trade-offs
-  for readability and Clojure-likeness.
+- **Decision: reader metadata for node data.** `^{:key val}` on the name symbol is the cleanest encoding — consistent with existing `:id` metadata, doesn't change form structure, and supports arbitrary nesting (maps, vectors).
 - **Decision: version is internal.** It's a reactivity/change-detection counter, not domain data. It
   should not appear in emitted code, serialised formats, or the data inspector. Round-trips bump it
   as a side-effect — that's fine, it's what it's for.
