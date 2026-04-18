@@ -1,3 +1,4 @@
 .claude/settings.local.json
 .claude/worktrees/
 spikes/*/node_modules/
+dist/

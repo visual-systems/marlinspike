@@ -15,8 +15,8 @@ See [`DESIGN.md`](DESIGN.md) for a detailed overview of the architecture, goals,
 
 ## Live Demo
 
-**[marlinspike.deno.dev](https://marlinspike.deno.dev)** — main app
-**[marlinspike.deno.dev/stories](https://marlinspike.deno.dev/stories)** — UI story explorer with example graphs
+**[marlinspike.sordina.deno.net](https://marlinspike.sordina.deno.net)** — main app
+**[marlinspike.sordina.deno.net/stories](https://marlinspike.sordina.deno.net/stories)** — UI story explorer with example graphs
 
 ## Development
 
