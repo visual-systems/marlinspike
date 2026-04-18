@@ -4,6 +4,7 @@ import {
   defaultTreeNodes,
   ensureWorkspaceConstraint,
   ensureWorkspaceRoot,
+  getConnectionConfig,
   getFocusedRootNodes,
   getWorkspaceRoot,
   makeNode,
@@ -198,6 +199,66 @@ Deno.test("ensureWorkspaceConstraint: adds constraint and application when missi
   assertEquals(result.constraintApplications[0].constraintId, WORKSPACE_CONNECTIONS_CONSTRAINT.id);
   assertEquals(result.constraintApplications[0].entityId, "root-1");
 });
+
+// ---------------------------------------------------------------------------
+// getConnectionConfig
+// ---------------------------------------------------------------------------
+
+Deno.test("getConnectionConfig: returns null when no constraint applied", () => {
+  const ws = minimalWs(); // no constraint applications
+  assertEquals(getConnectionConfig(ws), null);
+});
+
+Deno.test("getConnectionConfig: returns null when URL is empty", () => {
+  const rootId = "test-root-id";
+  const ws = minimalWs({
+    constraints: [WORKSPACE_CONNECTIONS_CONSTRAINT],
+    constraintApplications: [{
+      id: "app-1",
+      constraintId: WORKSPACE_CONNECTIONS_CONSTRAINT.id,
+      entityId: rootId,
+      version: 1,
+    }],
+  });
+  // Root node data has no url field → null
+  assertEquals(getConnectionConfig(ws), null);
+});
+
+Deno.test("getConnectionConfig: returns config when URL is set", () => {
+  const rootId = "test-root-id";
+  const rootNode = {
+    ...makeRootNode(rootId, []),
+    data: {
+      url: "wss://db.example.com/rpc",
+      namespace: "prod",
+      database: "main",
+      username: "",
+      password: "",
+    },
+  };
+  const ws = minimalWs({
+    treeNodes: [rootNode],
+    constraints: [WORKSPACE_CONNECTIONS_CONSTRAINT],
+    constraintApplications: [{
+      id: "app-1",
+      constraintId: WORKSPACE_CONNECTIONS_CONSTRAINT.id,
+      entityId: rootId,
+      version: 1,
+    }],
+  });
+  const config = getConnectionConfig(ws);
+  assertEquals(config?.entityId, rootId);
+  assertEquals(config?.url, "wss://db.example.com/rpc");
+  assertEquals(config?.namespace, "prod");
+  assertEquals(config?.database, "main");
+  // Empty strings map to undefined
+  assertEquals(config?.username, undefined);
+  assertEquals(config?.password, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// ensureWorkspaceConstraint (continued)
+// ---------------------------------------------------------------------------
 
 Deno.test("ensureWorkspaceConstraint: idempotent when already present", () => {
   const app: ConstraintApplication = {

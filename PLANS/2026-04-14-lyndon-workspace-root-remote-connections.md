@@ -161,11 +161,13 @@ needed.
 
 ### Phase 4: Wire remote connections
 
-- [ ] Add `getConnectionConfig(ws)` helper to read connection config from root node constraints
-- [ ] Add `bootstrapConnections(ws)` in `client.tsx` — called after load, establishes remotes
-- [ ] Update `connectedGraphs` to show remote connection status
-- [ ] Handle connection errors gracefully with diagnostics
-- [ ] Reconnect when constraint data changes
+- [x] Add `getConnectionConfig(ws)` helper in `workspace.ts` — reads connection config from root node's constraint data, returns null for empty/missing URL (purely local workspace)
+- [x] Reactive `useEffect` in `client.tsx` — bootstraps remote connection on load, reconnects when config changes (JSON snapshot diff), disconnects stale remotes
+- [x] `connectedGraphs` updated to show remote connection status (connected/failed with error message)
+- [x] Connection errors handled gracefully — failed remotes shown as disconnected with error label, no crash
+- [x] `toggleGraph` in ConnectedGraphsBtn wired to `connectRemote`/`disconnectRemote` — manual reconnect/disconnect
+- [x] 3 unit tests for `getConnectionConfig` (no constraint, empty URL, valid URL)
+- [x] `deno task ci` passes — 343 tests, all checks green
 
 ### Phase 5: Full-fidelity code round-trip (data, metadata, constraints)
 
@@ -407,6 +409,7 @@ export function disconnectRemote(id: string): void;
 - Should the workspace root be deletable? Probably not — if deleted, recreate it automatically.
 - How to handle auth credentials securely? For now, stored in node data (local IndexedDB). Future:
   credential store or OAuth flow.
+- **Multiple local databases (future scope):** Currently there is one local embedded db (`mem://` via WASM). For multi-user scenarios and easier testing of multi-database setups without remote infrastructure, it would be useful to spin up multiple independent local databases. The connection pool already supports this architecturally (`getDb(connectionId)` dispatches by id), but `connectRemote` currently assumes a WebSocket URL. A future `connectLocal(id)` could create additional `mem://` instances in the same WASM engine, or the `workspace.connections` constraint could accept a `local://` scheme that routes to an in-process database. This would also support offline-first workflows where a "remote" database is actually a local replica.
 - Should remote connection status be reactive (live query / subscription)? Defer — poll or manual
   refresh for now.
 - **Tab name on root node:** The tab's display name could live as a property on the root node (it's

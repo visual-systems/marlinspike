@@ -15,6 +15,7 @@ import {
   defaultConstraintsPanel,
   defaultPanel,
   getActiveTab,
+  getConnectionConfig,
   type ListEditorConfig,
   loadDatabaseSnapshot,
   loadState,
@@ -30,7 +31,15 @@ import {
 } from "./workspace.ts";
 import { flushSync, scheduleSyncToDb, setSyncBaseline } from "./db/sync.ts";
 import { createDatabase } from "./db/operations.ts";
-import { exportDb, useDatabase, useUiDb } from "./db/surreal.ts";
+import {
+  type ConnectionConfig,
+  connectRemote,
+  disconnectRemote,
+  exportDb,
+  remoteConnectionIds,
+  useDatabase,
+  useUiDb,
+} from "./db/surreal.ts";
 import { saveDump } from "./db/bridge.ts";
 
 // Module-level flag: skip baseline reset when addTab handles its own persistence
@@ -115,6 +124,93 @@ function App() {
     if (!dbError) {
       scheduleSyncToDb(ws);
     }
+  }, [ws]);
+
+  // ---------------------------------------------------------------------------
+  // Remote connections — bootstrap on load, reconnect when config changes
+  // ---------------------------------------------------------------------------
+  const remoteConfigRef = useRef<string>(""); // JSON snapshot for change detection
+  useEffect(() => {
+    if (!ws) return;
+    const config = getConnectionConfig(ws);
+    const configJson = config ? JSON.stringify(config) : "";
+
+    // Skip if nothing changed
+    if (configJson === remoteConfigRef.current) return;
+    remoteConfigRef.current = configJson;
+
+    if (!config) {
+      // No remote URL — disconnect any active remote and keep local-only connectedGraphs
+      for (const id of remoteConnectionIds()) {
+        disconnectRemote(id);
+      }
+      setWs((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          connectedGraphs: prev.connectedGraphs.filter((g) => g.required),
+        };
+      });
+      return;
+    }
+
+    // Attempt remote connection
+    const connConfig: ConnectionConfig = {
+      url: config.url,
+      namespace: config.namespace,
+      database: config.database,
+      username: config.username,
+      password: config.password,
+    };
+
+    // Disconnect any stale remotes that don't match the current entityId
+    for (const id of remoteConnectionIds()) {
+      if (id !== config.entityId) disconnectRemote(id);
+    }
+
+    connectRemote(config.entityId, connConfig)
+      .then(() => {
+        console.log(`[remote] Connected: ${config.url}`);
+        setWs((prev) => {
+          if (!prev) return prev;
+          const existing = prev.connectedGraphs.filter(
+            (g) => g.id !== config.entityId,
+          );
+          return {
+            ...prev,
+            connectedGraphs: [
+              ...existing,
+              {
+                id: config.entityId,
+                label: config.url,
+                connected: true,
+                required: false,
+              },
+            ],
+          };
+        });
+      })
+      .catch((err) => {
+        console.error(`[remote] Connection failed: ${config.url}`, err);
+        setWs((prev) => {
+          if (!prev) return prev;
+          const existing = prev.connectedGraphs.filter(
+            (g) => g.id !== config.entityId,
+          );
+          return {
+            ...prev,
+            connectedGraphs: [
+              ...existing,
+              {
+                id: config.entityId,
+                label: `${config.url} (failed: ${String(err).slice(0, 60)})`,
+                connected: false,
+                required: false,
+              },
+            ],
+          };
+        });
+      });
   }, [ws]);
 
   const update: Updater = (fn) =>
@@ -659,12 +755,44 @@ function ConnectedGraphsBtn({ ws, update }: { ws: WorkspaceState; update: Update
   const connectedCount = ws.connectedGraphs.filter((g) => g.connected).length;
 
   function toggleGraph(id: string) {
-    update((s) => ({
-      ...s,
-      connectedGraphs: s.connectedGraphs.map((g) =>
-        g.id === id && !g.required ? { ...g, connected: !g.connected } : g
-      ),
-    }));
+    const graph = ws.connectedGraphs.find((g) => g.id === id);
+    if (!graph || graph.required) return;
+
+    if (graph.connected) {
+      // Disconnect remote
+      disconnectRemote(id);
+      update((s) => ({
+        ...s,
+        connectedGraphs: s.connectedGraphs.map((g) => g.id === id ? { ...g, connected: false } : g),
+      }));
+    } else {
+      // Reconnect — read config from root node and connect
+      const config = getConnectionConfig(ws);
+      if (config && config.entityId === id) {
+        connectRemote(id, {
+          url: config.url,
+          namespace: config.namespace,
+          database: config.database,
+          username: config.username,
+          password: config.password,
+        }).then(() => {
+          update((s) => ({
+            ...s,
+            connectedGraphs: s.connectedGraphs.map((g) =>
+              g.id === id ? { ...g, connected: true, label: config.url } : g
+            ),
+          }));
+        }).catch((err) => {
+          console.error(`[remote] Reconnect failed: ${config.url}`, err);
+          update((s) => ({
+            ...s,
+            connectedGraphs: s.connectedGraphs.map((g) =>
+              g.id === id ? { ...g, connected: false, label: `${config.url} (failed)` } : g
+            ),
+          }));
+        });
+      }
+    }
   }
 
   return (

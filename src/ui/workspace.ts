@@ -233,6 +233,43 @@ export function ensureWorkspaceConstraint(
   };
 }
 
+/**
+ * Read the connection config from the workspace root node's data.
+ * Returns null if the root has no workspace.connections constraint applied
+ * or if the URL is empty (purely local workspace).
+ */
+export function getConnectionConfig(
+  ws: WorkspaceState,
+): {
+  entityId: string;
+  url: string;
+  namespace?: string;
+  database?: string;
+  username?: string;
+  password?: string;
+} | null {
+  const rootId = getWorkspaceRootId(ws);
+  const cId = WORKSPACE_CONNECTIONS_CONSTRAINT.id;
+  const app = ws.constraintApplications.find(
+    (a) => a.constraintId === cId && a.entityId === rootId,
+  );
+  if (!app) return null;
+  const root = getWorkspaceRoot(ws);
+  if (!root) return null;
+  const url = typeof root.data.url === "string" ? root.data.url.trim() : "";
+  if (!url) return null;
+  return {
+    entityId: rootId,
+    url,
+    namespace: typeof root.data.namespace === "string"
+      ? root.data.namespace || undefined
+      : undefined,
+    database: typeof root.data.database === "string" ? root.data.database || undefined : undefined,
+    username: typeof root.data.username === "string" ? root.data.username || undefined : undefined,
+    password: typeof root.data.password === "string" ? root.data.password || undefined : undefined,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
