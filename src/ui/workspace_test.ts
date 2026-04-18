@@ -229,11 +229,13 @@ Deno.test("getConnectionConfig: returns config when URL is set", () => {
   const rootNode = {
     ...makeRootNode(rootId, []),
     data: {
-      url: "wss://db.example.com/rpc",
-      namespace: "prod",
-      database: "main",
-      username: "",
-      password: "",
+      connection: {
+        url: "wss://db.example.com/rpc",
+        namespace: "prod",
+        database: "main",
+        username: "",
+        password: "",
+      },
     },
   };
   const ws = minimalWs({

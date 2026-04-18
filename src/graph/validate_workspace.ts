@@ -23,7 +23,13 @@ export type DataPropertySchema =
   | { type: "integer"; minimum?: number; default?: number }
   | { type: "number"; minimum?: number; default?: number }
   | { type: "string"; default?: string }
-  | { type: "boolean"; default?: boolean };
+  | { type: "boolean"; default?: boolean }
+  | {
+    type: "object";
+    default?: Record<string, unknown>;
+    properties?: Record<string, DataPropertySchema>;
+    required?: string[];
+  };
 
 /** Declares the shape of a constraint type's `data` field. */
 export interface ConstraintDataSchema {
@@ -146,18 +152,28 @@ const registry: Record<string, ConstraintTypeDefinition> = {
     dataSchema: { properties: {} },
     entityDataSchema: {
       properties: {
-        url: { type: "string", default: "" },
-        namespace: { type: "string", default: "" },
-        database: { type: "string", default: "" },
-        username: { type: "string", default: "" },
-        password: { type: "string", default: "" },
+        connection: {
+          type: "object",
+          default: { url: "", namespace: "", database: "", username: "", password: "" },
+          properties: {
+            url: { type: "string", default: "" },
+            namespace: { type: "string", default: "" },
+            database: { type: "string", default: "" },
+            username: { type: "string", default: "" },
+            password: { type: "string", default: "" },
+          },
+          required: ["url"],
+        },
       },
-      required: ["url"],
+      required: ["connection"],
     },
     evaluate(constraint, entity) {
       const diags: Diagnostic[] = [];
       const name = entity.label || entity.id;
-      const url = entity.data.url;
+      const conn = entity.data.connection;
+      const url = typeof conn === "object" && conn !== null
+        ? (conn as Record<string, unknown>).url
+        : undefined;
 
       if (typeof url !== "string" || url.trim().length === 0) {
         diags.push({

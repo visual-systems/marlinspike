@@ -256,17 +256,18 @@ export function getConnectionConfig(
   if (!app) return null;
   const root = getWorkspaceRoot(ws);
   if (!root) return null;
-  const url = typeof root.data.url === "string" ? root.data.url.trim() : "";
+  const conn = root.data.connection;
+  if (typeof conn !== "object" || conn === null) return null;
+  const c = conn as Record<string, unknown>;
+  const url = typeof c.url === "string" ? c.url.trim() : "";
   if (!url) return null;
   return {
     entityId: rootId,
     url,
-    namespace: typeof root.data.namespace === "string"
-      ? root.data.namespace || undefined
-      : undefined,
-    database: typeof root.data.database === "string" ? root.data.database || undefined : undefined,
-    username: typeof root.data.username === "string" ? root.data.username || undefined : undefined,
-    password: typeof root.data.password === "string" ? root.data.password || undefined : undefined,
+    namespace: typeof c.namespace === "string" ? c.namespace || undefined : undefined,
+    database: typeof c.database === "string" ? c.database || undefined : undefined,
+    username: typeof c.username === "string" ? c.username || undefined : undefined,
+    password: typeof c.password === "string" ? c.password || undefined : undefined,
   };
 }
 

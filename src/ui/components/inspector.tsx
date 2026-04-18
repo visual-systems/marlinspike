@@ -464,39 +464,59 @@ function EntityConstraintFields(
 
   if (schemas.length === 0) return null;
 
-  function setField(key: string, value: unknown) {
+  function setField(path: string[], value: unknown) {
     update((s) =>
       withNodeMutation(s, (nodes) =>
-        updateNodeInTree(nodes, entityId, (n) => ({
-          ...n,
-          data: { ...n.data, [key]: value },
-          version: n.version + 1,
-        })))
+        updateNodeInTree(nodes, entityId, (n) => {
+          const data = { ...n.data };
+          if (path.length === 1) {
+            data[path[0]] = value;
+          } else {
+            // Nested path: e.g. ["connection", "url"]
+            const parent = { ...(data[path[0]] as Record<string, unknown> ?? {}) };
+            parent[path[1]] = value;
+            data[path[0]] = parent;
+          }
+          return { ...n, data, version: n.version + 1 };
+        }))
     );
   }
 
-  // Collect all fields across all applied constraint schemas.
-  const allFields: Array<
-    { key: string; schema: import("../../graph/validate_workspace.ts").DataPropertySchema }
-  > = [];
+  // Collect all fields across all applied constraint schemas, flattening one level of objects.
+  const allFields: Array<{
+    path: string[];
+    label: string;
+    schema: import("../../graph/validate_workspace.ts").DataPropertySchema;
+  }> = [];
   const entity = findNode(ws.treeNodes, entityId);
   for (const { schema } of schemas) {
     for (const [key, prop] of Object.entries(schema.properties)) {
-      allFields.push({ key, schema: prop });
+      if (prop.type === "object" && prop.properties) {
+        for (const [subKey, subProp] of Object.entries(prop.properties)) {
+          allFields.push({ path: [key, subKey], label: subKey, schema: subProp });
+        }
+      } else {
+        allFields.push({ path: [key], label: key, schema: prop });
+      }
     }
   }
 
   return (
     <div style="display:flex; flex-direction:column; gap:6px;">
-      {allFields.map(({ key, schema }) => (
-        <DataField
-          key={key}
-          fieldKey={key}
-          schema={schema}
-          value={entity?.data[key]}
-          onChange={(v) => setField(key, v)}
-        />
-      ))}
+      {allFields.map(({ path, label, schema }) => {
+        const value = path.length === 1
+          ? entity?.data[path[0]]
+          : (entity?.data[path[0]] as Record<string, unknown> | undefined)?.[path[1]];
+        return (
+          <DataField
+            key={path.join(".")}
+            fieldKey={label}
+            schema={schema}
+            value={value}
+            onChange={(v) => setField(path, v)}
+          />
+        );
+      })}
     </div>
   );
 }

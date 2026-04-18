@@ -773,7 +773,7 @@ Deno.test("node meta: emits data fields in reader metadata", () => {
     version: 1,
   };
   const clj = graphToSpike([node], []);
-  assertEquals(clj, `(def ^{:description "A service" :priority 5} my-service)`);
+  assertEquals(clj, `(def ^{:data {:description "A service" :priority 5}} my-service)`);
 });
 
 Deno.test("node meta: emits uri in reader metadata", () => {
@@ -805,7 +805,7 @@ Deno.test("node meta: emits id + uri + data together", () => {
   const clj = graphToSpike([node], []);
   assertEquals(
     clj,
-    `(def ^{:id "${TEST_UUID}" :uri "spike://example" :color "red"} my-node)`,
+    `(def ^{:id "${TEST_UUID}" :uri "spike://example" :data {:color "red"}} my-node)`,
   );
 });
 
@@ -819,7 +819,7 @@ Deno.test("node meta: empty strings in data are not emitted", () => {
     version: 1,
   };
   const clj = graphToSpike([node], []);
-  assertEquals(clj, `(def ^{:name "ok"} svc)`);
+  assertEquals(clj, `(def ^{:data {:name "ok"}} svc)`);
 });
 
 Deno.test("node meta: internal data keys (fn, argOrder) are not emitted", () => {
@@ -832,7 +832,7 @@ Deno.test("node meta: internal data keys (fn, argOrder) are not emitted", () => 
     version: 1,
   };
   const clj = graphToSpike([node], []);
-  assertEquals(clj, `(def ^{:visible true} x1)`);
+  assertEquals(clj, `(def ^{:data {:visible true}} x1)`);
 });
 
 Deno.test("node meta: parser extracts uri from metadata", () => {
@@ -844,7 +844,7 @@ Deno.test("node meta: parser extracts uri from metadata", () => {
 });
 
 Deno.test("node meta: parser extracts data fields from metadata", () => {
-  const src = `(def ^{:description "A service" :priority 5} my-service)`;
+  const src = `(def ^{:data {:description "A service" :priority 5}} my-service)`;
   const { treeNodes, errors } = spikeToGraph(src);
   assertEquals(errors, []);
   assertEquals(treeNodes[0].data.description, "A service");

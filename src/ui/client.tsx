@@ -14,6 +14,7 @@ import {
   defaultCodePanel,
   defaultConstraintsPanel,
   defaultPanel,
+  ensureWorkspaceConstraint,
   getActiveTab,
   getConnectionConfig,
   type ListEditorConfig,
@@ -368,11 +369,10 @@ function WorkspaceBar(
             panels: [defaultPanel()],
           }],
           activeTabId: tabId,
-          // New empty database with workspace root
+          // New empty database with workspace root + builtin constraint
           treeNodes: [makeRootNode(rootNodeId, [])],
           edges: [],
-          constraints: [],
-          constraintApplications: [],
+          ...ensureWorkspaceConstraint([], [], rootNodeId),
           focusId: rootNodeId,
           canvasExpandedNodes: [],
           canvasNodePositions: {},

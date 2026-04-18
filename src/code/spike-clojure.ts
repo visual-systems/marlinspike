@@ -40,13 +40,13 @@ const INTERNAL_DATA_KEYS = new Set(["fn", "argOrder"]);
 
 /**
  * Return the def/defn name form, optionally prefixed with `^{...}` reader
- * metadata containing `:id`, `:uri`, and user data fields.
+ * metadata containing `:id`, `:uri`, and `:data`.
  *
  * Metadata is emitted when the node carries information beyond its label:
  *   - `:id` — only when the node's id is a genuine UUID (opaque, not label-derived)
  *   - `:uri` — when the node has a URI
- *   - user data fields — non-empty values from `node.data`, excluding codec-internal
- *     keys (`fn`, `argOrder`) which are reconstructed from call syntax
+ *   - `:data` — a nested map of user data fields from `node.data`, excluding
+ *     codec-internal keys (`fn`, `argOrder`) which are reconstructed from call syntax
  *
  * When there is nothing to emit, returns the bare label.
  */
@@ -58,10 +58,15 @@ function nameWithIdMeta(node: TreeNode): string {
   if (node.uri) {
     entries.push(`:uri ${JSON.stringify(node.uri)}`);
   }
+  // Emit user data fields nested under :data {...}
+  const dataEntries: string[] = [];
   for (const [k, v] of Object.entries(node.data)) {
     if (INTERNAL_DATA_KEYS.has(k)) continue;
     const emitted = emitDataValue(v);
-    if (emitted !== null) entries.push(`:${k} ${emitted}`);
+    if (emitted !== null) dataEntries.push(`:${k} ${emitted}`);
+  }
+  if (dataEntries.length > 0) {
+    entries.push(`:data {${dataEntries.join(" ")}}`);
   }
   if (entries.length === 0) return node.label;
   return `^{${entries.join(" ")}} ${node.label}`;
@@ -109,12 +114,9 @@ function extractIdMeta(nameForm: SExp): string | undefined {
   return undefined;
 }
 
-/** Metadata keys that are handled specially (not stored in node.data). */
-const SPECIAL_META_KEYS = new Set(["id", "uri"]);
-
 /**
  * Extract all metadata from a name form's reader metadata.
- * Returns `{ uri, data }` where data contains all non-special keyword entries.
+ * Returns `{ uri, data }` where data contains entries from the `:data` map.
  */
 function extractNameMeta(nameForm: SExp): {
   uri: string | undefined;
@@ -123,13 +125,14 @@ function extractNameMeta(nameForm: SExp): {
   const meta = nameForm.meta;
   if (!meta || meta.type !== "map") return { uri: undefined, data: {} };
   let uri: string | undefined;
-  const data: Record<string, unknown> = {};
+  let data: Record<string, unknown> = {};
   for (const [k, v] of meta.entries) {
     if (k.type !== "keyword") continue;
     if (k.value === "uri" && v.type === "string") {
       uri = v.value;
-    } else if (!SPECIAL_META_KEYS.has(k.value)) {
-      data[k.value] = sexpToValue(v);
+    } else if (k.value === "data" && v.type === "map") {
+      // Unwrap :data map into node.data
+      data = sexpToValue(v) as Record<string, unknown>;
     }
   }
   return { uri, data };
