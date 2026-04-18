@@ -43,7 +43,7 @@ jobs:
         id: preview
         run: |
           BRANCH="${{ github.head_ref || github.ref_name }}"
-          SLUG=$(echo "$BRANCH" | tr '/' '-' | tr '[:upper:]' '[:lower:]')
+          SLUG=$(echo "$BRANCH" | tr -d '/' | tr '[:upper:]' '[:lower:]')
           URL="https://marlinspike--${SLUG}.sordina.deno.net"
           echo "url=$URL" >> $GITHUB_OUTPUT
 
