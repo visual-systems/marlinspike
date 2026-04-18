@@ -551,14 +551,14 @@ export function disconnectRemote(id: string): void;
 
 ## Verification
 
-- [ ] Existing data loads correctly after root node migration (no visual change)
-- [ ] New tabs have a root node
-- [ ] Adding nodes at root level works (becomes child of workspace root)
-- [ ] Focus navigation: "(root)" still works, breadcrumbs don't show workspace root
-- [ ] `workspace.connections` constraint renders connection fields in inspector
-- [ ] Invalid connection URL produces a diagnostic
-- [ ] Connection pool: local DB works identically to before
-- [ ] Remote connection: configuring a valid wss:// URL establishes connection
-- [ ] `connectedGraphs` dropdown shows remote connection status
-- [ ] Removing connection constraint disconnects the remote
-- [ ] `deno task ci` passes after each phase
+- [x] Existing data loads correctly after root node migration (no visual change)
+- [x] New tabs have a root node
+- [x] Adding nodes at root level works (becomes child of workspace root)
+- [x] Focus navigation: "(root)" still works, breadcrumbs don't show workspace root
+- [x] `workspace.connections` constraint renders connection fields in inspector
+- [x] Invalid connection URL produces a diagnostic
+- [x] Connection pool: local DB works identically to before
+- [x] Remote connection: configuring a valid ws:// URL establishes connection
+- [x] `connectedGraphs` dropdown shows remote connection status
+- [x] Removing connection constraint disconnects the remote
+- [x] `deno task ci` passes after each phase — 358 tests, all checks green
