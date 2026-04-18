@@ -1,6 +1,5 @@
 import { Hono } from "@hono/hono";
 import { parseArgs } from "@std/cli/parse-args";
-import { bundle } from "@deno/emit";
 import { App } from "./src/ui/App.tsx";
 import { StoriesShell } from "./src/ui/StoriesShell.tsx";
 
@@ -30,6 +29,7 @@ app.get("/health", (c) => c.json({ name: "marlinspike", status: "ok" }));
 
 app.get("/client.js", async (c) => {
   if (clientJs) return c.body(clientJs, 200, { "content-type": "application/javascript" });
+  const { bundle } = await import("@deno/emit");
   const { code } = await bundle(new URL("./src/ui/client.tsx", import.meta.url), {
     importMap: importMapURL,
   });
@@ -37,6 +37,7 @@ app.get("/client.js", async (c) => {
 });
 app.get("/stories.js", async (c) => {
   if (storiesJs) return c.body(storiesJs, 200, { "content-type": "application/javascript" });
+  const { bundle } = await import("@deno/emit");
   const { code } = await bundle(new URL("./src/ui/stories/main.tsx", import.meta.url), {
     importMap: importMapURL,
   });

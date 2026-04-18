@@ -25,8 +25,8 @@ fresh and committed so Deno Deploy can serve them.
 
 ## Open Questions
 
-- `@deno/emit` is imported unconditionally in `mod.tsx` even though it's only used in dev mode.
-  Consider making the import dynamic or removing the dev fallback — deferred to future work.
+- ~~`@deno/emit` is imported unconditionally in `mod.tsx` even though it's only used in dev mode.~~
+  Resolved: converted to dynamic `await import("@deno/emit")` inside the dev-only request handlers.
 
 ## Verification
 
