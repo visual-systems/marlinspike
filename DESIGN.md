@@ -938,19 +938,19 @@ and produces an artifact or side effect.
 
 ### Phase 1 — Core (MVP)
 
-- [ ] Base graph JSON schema (nodes, edges, port nodes, open properties, URIs)
-- [ ] CRDT graph store per subgraph URI (Automerge)
-- [ ] Minimal canvas UI (place nodes, draw edges, enter/exit subgraphs)
-- [ ] Tree view panel (rose-tree navigation, sync with canvas)
-- [ ] Live validation of the _base format_ constraint (internally implemented with JSON Schema, but
+- [x] Base graph JSON schema (nodes, edges, port nodes, open properties, URIs)
+- [x] Graph store per subgraph URI (SurrealDB embedded WASM, not Automerge — see §14)
+- [x] Minimal canvas UI (place nodes, draw edges, enter/exit subgraphs)
+- [x] Tree view panel (rose-tree navigation, sync with canvas)
+- [x] Live validation of the _base format_ constraint (internally implemented with JSON Schema, but
       surfaced through the constraint interface — not as raw JSON Schema errors)
-- [ ] Save/load graph from disk
+- [x] Save/load graph (browser persistence via SurrealDB + IndexedDB bridge — see §14)
 
 ### Phase 2 — Ports and Structure
 
-- [ ] Port node schema and typed edge validation
+- [x] Port node schema and typed edge validation
 - [ ] Sibling-only communication enforcement
-- [ ] Multiple port nodes per composite node
+- [x] Multiple port nodes per composite node
 - [ ] Port interface compatibility checking
 
 ### Phase 3 — Extensibility (Schema Plugin Foundation)
@@ -958,27 +958,28 @@ and produces an artifact or side effect.
 This phase lays the groundwork for the modular type system described in §5. The goal is a working
 plugin protocol and a first real schema — not a full ecosystem.
 
-- [ ] Constraint plugin protocol (Graph Protocol Layer — §5.4)
-- [ ] Schema activation: `activeSchemas` list on graph and per-entity, runtime-editable
+- [x] Constraint plugin protocol (in-process registry with `ConstraintTypeDefinition.evaluate`,
+      not stdio JSON-RPC — see `validate_workspace.ts`)
+- [x] Schema activation: `activeSchemas` list on graph and per-entity, runtime-editable
 - [ ] Monoid composition enforced: schemas are order-independent; adding/removing schemas is always
       valid (never crashes the IDE)
 - [ ] First constraint plugin (typed dataflow topology schema)
-- [ ] Modal validation: speculative mode (live diagnostics, no blocking) implemented first
+- [x] Modal validation: speculative mode (live diagnostics, no blocking) implemented first
 - [ ] Diagnostic overlay on canvas and tree view
 - [ ] Palette populated from active schemas
 
 ### Phase 4 — Implementations
 
-- [ ] Alternative implementation system
-- [ ] Global and local implementation selection
+- [x] Alternative implementation system (data model: `Node.implementations`)
+- [x] Global and local implementation selection (data model: `Graph.activeImplementation`)
 - [ ] Implementation interface validation
 - [ ] Test/mock implementation workflow
 - [ ] Frontend prototype target (rjsf from top-level port schemas)
 
 ### Phase 5 — Layout and Personas
 
-- [ ] Bottom-up force layout (sibling-scoped forces)
-- [ ] Persona definition and storage
+- [x] Bottom-up force layout (sibling-scoped forces; multiple algorithms: SDF, FIELD, JANK, TOPOGRID)
+- [x] Persona definition and storage
 - [ ] Persona filter application in canvas and tree view
 - [ ] URI sharing with persona query parameter
 
@@ -1013,7 +1014,7 @@ protocol; Phase 8 makes it networked, composable, and externally distributable.
 
 ### Phase 9 — Code Interface
 
-- [ ] Spike-Lisp serialiser and parser (round-trip with JSON graph format)
+- [x] Spike-Lisp serialiser and parser (Spike-Clojure variant — round-trip with graph format)
 - [ ] MCP server with core read/write/validate tools
 - [ ] `suggestion` field required in all constraint plugin diagnostics
 - [ ] `graph_patch` partial diff support
@@ -1026,17 +1027,16 @@ protocol; Phase 8 makes it networked, composable, and externally distributable.
 
 | Layer              | Candidate                        | Notes                                         |
 | ------------------ | -------------------------------- | --------------------------------------------- |
-| Graph store        | Automerge (JS/Rust)              | Better Rust interop; per-URI documents        |
-| UI                 | TypeScript + React               | Already in `marlinspike/ui`                   |
-| Canvas rendering   | React Flow or custom SVG         | React Flow for speed; custom for full control |
-| Tree view          | Custom React component           | Needs tight sync with canvas                  |
-| Force layout       | d3-force                         | Scoped per subgraph level; composable         |
-| Constraint plugins | stdio JSON-RPC (LSP-style)       | Language-agnostic, proven pattern             |
+| Graph store        | SurrealDB (WASM, `mem://`)       | Per-tab databases; IndexedDB bridge for persistence (see §14) |
+| UI                 | TypeScript + Hono JSX DOM        | Server: Hono; client: Hono JSX DOM (not React) |
+| Canvas rendering   | Custom SVG                       | Full control; custom force layout algorithms  |
+| Tree view          | Custom Hono JSX component        | Tight sync with canvas                        |
+| Force layout       | Custom (SDF, FIELD, JANK, TOPOGRID) | Scoped per subgraph level; composable      |
+| Constraint plugins | In-process TypeScript registry   | `ConstraintTypeDefinition.evaluate` functions |
 | Base schema        | JSON Schema Draft 2020-12        | Widest tooling support                        |
-| Haskell backend    | Servant + existing repos         | Constraint plugins and runtime targets        |
-| Serialisation      | JSON (base) + MessagePack (wire) | JSON for tooling; MessagePack for performance |
+| Serialisation      | JSON (base) + SurrealQL (persistence) | SurrealQL dumps for IndexedDB bridge    |
 | URI resolution     | Custom resolver                  | Local file, remote HTTP, version registry     |
-| Code interface     | MCP server + Spike-Lisp          | See §13                                       |
+| Code interface     | MCP server + Spike-Clojure       | Parser/serialiser done; MCP server planned (§13) |
 
 ---
 
