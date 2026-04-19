@@ -35,6 +35,16 @@ demos. Update DESIGN.md to describe the examples convention and reference the fo
   possible, with comments explaining features that go beyond the current parser.
 - ~~How detailed should the source files be vs. the READMEs?~~ Resolved: READMEs carry the vision;
   source files are concise sketches with comments for unimplemented features.
+- **How to synchronise source files with a live graph?** Three candidate approaches documented in
+  DESIGN.md §13.6:
+  - **A. CLI → MCP** — one-shot `marlinspike push` that parses `.clj` files and pushes via MCP
+    `graph_write`. Lightest weight; needs MCP server (Phase 9) first.
+  - **B. File watcher ↔ graph sync** — bidirectional sync between a directory of `.clj` files and
+    a live graph. Needs conflict resolution and file-to-subgraph mapping conventions.
+  - **C. Headless sync node** — `marlinspike serve` as a headless process that mediates between
+    file state, local graph, and remote peers. Full collaboration story with files as a participant.
+  - A → B → C is a natural progression. Starting point depends on which workflow is most
+    immediately useful.
 
 ## Verification
 
