@@ -1398,13 +1398,11 @@ The current persistence model is a single-user, single-browser solution. The pat
   with pre-configured schemas and constraint plugins.
 - **Embeddable explorer UI** — an iframe-embeddable, read-only (or limited-edit) canvas for use in
   documentation, demos, and interactive examples.
-- **Spike-Lisp as documentation syntax** — the Lisp-like notation is human-readable enough to use
-  directly in documentation examples. Candidate examples:
-  - _Solar calculator_ — input roof geometry, proposed panel placement, and geographic data; output
-    predicted yield
-  - _J program editor_ — array-language program as a typed dataflow graph
-  - _Kubernetes services configuration_ — define a cluster with inter-service communication
-    formalised over typed port APIs or message queues
+- **Spike-Clojure as documentation syntax** — the Clojure-subset notation is human-readable enough
+  to use directly in documentation and vision sketches. See [`examples/`](examples/) for
+  aspirational examples that illustrate how Marlinspike applies to different domains (CI/CD
+  pipelines, scientific calculations, Clojure project isomorphism). These examples envision future
+  capabilities and should be revisited periodically as implementation progresses.
 
 ---
 
