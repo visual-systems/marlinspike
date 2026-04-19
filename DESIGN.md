@@ -4,7 +4,7 @@
 
 ---
 
-## 1. Vision
+## Vision
 
 Marlinspike is a general-purpose **dataflow graph IDE** — a tool for authoring, validating,
 collaborating on, and targeting graphs to downstream runtimes.
@@ -27,7 +27,7 @@ top of the base graph format — not by building separate tools.
 
 ---
 
-## 2. Guiding Principles
+## Guiding Principles
 
 - **Graph as source of truth.** The serialised graph is what you save, version, and hand to a
   runtime. All views derive from it.
@@ -56,7 +56,7 @@ top of the base graph format — not by building separate tools.
 
 ---
 
-## 3. Architecture Overview
+## Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -95,9 +95,9 @@ top of the base graph format — not by building separate tools.
 
 ---
 
-## 4. Data Model
+## Data Model
 
-### 4.1 Graph as Rose-Tree
+### Graph as Rose-Tree
 
 The fundamental structure is a **rose-tree of subgraphs**. Every node in a graph is either:
 
@@ -122,7 +122,7 @@ system/
   └── service-b          (composite)
 ```
 
-### 4.2 Sibling Communication and Port Nodes
+### Sibling Communication and Port Nodes
 
 **Only sibling nodes may communicate directly.** A node communicates with the outside world
 exclusively through **port nodes** — special nodes at the boundary of its parent subgraph.
@@ -167,7 +167,7 @@ compatible port types, giving the constraint system something meaningful to chec
 }
 ```
 
-### 4.3 Base Graph Format
+### Base Graph Format
 
 ```jsonc
 {
@@ -185,7 +185,7 @@ compatible port types, giving the constraint system something meaningful to chec
       "kind": "node" | "port",
       "label": "My Node",
       "subgraph": "<uri>" | null,             // null = leaf node
-      "implementations": {                    // alternative impls (see §4.4)
+      "implementations": {                    // alternative impls (see Alternative Implementations)
         "<impl-id>": {
           "label": "Test mock",
           "subgraph": "<uri>",
@@ -209,7 +209,7 @@ compatible port types, giving the constraint system something meaningful to chec
 }
 ```
 
-### 4.4 Alternative Implementations
+### Alternative Implementations
 
 A composite node may have multiple **alternative implementations** — different subgraphs that
 satisfy the same port interface. Implementations are selected:
@@ -232,7 +232,7 @@ Implementations must satisfy the same port interface as the default subgraph. Th
 validates this. Selecting an implementation does not change the structural graph — only which
 subgraph URI is resolved at compile/run time.
 
-### 4.5 Subgraph URIs and Addressability
+### Subgraph URIs and Addressability
 
 Every subgraph has a URI of the form:
 
@@ -271,9 +271,9 @@ and resolver treat it as opaque; algorithm selection is a storage/registry conce
 
 ---
 
-## 5. Constraint System
+## Constraint System
 
-### 5.1 Schemas as a Modular Type System
+### Schemas as a Modular Type System
 
 The constraint system is best understood as a **modular, networked type system** with the IDE as the
 type-checker client and schema plugins as the type-checker servers. The analogy to LSP is
@@ -295,7 +295,7 @@ behind the plugin protocol. JSON Schema is one valid authoring format for writin
 definition, not the interface you work with at runtime. You would deal with JSON Schema directly
 only when _authoring or publishing_ a new constraint plugin.
 
-### 5.2 Schema Composition: Commutative Monoid
+### Schema Composition: Commutative Monoid
 
 The set of active schemas on any entity forms a **commutative monoid**:
 
@@ -308,7 +308,7 @@ The set of active schemas on any entity forms a **commutative monoid**:
 **Compatibility** is a separate concern from composition. Two schemas are _compatible_ if their
 combined effect is consistent — no entity can simultaneously satisfy and violate the same
 constraint. Incompatible schemas can still both be active; the constraint system surfaces the
-tension as diagnostics (see §8.3 for topology schema examples). The author decides whether to
+tension as diagnostics (see Topology Schemas for examples). The author decides whether to
 resolve the tension or leave it open.
 
 Schemas are applied to any entity in the graph:
@@ -327,7 +327,7 @@ exposes a specific port interface, satisfies a topology constraint, or carries c
 annotations — without reading the remote graph's internals. The constraint plugin resolves the URI
 and validates the boundary.
 
-### 5.3 Modal Validation
+### Modal Validation
 
 Validation operates in two modes, settable per context (per-graph, per-persona, or at the IDE
 session level):
@@ -394,7 +394,7 @@ port-like concepts that don't map to `Port` can still live in `data`. If a riche
 needed later, `Port` can be extended or a separate mechanism introduced; the optional field causes
 no breakage.
 
-### 5.4 Protocol
+### Protocol
 
 The constraint system is modelled closely on the **Language Server Protocol (LSP)**. The IDE is the
 client; constraint plugins are servers. The IDE has no domain knowledge — it only knows how to route
@@ -413,9 +413,9 @@ IDE  ◀─graph/compileResponse────────────  Constraint
 
 Diagnostics carry a severity (error, warning, info), a location (node id, edge id, port node id, or
 graph-level), a message, and a `suggestion` field (required for AI workflow compatibility — see
-§13). The UI renders them inline on the canvas and in the tree view.
+Code Interface). The UI renders them inline on the canvas and in the tree view.
 
-### 5.5 Constraint Evaluation Stages
+### Constraint Evaluation Stages
 
 | Stage            | Trigger                | Mechanism                                                   | Examples                                                                   |
 | ---------------- | ---------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -423,10 +423,10 @@ graph-level), a message, and a `suggestion` field (required for AI workflow comp
 | **Server-side**  | On demand / on save    | Constraint plugin protocol                                  | Cross-node invariants, impl interface compatibility, remote ref validation |
 | **Compile-time** | On targeting a runtime | Plugin compile hook                                         | K8s resource limits, audio buffer sizes, mock coverage                     |
 
-All three stages use the same constraint plugin protocol (§5.4). The "live" stage simply has lower
+All three stages use the same constraint plugin protocol (see Protocol). The "live" stage simply has lower
 latency requirements and tighter plugin subscription granularity.
 
-### 5.6 Constraint Authoring
+### Constraint Authoring
 
 A constraint plugin can evaluate constraints using any mechanism. Common implementation strategies:
 
@@ -452,9 +452,9 @@ Constraint plugins can be packaged and deployed as:
 
 ---
 
-## 6. UI Architecture
+## UI Architecture
 
-### 6.1 Tree View (Left Panel)
+### Tree View (Left Panel)
 
 The left panel shows the full rose-tree of the system as a collapsible tree. Each entry is a node;
 composite nodes are expandable. Selecting a node in the tree:
@@ -469,7 +469,7 @@ disorienting.
 Presence indicators (collaborator avatars) appear on the tree view entries for subgraphs that other
 users are currently viewing or editing.
 
-### 6.2 Canvas Model
+### Canvas Model
 
 The canvas is a **hybrid canvas** — spatially flexible but structurally aware. It understands:
 
@@ -483,7 +483,7 @@ The canvas is a **hybrid canvas** — spatially flexible but structurally aware.
 The canvas shows the siblings within the currently focused subgraph. Port nodes appear on the
 boundary of their parent composite node.
 
-### 6.3 Force Layout
+### Force Layout
 
 Layout uses a **bottom-up force simulation**:
 
@@ -525,7 +525,7 @@ Mutations (add node, remove node, drag) call `invalidateLevel` on the affected l
 straightforward to add correct invalidation for any future structural operation without having to
 trace through the combined sync/step logic.
 
-### 6.4 Persona Views
+### Persona Views
 
 Different users need different views of the same graph. Personas are named, shareable filters that
 control:
@@ -548,10 +548,10 @@ Example personas:
 Personas are stored in the graph (shared) or user preferences (personal) with different scopes. A
 URI can be shared with a persona: `spike://acme/backend/auth-service?persona=ops`.
 
-### 6.5 Text View
+### Text View
 
 The canvas and tree view are complemented by a **text view** — a code editor pane showing the
-currently focused subgraph as Spike-Lisp (see §13.2). Edits in the text view write to the same CRDT
+currently focused subgraph as Spike-Lisp (see Language Representations). Edits in the text view write to the same CRDT
 graph store as canvas edits; both views update in real time.
 
 The text view is backed by the same constraint plugin host that drives canvas validation — there is
@@ -560,11 +560,11 @@ diagnostics, and hover information in the text editor come from the same plugin 
 annotates nodes and edges on the canvas. This ensures the two views are genuinely isomorphic: any
 graph state reachable by canvas editing is reachable by text editing, and vice versa.
 
-The lossless round-trip guarantee of Spike-Lisp (§13.2) is therefore a **first-class architectural
+The lossless round-trip guarantee of Spike-Lisp (see Language Representations) is therefore a **first-class architectural
 requirement**, not an optimisation. Without it, the text and canvas views can diverge, and the
 isomorphism breaks.
 
-### 6.6 Subgraph Navigation
+### Subgraph Navigation
 
 - **Enter** — double-click a composite node to enter its subgraph; canvas transitions in,
   breadcrumbs update
@@ -573,7 +573,7 @@ isomorphism breaks.
 - **Share** — copy the URI of the currently focused subgraph, optionally with active persona
   appended
 
-### 6.7 Graph Authoring Interactions
+### Graph Authoring Interactions
 
 The canvas supports three interaction modes, selectable from the toolbar:
 
@@ -608,7 +608,7 @@ non-blockingly. Mistakes are cheap to undo.
   has children or connected edges)
 - **Drag-to-group** — drag one node onto another to make it a child; drag out to promote to sibling
 
-### 6.8 Deployment
+### Deployment
 
 Deployed via Deno Deploy's native GitHub integration — pushes to `main` trigger automatic
 deployment. No GitHub Action or `deployctl` CLI needed.
@@ -625,7 +625,7 @@ deployment. No GitHub Action or `deployctl` CLI needed.
 
 `dist/` is gitignored — Deno Deploy builds it automatically on each deployment.
 
-### 6.9 Collaboration
+### Collaboration
 
 Collaboration is real-time, CRDT-backed, per-subgraph-URI. Multiple users edit simultaneously.
 Presence (who is in which subgraph) is shown in both the tree view and the canvas. Merge diagnostics
@@ -633,7 +633,7 @@ from concurrent edits appear inline as constraint diagnostics — non-blocking.
 
 ---
 
-## 7. Alternative Implementations in Practice
+## Alternative Implementations in Practice
 
 **In the canvas**, a composite node with multiple implementations shows a small indicator. Clicking
 it opens an implementation switcher showing available implementations and their tags.
@@ -650,9 +650,9 @@ not a separate test configuration, but an implementation selection on the same g
 
 ---
 
-## 8. View Modes and Topology Constraints
+## View Modes and Topology Constraints
 
-### 8.1 Two Orthogonal Axes
+### Two Orthogonal Axes
 
 View mode and topology constraints are **fully decoupled**:
 
@@ -666,7 +666,7 @@ This means an actor subgraph can be viewed in pipeline mode (useful for tracing 
 though its topology schema permits cycles and dynamic dispatch. The view is a lens; the schema is a
 contract.
 
-### 8.2 Call Graph vs. Pipeline — One Representation, Two Views
+### Call Graph vs. Pipeline — One Representation, Two Views
 
 The underlying data model is always the same: a directed graph of identity-bearing nodes with typed
 port nodes. Both major paradigms map onto this without structural distinction:
@@ -686,7 +686,7 @@ pipeline-mode edits must always produce valid call-graph nodes:
   The equivalent is explicitly collapsing them into a named composite subgraph (the existing
   subgraph mechanism)
 
-### 8.3 Topology Schemas
+### Topology Schemas
 
 Topology schemas are optional, composable declarations of structural and operational intent. They
 are not mutually exclusive — a subgraph may carry multiple topology schemas simultaneously. Where
@@ -781,7 +781,7 @@ both active with the diagnostic as a known tension.
 }
 ```
 
-### 8.4 View Mode in Personas
+### View Mode in Personas
 
 View mode is a persona-level setting. A developer might view an actor subgraph in pipeline mode to
 trace message flow; an architect might prefer force mode to see the full topology. Any view mode can
@@ -797,7 +797,7 @@ constraint.
 }
 ```
 
-### 8.5 Layout per View Mode
+### Layout per View Mode
 
 | View mode    | Layout algorithm                    | Edge style                                                                          | Node emphasis             |
 | ------------ | ----------------------------------- | ----------------------------------------------------------------------------------- | ------------------------- |
@@ -808,7 +808,8 @@ constraint.
 
 The `text` view mode renders the subgraph as editable Spike-Lisp rather than a canvas. It is a full
 peer of the visual modes: the same constraint plugin host provides LSP-style completions and
-diagnostics, and edits write directly to the CRDT store. See §6.5 and §13 for details.
+diagnostics, and edits write directly to the CRDT store. See Text View and Code Interface for
+details.
 
 In pipeline view, edge types introduced by topology schemas are rendered distinctly:
 
@@ -822,9 +823,9 @@ In pipeline view, edge types introduced by topology schemas are rendered distinc
 
 ---
 
-## 9. Frontend Authoring
+## Frontend Authoring
 
-### 9.1 Concept
+### Concept
 
 A graph's top-level port nodes define its external interface — inputs it accepts and outputs it
 produces. This interface is already schema-typed. A frontend is therefore just a **rendering of that
@@ -834,7 +835,7 @@ cases.
 This means the same system used to design a distributed backend can also produce its UI. The graph
 is a full-stack artifact.
 
-### 9.2 Form Generation
+### Form Generation
 
 For simple cases, tools like **react-jsonschema-form** (rjsf) can generate a working frontend
 directly from the JSON Schema of the top-level input port nodes. This is the zero-effort path —
@@ -850,7 +851,7 @@ Graph top-level ports
 The generated form submits to the graph's runtime target (e.g. an HTTP port node), and renders
 responses from output port schemas. No frontend code needs to be written.
 
-### 9.3 Frontend as a Graph Layer
+### Frontend as a Graph Layer
 
 For richer UIs, the frontend itself can be authored as a graph layer — a subgraph whose nodes are UI
 components (input, display, layout) and whose edges are data bindings. This subgraph is connected to
@@ -860,7 +861,7 @@ This is the same model as the rest of the system: the frontend subgraph is just 
 node, with its own port nodes, alternative implementations (e.g. a `web` impl and a `mobile` impl),
 and schema constraints (e.g. a `ui.form` schema that validates component compatibility).
 
-### 9.4 Port Schema → UI Component Mapping
+### Port Schema → UI Component Mapping
 
 Port schemas declare not just data types but UI hints, allowing the form generator to produce
 appropriate components:
@@ -887,7 +888,7 @@ appropriate components:
 These `ui:` hints follow the rjsf convention and are optional — the generator falls back to sensible
 defaults for plain JSON Schema types.
 
-### 9.5 Frontend Runtime Target
+### Frontend Runtime Target
 
 A dedicated frontend runtime target consumes a graph with UI port schemas and emits a deployable
 frontend artifact:
@@ -901,7 +902,7 @@ frontend artifact:
 The `rjsf` target is the quick-start path. The `web` and `mobile` targets are for production
 frontends authored as graph layers.
 
-### 9.6 Implications
+### Implications
 
 - **Prototyping becomes trivial** — define your port schemas, select the `rjsf` target, get a
   working UI immediately
@@ -914,7 +915,7 @@ frontends authored as graph layers.
 
 ---
 
-## 10. Runtime Targets
+## Runtime Targets
 
 A runtime target consumes a **validated, schema-annotated, implementation-resolved graph snapshot**
 and produces an artifact or side effect.
@@ -934,17 +935,17 @@ and produces an artifact or side effect.
 
 ---
 
-## 11. Implementation Roadmap
+## Implementation Roadmap
 
 ### Phase 1 — Core (MVP)
 
 - [x] Base graph JSON schema (nodes, edges, port nodes, open properties, URIs)
-- [x] Graph store per subgraph URI (SurrealDB embedded WASM, not Automerge — see §14)
+- [x] Graph store per subgraph URI (SurrealDB embedded WASM, not Automerge — see Persistence Layer)
 - [x] Minimal canvas UI (place nodes, draw edges, enter/exit subgraphs)
 - [x] Tree view panel (rose-tree navigation, sync with canvas)
 - [x] Live validation of the _base format_ constraint (internally implemented with JSON Schema, but
       surfaced through the constraint interface — not as raw JSON Schema errors)
-- [x] Save/load graph (browser persistence via SurrealDB + IndexedDB bridge — see §14)
+- [x] Save/load graph (browser persistence via SurrealDB + IndexedDB bridge — see Persistence Layer)
 
 ### Phase 2 — Ports and Structure
 
@@ -955,7 +956,7 @@ and produces an artifact or side effect.
 
 ### Phase 3 — Extensibility (Schema Plugin Foundation)
 
-This phase lays the groundwork for the modular type system described in §5. The goal is a working
+This phase lays the groundwork for the modular type system described in Constraint System. The goal is a working
 plugin protocol and a first real schema — not a full ecosystem.
 
 - [x] Constraint plugin protocol (in-process registry with `ConstraintTypeDefinition.evaluate`,
@@ -993,12 +994,12 @@ plugin protocol and a first real schema — not a full ecosystem.
 
 - [ ] Runtime target protocol
 - [ ] First runtime target (simulation or code-gen)
-- [ ] Compile-time constraint evaluation (enforced validation mode — §5.3 — first used here)
+- [ ] Compile-time constraint evaluation (enforced validation mode — see Modal Validation — first used here)
 - [ ] Implementation resolution at compile time
 
 ### Phase 8 — Schema Ecosystem
 
-This phase builds out the full modular type system vision from §5. Phase 3 establishes the plugin
+This phase builds out the full modular type system vision from Constraint System. Phase 3 establishes the plugin
 protocol; Phase 8 makes it networked, composable, and externally distributable.
 
 - [ ] Enforced validation mode: checkpoint declarations, hard stops at save/compile/publish
@@ -1023,11 +1024,11 @@ protocol; Phase 8 makes it networked, composable, and externally distributable.
 
 ---
 
-## 12. Technology Candidates
+## Technology Candidates
 
 | Layer              | Candidate                        | Notes                                         |
 | ------------------ | -------------------------------- | --------------------------------------------- |
-| Graph store        | SurrealDB (WASM, `mem://`)       | Per-tab databases; IndexedDB bridge for persistence (see §14) |
+| Graph store        | SurrealDB (WASM, `mem://`)       | Per-tab databases; IndexedDB bridge (see Persistence Layer) |
 | UI                 | TypeScript + Hono JSX DOM        | Server: Hono; client: Hono JSX DOM (not React) |
 | Canvas rendering   | Custom SVG                       | Full control; custom force layout algorithms  |
 | Tree view          | Custom Hono JSX component        | Tight sync with canvas                        |
@@ -1036,13 +1037,13 @@ protocol; Phase 8 makes it networked, composable, and externally distributable.
 | Base schema        | JSON Schema Draft 2020-12        | Widest tooling support                        |
 | Serialisation      | JSON (base) + SurrealQL (persistence) | SurrealQL dumps for IndexedDB bridge    |
 | URI resolution     | Custom resolver                  | Local file, remote HTTP, version registry     |
-| Code interface     | MCP server + Spike-Clojure       | Parser/serialiser done; MCP server planned (§13) |
+| Code interface     | MCP server + Spike-Clojure       | Parser/serialiser done; MCP server planned (see Code Interface) |
 
 ---
 
-## 13. Code Interface
+## Code Interface
 
-### 13.1 Design Goals
+### Design Goals
 
 The graph should be easily readable, writable, and navigable by an AI agent without requiring access
 to the visual canvas. Three properties make this achievable:
@@ -1055,7 +1056,7 @@ to the visual canvas. Three properties make this achievable:
 The interface has two components: a text format for reading and writing graphs, and an **MCP
 server** that exposes graph operations as tools an AI agent can call.
 
-### 13.2 Language representations
+### Language Representations
 
 #### Concept
 
@@ -1072,7 +1073,7 @@ This isomorphism is a design goal, not an implementation detail. It means:
 - The graph notation is learnable by anyone who knows the host language.
 - AI agents can read and write graphs using familiar programming patterns.
 - The constraint system validates both the code semantics and the graph semantics in one pass.
-- The text view (§6.5) is a full peer of the canvas — editing code and editing the graph are the
+- The text view (see Text View) is a full peer of the canvas — editing code and editing the graph are the
   same operation.
 
 #### Two layers
@@ -1115,7 +1116,7 @@ Regardless of variant, the mapping follows a common pattern:
 | Inline subgraph            | Function body                                       |
 | Opaque / external subgraph | URI reference in place of body                      |
 
-### 13.3 MCP Server Interface
+### MCP Server Interface
 
 The MCP server exposes the graph as a set of AI-callable tools. It follows the Model Context
 Protocol conventions — tools have typed inputs and return structured results including diagnostics.
@@ -1160,7 +1161,7 @@ Diagnostics include a `suggestion` field — a plain-language repair hint the AI
 in a subsequent `graph_patch` call. This closes the edit→validate→fix loop without human
 intervention.
 
-### 13.4 AI Edit Workflow
+### AI Edit Workflow
 
 A typical AI agent workflow:
 
@@ -1185,7 +1186,7 @@ The AI never needs to understand the visual canvas — it works entirely in Spik
 diagnostics. The human sees the result live on the canvas as the AI edits, since the CRDT store is
 shared.
 
-### 13.5 Context Window Efficiency
+### Context Window Efficiency
 
 Spike-Lisp is designed to be token-efficient for LLMs:
 
@@ -1198,7 +1199,43 @@ Spike-Lisp is designed to be token-efficient for LLMs:
 - **Diagnostic locality** — errors reference specific node/edge IDs, so the AI can fetch just the
   relevant subgraph for repair context
 
-### 13.6 Implications for the Constraint System
+### File-Based Workflows
+
+The Code Interface described above assumes an in-browser text view or an MCP-connected AI agent.
+But Spike-Clojure source files on disk — such as those in [`examples/`](examples/) — are a natural
+authoring surface too. Three approaches to synchronising files with a live graph, in increasing
+order of ambition:
+
+**A. CLI → MCP (import/push)**
+
+A command-line tool reads `.clj` files, parses them via `spikeToGraph`, and pushes the resulting
+graph to a running Marlinspike instance via MCP tools (`graph_write`). This is a one-shot import —
+file to graph. The codec and MCP tool definitions already exist; this is a thin CLI wrapper.
+
+```
+marlinspike push examples/solar-calculator/
+```
+
+**B. File watcher ↔ graph sync (bidirectional)**
+
+A local Marlinspike instance watches a directory. File edits parse and update the graph; graph edits
+emit and update the files. This is the text view (see Text View) backed by the filesystem instead of an
+in-browser editor. Harder than A — needs conflict resolution, file-to-subgraph mapping conventions
+(one file per namespace? per subgraph?), and a decision about which side wins on concurrent edits.
+
+**C. Headless instance as sync node**
+
+A headless `marlinspike serve` process holds graph state and syncs with other instances (browser
+UIs, CLI tools, or remote peers). Files are one peer among many. This is the collaboration story
+(see Collaboration) with the filesystem as a participant. The CLI reads/writes files; the serve process mediates
+between file state, local graph, and remote connections.
+
+These are not mutually exclusive — A is a stepping stone to B, and B is a subset of C. The choice
+of starting point depends on which workflow is most immediately useful: one-shot import for
+bootstrapping graphs from existing code, bidirectional sync for a "files as source of truth"
+workflow, or headless serve for multi-peer collaboration.
+
+### Implications for the Constraint System
 
 The MCP interface makes the constraint system's quality directly observable. A vague diagnostic like
 _"invalid graph"_ is useless to an AI agent; it has no recourse. The `suggestion` field in
@@ -1211,9 +1248,9 @@ constraint plugin quality across the whole system.
 
 ---
 
-## 14. Persistence Layer
+## Persistence Layer
 
-### 14.1 Current Implementation
+### Current Implementation
 
 Graph and UI state are stored in **SurrealDB embedded (WASM)** running in-browser with the `mem://`
 engine. Persistence across page reloads is achieved via a custom bridge that exports SurrealDB
@@ -1253,7 +1290,7 @@ On startup, [`loadStateAsync()`](src/ui/workspace.ts) restores the `_ui` dump fi
 `db_registry` to find the active tab's database, then restores that database's dump before querying
 for graph data.
 
-### 14.2 SurrealDB RecordId Normalisation
+### SurrealDB RecordId Normalisation
 
 SurrealDB's WASM SDK returns record identifiers as `RecordId` objects rather than plain strings, and
 the `NONE` value (used for root nodes with no parent) deserialises as `undefined` rather than
@@ -1264,7 +1301,7 @@ This is critical for `buildTree()`, which reconstructs the rose-tree hierarchy f
 without normalisation, root nodes (where `parent` is `NONE`/`undefined`) are never found and the
 tree is empty.
 
-### 14.3 Why Not `indxdb://` (SurrealDB's Native IndexedDB Engine)
+### Why Not `indxdb://` (SurrealDB's Native IndexedDB Engine)
 
 SurrealDB advertises an `indxdb://` engine for browser-native persistence. This would eliminate the
 need for the export/import bridge. However, **it is broken as of surrealdb@2.0.3 /
@@ -1285,7 +1322,7 @@ adds ~20 lines of code and works reliably. When `indxdb://` is fixed, the bridge
 `connect()` changed to `indxdb://` — the rest of the code (schema, operations, sync) is
 engine-agnostic.
 
-### 14.4 Connection Pool and Bootstrap Layering
+### Connection Pool and Bootstrap Layering
 
 The connection manager ([`src/ui/db/surreal.ts`](src/ui/db/surreal.ts)) maintains a local embedded
 connection and a pool of remote connections. All database acquisition goes through a single
@@ -1334,7 +1371,7 @@ A future account system syncs the workspace registry (root nodes + constraint da
 account — the root-as-local-pointer pattern is unchanged; the account is just another sync
 destination.
 
-### 14.5 Future Direction
+### Future Direction
 
 The current persistence model is a single-user, single-browser solution. The path to collaboration:
 
@@ -1349,11 +1386,11 @@ The current persistence model is a single-user, single-browser solution. The pat
 
 ---
 
-## 15. Open Questions
+## Open Questions
 
 ### Architecture
 
-1. **Schema composition semantics** — §5.2 declares schemas as a commutative monoid, but the exact
+1. **Schema composition semantics** — Schema Composition declares schemas as a commutative monoid, but the exact
    mechanism for detecting _incompatibility_ (vs mere _tension_) is unresolved. Is incompatibility
    declared statically in schema metadata ("this schema excludes that one"), detected dynamically by
    the constraint plugin at validation time, or both? Static declaration is cheaper and enables the
@@ -1386,7 +1423,7 @@ The current persistence model is a single-user, single-browser solution. The pat
 ### Notions Not Yet Explored
 
 - **Graph database / API** — a dedicated store and query API for graphs, beyond simple URI-addressed
-  document retrieval. (Partially addressed by §14 — SurrealDB provides the store and query layer;
+  document retrieval. (Partially addressed by Persistence Layer — SurrealDB provides the store and query layer;
   the bridge provides browser persistence. Remote API and multi-user access are not yet
   implemented.)
 - **Overlay and modification of referenced graphs** — applying patches or extensions to a referenced
@@ -1398,13 +1435,11 @@ The current persistence model is a single-user, single-browser solution. The pat
   with pre-configured schemas and constraint plugins.
 - **Embeddable explorer UI** — an iframe-embeddable, read-only (or limited-edit) canvas for use in
   documentation, demos, and interactive examples.
-- **Spike-Lisp as documentation syntax** — the Lisp-like notation is human-readable enough to use
-  directly in documentation examples. Candidate examples:
-  - _Solar calculator_ — input roof geometry, proposed panel placement, and geographic data; output
-    predicted yield
-  - _J program editor_ — array-language program as a typed dataflow graph
-  - _Kubernetes services configuration_ — define a cluster with inter-service communication
-    formalised over typed port APIs or message queues
+- **Spike-Clojure as documentation syntax** — the Clojure-subset notation is human-readable enough
+  to use directly in documentation and vision sketches. See [`examples/`](examples/) for
+  aspirational examples that illustrate how Marlinspike applies to different domains (CI/CD
+  pipelines, scientific calculations, Clojure project isomorphism). These examples envision future
+  capabilities and should be revisited periodically as implementation progresses.
 
 ---
 
