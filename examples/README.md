@@ -23,6 +23,9 @@ Each example directory contains:
 | [github-actions/](github-actions/) | CI/CD | Action libraries as subgraphs, testing via implementation isomorphism |
 | [scientific-calculator/](scientific-calculator/) | Computation | Typed dataflow, intermediate results, composable calculations |
 | [clojure-project/](clojure-project/) | Software development | Full isomorphism between a graph and a real-world Clojure project |
+| [solar-calculator/](solar-calculator/) | Engineering | Multi-model composition, sensitivity analysis, sharable calculations |
+| [j-program-editor/](j-program-editor/) | Array programming | Tacit J expressions as explicit dataflow, intermediate array values |
+| [kubernetes-services/](kubernetes-services/) | Infrastructure | Typed service ports, topology constraints, manifest generation |
 
 ## Revisiting
 
