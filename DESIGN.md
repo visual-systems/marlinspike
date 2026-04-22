@@ -984,6 +984,16 @@ plugin protocol and a first real schema — not a full ecosystem.
 - [ ] Persona filter application in canvas and tree view
 - [ ] URI sharing with persona query parameter
 
+### Phase 5b — Profiles and Storage
+
+- [ ] Profile storage (IndexedDB `marlinspike_profiles` collection)
+- [ ] Profile CRUD UI (account-style dropdown: add, edit, switch, delete)
+- [ ] `indxdb://` URL scheme interpretation in connection manager
+- [ ] Split `workspace.connections` into `workspace` + `storage-location` constraints
+- [ ] Profile–workspace binding (workspace nodes scoped to active profile)
+- [ ] Workspace-as-tabs unification (remove separate tab registry)
+- [ ] Connection inheritance: profile → workspace → children via outside-in principle
+
 ### Phase 6 — Collaboration
 
 - [ ] Real-time CRDT sync (local network first, then remote)
@@ -1366,23 +1376,157 @@ Startup flow:
 4. `connectRemote(id, config)` for non-empty URLs
 5. Sync children from remote into local tree under the root
 
-**Future: account-level storage.** The local root nodes are the natural unit for cross-device sync.
-A future account system syncs the workspace registry (root nodes + constraint data) to the user's
-account — the root-as-local-pointer pattern is unchanged; the account is just another sync
-destination.
+### Outside-In Connection Principle
+
+The bootstrap layering above implements a general principle worth stating explicitly:
+
+> **A parent node declares the connection context for its children without being subject to that
+> connection itself.** The parent is a boundary node — it carries configuration but lives outside
+> the connection it describes.
+
+This is the "outside-in" pattern: configuration flows inward (from parent to children) but the
+parent remains outside the boundary it creates. The workspace root node lives in the local
+database and carries `data.connection` describing where its children live. The root is never
+remote; only its children are.
+
+The principle generalises beyond the root level. Any composite node that carries a
+`storage-location` constraint acts as a boundary: it is resolved in its parent's connection
+context, while its children are resolved in the connection it declares.
+
+```
+Profile (indxdb://marlinspike)
+  └── Workspace W1 (lives locally; no storage override → children also local)
+  └── Workspace W2 (lives locally; storage-location: wss://db.example.com)
+        └── Child nodes (live in remote SurrealDB, via outside-in)
+              └── Sub-workspace S1 (storage-location: wss://other.example.com)
+                    └── Grandchildren (live in other remote)
+```
+
+### Profiles
+
+Profiles solve the bootstrapping problem: what connection context exists _before_ any graph is
+loaded? Profiles are **not graph nodes** — they are session-level metadata stored in a separate
+IndexedDB collection, outside the graph entirely.
+
+#### Storage
+
+A dedicated IndexedDB object store (`marlinspike_profiles`) holds profile entries:
+
+```typescript
+interface Profile {
+  id: string           // UUID
+  name: string         // Display name (e.g. "Local", "Work", "Staging")
+  connection: {
+    url: string        // SurrealDB connection URL
+    namespace?: string
+    database?: string
+    username?: string
+    password?: string
+  }
+}
+```
+
+#### URL scheme convention
+
+All profiles have URLs. The scheme determines the storage backend:
+
+| Scheme | Backend | Example |
+|---|---|---|
+| `indxdb://` | Local IndexedDB (via mem:// + bridge) | `indxdb://marlinspike` |
+| `wss://` | Remote SurrealDB (WebSocket) | `wss://db.example.com` |
+| `https://` | Remote SurrealDB (HTTP) | `https://db.example.com` |
+
+Local profiles use `indxdb://` — the SurrealDB IndexedDB scheme. The connection manager interprets
+this as "create a mem:// instance and wire up the IndexedDB bridge with this key as the
+serialisation namespace". When the upstream SurrealDB `indxdb://` bug
+([surrealdb/surrealdb#5712](https://github.com/surrealdb/surrealdb/issues/5712)) is fixed, these
+URLs become literal connection strings with no code change.
+
+#### Default profile
+
+A built-in "Local" profile is always present and cannot be deleted:
+
+```typescript
+{ id: "local", name: "Local", connection: { url: "indxdb://marlinspike", namespace: "marlinspike" } }
+```
+
+This is what the app currently does implicitly — the default profile makes the existing behaviour
+explicit and uniform with remote profiles.
+
+#### Connection inheritance
+
+The top-level nodes visible under a profile are workspace nodes. Connection context flows inward
+via the outside-in principle:
+
+1. **Profile** provides the base connection. Workspace nodes are stored in the profile's target.
+2. **Workspace node** may override with a `storage-location` constraint. If it does, its children
+   use that connection. Otherwise children inherit the profile's connection.
+3. **Any deeper node** may override again — the pattern repeats at every level.
+
+#### UX
+
+Profiles surface as an account-style dropdown in the top bar — a familiar pattern (IDE workspace
+switcher, cloud account selector) with low friction. The dropdown shows the active profile name;
+clicking opens a list with options to switch, add, edit, or delete profiles.
+
+Switching profiles triggers: disconnect current remote (if any), connect to new profile's target,
+load workspace nodes from that target.
+
+### Workspace Nodes as Tabs
+
+Currently, `tabs[]` in the `_ui` database and workspace root nodes are maintained as separate
+concepts that must be kept in sync. The design intent is to unify them:
+
+- **Workspace nodes under the active profile ARE the tabs.** There is no separate tab registry.
+- A workspace node's label becomes the tab name. Its database ID is derived from its node ID.
+- Creating a new tab creates a new workspace node under the current profile.
+- Closing a tab hides the workspace node from the session but does not delete it.
+
+Open question: should focusing on root (null focusId) show all workspace nodes as a "workspace
+browser" view? This would provide a natural place to see and manage all workspaces under a profile.
+
+### Workspace and Storage-Location Constraints
+
+The current `workspace.connections` constraint conflates two independent concerns. These should be
+split:
+
+| Constraint | Purpose | Data |
+|---|---|---|
+| `workspace` | Makes a node tab-eligible | `{}` (presence is sufficient) |
+| `storage-location` | Specifies where children are stored | `{url, namespace?, database?, username?, password?}` |
+
+**`workspace` constraint:** Any node carrying this constraint can appear as a tab in the session
+UI. This is not limited to root-level nodes — a deeply nested composite node with the workspace
+constraint could be opened as a focused tab, providing a scoped view into a subgraph.
+
+Tab opening is manual by default: the user explicitly opens a workspace-constrained node as a tab.
+An optional auto-open flag on the constraint could be added later if needed.
+
+**`storage-location` constraint:** Specifies the connection context for a node's children (the
+outside-in principle). This is the successor to the current `workspace.connections` constraint's
+connection fields.
+
+The two constraints are orthogonal:
+- A workspace tab with no `storage-location` inherits its parent's connection.
+- A node with `storage-location` but no `workspace` constraint acts as a storage boundary without
+  being tab-eligible.
 
 ### Future Direction
 
 The current persistence model is a single-user, single-browser solution. The path to collaboration:
 
 1. **Remote SurrealDB** — the connection pool already supports remote WebSocket connections
-   alongside the local embedded instance. Phase 4 wires workspace constraint data to
-   `connectRemote()`.
+   alongside the local embedded instance. Profiles provide the connection context; workspace nodes
+   and the `storage-location` constraint wire it to `connectRemote()`.
 2. **CRDT layer** — for real-time collaboration, the graph store would move to a CRDT
    (Automerge/Yjs) with SurrealDB as the persistence backend rather than the source of truth.
 3. **Multi-database composition** — the tab/database mapping is already UUID-based. The
    `connectedGraphs` field on each tab is designed to support connecting multiple databases into a
    single workspace view, though this is not yet implemented.
+4. **Cross-device sync** — profiles are the natural unit for cross-device synchronisation. A future
+   account system syncs the profile list and its associated workspace nodes to the user's account.
+   The profile-as-local-pointer pattern is unchanged; the account is just another sync
+   destination.
 
 ---
 

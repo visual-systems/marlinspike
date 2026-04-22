@@ -10,6 +10,7 @@ import {
   MAX_GROUP_SIZE_CONSTRAINT,
 } from "../../graph/builtin_constraints.ts";
 import { defaultState, type TreeNode, type Updater, type WorkspaceState } from "../workspace.ts";
+import { spikeToGraph } from "../../code/spike-clojure.ts";
 
 export const meta = { title: "Examples" };
 
@@ -389,5 +390,49 @@ export function DataPipeline() {
 export function SingleNode() {
   const ws = defaultState();
   ws.treeNodes = [node("alpha", "Alpha", "leaf", [])];
+  return <StoryWrapper initial={ws} />;
+}
+
+// ---------------------------------------------------------------------------
+// CardanoCubicRoots — Cardano's formula parsed from Spike-Clojure source
+// ---------------------------------------------------------------------------
+
+const CARDANO_SOURCE = `\
+(defn discriminant
+  [^float p ^float q]
+  (let [q-half  (divide q 2.0)
+        p-third (divide p 3.0)
+        term1   (square q-half)
+        term2   (cube p-third)]
+    (add term1 term2)))
+
+(defn cubic-roots
+  {:ports {:x1 float :x2 complex :x3 complex}}
+  [^float p ^float q]
+  (let [disc       (discriminant p q)
+        sqrt-disc  (complex-sqrt disc)
+        neg-q-half (negate (divide q 2.0))
+        u          (cbrt (complex-add neg-q-half sqrt-disc))
+        v          (cbrt (complex-subtract neg-q-half sqrt-disc))
+        omega      (cube-root-of-unity)
+        omega-sq   (complex-multiply omega omega)
+        x1         (real-part (complex-add u v))
+        x2         (complex-add (complex-multiply omega u)
+                                (complex-multiply omega-sq v))
+        x3         (complex-add (complex-multiply omega-sq u)
+                                (complex-multiply omega v))]
+    {:x1 x1 :x2 x2 :x3 x3}))
+`;
+
+/** Cardano's cubic root formula parsed from Spike-Clojure source.
+ *  Demonstrates typed dataflow with complex intermediates. */
+export function CardanoCubicRoots() {
+  const { treeNodes, edges } = spikeToGraph(CARDANO_SOURCE);
+  const ws = defaultState();
+  ws.treeNodes = treeNodes;
+  ws.edges = edges;
+  ws.canvasExpandedNodes = treeNodes
+    .filter((n) => n.kind === "composite")
+    .map((n) => n.id);
   return <StoryWrapper initial={ws} />;
 }

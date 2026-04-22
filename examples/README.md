@@ -26,6 +26,7 @@ Each example directory contains:
 | [solar-calculator/](solar-calculator/) | Engineering | Multi-model composition, sensitivity analysis, sharable calculations |
 | [j-program-editor/](j-program-editor/) | Array programming | Tacit J expressions as explicit dataflow, intermediate array values |
 | [kubernetes-services/](kubernetes-services/) | Infrastructure | Typed service ports, topology constraints, manifest generation |
+| [cardano-cubic-roots/](cardano-cubic-roots/) | Mathematics | Complex intermediates, type transitions, casus irreducibilis |
 
 ## Revisiting
 
