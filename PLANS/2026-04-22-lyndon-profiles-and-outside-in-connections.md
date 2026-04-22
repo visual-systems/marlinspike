@@ -22,6 +22,7 @@ story. This is a design-only branch — no implementation code changes.
 
 - [x] Add Outside-In Connection Principle subsection to DESIGN.md Persistence Layer
 - [x] Add Profiles subsection with `indxdb://` URL convention for local profiles
+- [x] Add Profile UX detail (dropdown layout, add/edit form, default protection, switching)
 - [x] Add Workspace Nodes as Tabs subsection
 - [x] Add Workspace and Storage-Location Constraints subsection (split `workspace.connections`)
 - [x] Update Future Direction to reference profiles as unit of cross-device sync

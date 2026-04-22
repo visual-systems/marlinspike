@@ -1465,12 +1465,47 @@ via the outside-in principle:
 
 #### UX
 
-Profiles surface as an account-style dropdown in the top bar — a familiar pattern (IDE workspace
-switcher, cloud account selector) with low friction. The dropdown shows the active profile name;
-clicking opens a list with options to switch, add, edit, or delete profiles.
+**Placement:** A compact element in the top bar, left of the tab strip. Shows the active profile
+name (or an icon + name). It should not compete with tabs for attention — most users will have one
+profile for a long time.
 
-Switching profiles triggers: disconnect current remote (if any), connect to new profile's target,
-load workspace nodes from that target.
+**Dropdown contents:**
+
+```
+┌─────────────────────────────┐
+│  ● Local              ✓    │  ← active profile (highlighted)
+│    Work                     │  ← click to switch
+│    Staging                  │
+│ ─────────────────────────── │
+│  + Add profile              │
+│  Edit profiles...           │  ← opens list view for rename/delete
+└─────────────────────────────┘
+```
+
+Clicking a profile switches immediately. The "+ Add profile" button opens an inline form or small
+popover — not a full modal. Profiles should feel lightweight.
+
+**Add/Edit form fields:**
+
+| Field | Required | Notes |
+|---|---|---|
+| Name | Yes | Display name |
+| URL | Yes | `indxdb://name` for local, `wss://host` for remote |
+| Namespace | No | Collapsible "Advanced" section |
+| Database | No | Collapsible "Advanced" section |
+| Username | No | Collapsible "Advanced" section |
+| Password | No | Collapsible "Advanced" section |
+
+For local profiles, only Name and URL are needed. The advanced fields are for remote SurrealDB
+connections that require authentication or specific namespace/database targeting.
+
+**Default profile protection:** The built-in "Local" profile cannot be deleted or edited initially.
+It is the bootstrap anchor — if a user corrupts their only local profile, they would be locked out.
+A future refinement could allow renaming but not changing the URL.
+
+**Switching behaviour:** Switching profiles clears the tab bar, caches the previous profile's
+workspace state (similar to the existing tab snapshot cache), connects to the new profile's target,
+and loads its workspace nodes. A brief loading indicator is acceptable during the connection phase.
 
 ### Workspace Nodes as Tabs
 
