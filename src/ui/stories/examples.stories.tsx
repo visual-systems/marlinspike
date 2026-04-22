@@ -36,6 +36,8 @@ function StoryWrapper(
     makeExecute?: (setHighlight: (ids: Set<string>) => void) => () => void;
   },
 ) {
+  // Show all top-level nodes directly (stories build their own tree, not under the workspace root)
+  initial.focusId = null;
   const [ws, setWs] = useState<WorkspaceState>(initial);
   const [highlighted, setHighlighted] = useState<Set<string>>(new Set());
   const update: Updater = (fn) => setWs((prev) => fn(prev));
@@ -427,12 +429,17 @@ const CARDANO_SOURCE = `\
 /** Cardano's cubic root formula parsed from Spike-Clojure source.
  *  Demonstrates typed dataflow with complex intermediates. */
 export function CardanoCubicRoots() {
-  const { treeNodes, edges } = spikeToGraph(CARDANO_SOURCE);
-  const ws = defaultState();
-  ws.treeNodes = treeNodes;
-  ws.edges = edges;
-  ws.canvasExpandedNodes = treeNodes
-    .filter((n) => n.kind === "composite")
-    .map((n) => n.id);
-  return <StoryWrapper initial={ws} />;
+  try {
+    const result = spikeToGraph(CARDANO_SOURCE);
+    const ws = defaultState();
+    ws.treeNodes = result.treeNodes;
+    ws.edges = result.edges;
+    ws.canvasExpandedNodes = result.treeNodes
+      .filter((n) => n.kind === "composite")
+      .map((n) => n.id);
+    return <StoryWrapper initial={ws} />;
+  } catch (e) {
+    console.error("[CardanoCubicRoots]", e);
+    return <div style="color:red; padding:20px;">Error: {String(e)}</div>;
+  }
 }
