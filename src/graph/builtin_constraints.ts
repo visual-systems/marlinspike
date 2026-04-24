@@ -43,7 +43,7 @@ export const WORKSPACE_CONNECTIONS_CONSTRAINT: Constraint = {
   uri: "spike://builtin/constraints/workspace-connections",
   type: "workspace.connections",
   targets: [{ type: "entity", class: "node" }],
-  data: {},
+  data: { rendering: { shape: "rect" } },
   version: 1,
 };
 

@@ -863,6 +863,14 @@ export function Canvas(
   const [view, setView] = useState<View>({ scale: 1, tx: 400, ty: 300 });
   const focusedRootNodes = getFocusedRootNodes(ws);
   const focusNode = ws.focusId ? findNode(ws.treeNodes, ws.focusId) : null;
+
+  // Compute which nodes should render as rectangles (driven by constraint data.rendering.shape)
+  const rectNodeIds = new Set<string>();
+  for (const app of ws.constraintApplications) {
+    const constraint = ws.constraints.find((c) => c.id === app.constraintId);
+    const shape = (constraint?.data?.rendering as { shape?: string } | undefined)?.shape;
+    if (shape === "rect") rectNodeIds.add(app.entityId);
+  }
   const focusedEdges = focusNode
     ? (() => {
       const ids = collectSubtreeIds(focusNode);
@@ -1433,6 +1441,7 @@ export function Canvas(
             { x: 0, y: 0 },
             diagnostics,
             highlightEntityIds ?? new Set(),
+            rectNodeIds,
           )}
           {/* Ghost edge line while drawing */}
           {mode === "add-edge" && edgeDraw && mouseCanvas && (() => {
@@ -1517,6 +1526,7 @@ function renderLevel(
   worldOffset: { x: number; y: number },
   diagnostics: DiagnosticMap,
   highlightEntityIds: Set<string>,
+  rectNodeIds: Set<string>,
 ): unknown {
   const level = layout.get(levelId);
   if (!level) return null;
@@ -1652,13 +1662,15 @@ function renderLevel(
                 { x: worldOffset.x + pos.x, y: worldOffset.y + pos.y },
                 diagnostics,
                 highlightEntityIds,
+                rectNodeIds,
               )}
             </g>
           );
         }
 
-        // Collapsed node — always rendered as a circle (leaf or collapsed composite)
+        // Collapsed node — rendered as a circle by default, or rect if constraint specifies
         const isComposite = node.kind === "composite";
+        const isRect = rectNodeIds.has(node.id);
         const r = LEAF_R;
         const hasChildren = isComposite && node.children.length > 0;
 
@@ -1759,18 +1771,33 @@ function renderLevel(
               if (isComposite) onExpand(node.id);
             }}
           >
-            <circle
-              cx={0}
-              cy={0}
-              r={r}
-              fill={fill}
-              stroke={stroke}
-              stroke-width={strokeWidth}
-            />
+            {isRect
+              ? (
+                <rect
+                  x={-r}
+                  y={-r * 0.7}
+                  width={r * 2}
+                  height={r * 1.4}
+                  rx={4}
+                  fill={fill}
+                  stroke={stroke}
+                  stroke-width={strokeWidth}
+                />
+              )
+              : (
+                <circle
+                  cx={0}
+                  cy={0}
+                  r={r}
+                  fill={fill}
+                  stroke={stroke}
+                  stroke-width={strokeWidth}
+                />
+              )}
             {(hasError || hasWarning) && (
               <circle
                 cx={r - 2}
-                cy={-(r - 2)}
+                cy={-(isRect ? r * 0.7 - 2 : r - 2)}
                 r={5}
                 fill={hasError ? "#c04040" : "#c08020"}
                 stroke="#0d0d1e"

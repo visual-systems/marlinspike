@@ -16,9 +16,54 @@ maintained as separate concepts that must be kept in sync.
 
 Document the outside-in connection principle, profiles, workspace-as-tabs unification, and the
 workspace/storage-location constraint split in DESIGN.md. Add a Cardano cubic roots example and
-story. This is a design-only branch — no implementation code changes.
+story. Implement the UI and data model changes for profiles, workspace focus, and
+constraint-driven node shapes.
+
+## Design decisions (from story exploration)
+
+### Profile placement
+- Profile dropdown sits left of the tab strip in the workspace bar (Option A)
+- Profile name is used as the root label in the focus breadcrumb (e.g. "Local" not "(root)")
+- Remove the persona dropdown for now — no persona functionality implemented yet
+
+### Workspace focus and tab identity
+- **Tab identity (`homeWorkspaceId`) is stable, focus (`focusId`) is fluid.** Tab labels always
+  show the home workspace name, regardless of where the user has navigated.
+- Focus position is communicated solely by the focus breadcrumb in the controls bar — no badge
+  or annotation on the tab label itself.
+- Any tab can step out to the profile root and come back. No special "overview tab" needed.
+- Each tab has independent focus state — switching tabs restores the previous focus position.
+
+### Profile root view
+- When focused at the profile root, workspace nodes render as a **normal graph** — same canvas,
+  same zoom/pan/select/inspect. Not a special browser mode.
+- Edges between workspaces are **manually created by the user**, like at any other level. They
+  document cross-workspace relationships (e.g. "Frontend calls Backend API").
+- The entity inspector shows workspace properties when a node is selected — no separate workspace
+  properties UI.
+
+### Home workspace indicator
+- Home workspace has a **small green dot** (top-right of node) that persists regardless of
+  selection state. It's subtle orientation, not emphasis.
+- Selection is independent — clicking any node selects it normally.
+- When nothing is selected at root, the focus breadcrumb shows a **home hint** (green dot +
+  workspace name) as a clickable return-to link.
+
+### Constraint-driven node shapes
+- Workspace nodes render as **squares** (rounded rect, `border-radius:4px`), driven by
+  `data.rendering.shape` in the workspace constraint.
+- The canvas reads `rendering.shape` from any constraint — this is a general mechanism, not
+  workspace-specific.
+- `WORKSPACE_CONNECTIONS_CONSTRAINT` now has `data: { rendering: { shape: "rect" } }`.
+- Already implemented: canvas renders `<rect>` when `shape === "rect"`, `<circle>` otherwise.
+
+### Connected graphs dropdown
+- Remove from the controls bar. Profiles now handle the "which database" question.
+- May revisit as a "graph overlay" feature in future.
 
 ## Approach
+
+### Phase 1: Design documentation (complete)
 
 - [x] Add Outside-In Connection Principle subsection to DESIGN.md Persistence Layer
 - [x] Add Profiles subsection with `indxdb://` URL convention for local profiles
@@ -27,20 +72,83 @@ story. This is a design-only branch — no implementation code changes.
 - [x] Add Workspace and Storage-Location Constraints subsection (split `workspace.connections`)
 - [x] Update Future Direction to reference profiles as unit of cross-device sync
 - [x] Add Phase 5b (Profiles and Storage) to Implementation Roadmap
+
+### Phase 2: Cardano example and story (complete)
+
 - [x] Create `examples/cardano-cubic-roots/README.md`
 - [x] Create `examples/cardano-cubic-roots/cubic-roots.clj`
 - [x] Update `examples/README.md` table with new example
 - [x] Add CardanoCubicRoots story to `src/ui/stories/examples.stories.tsx`
-- [x] `deno task ci` passes
+- [x] Fix examples stories blank canvas (reset `focusId = null` in StoryWrapper)
+
+### Phase 3: Design exploration stories (complete)
+
+- [x] Create `src/ui/stories/profiles.stories.tsx` with profile/workspace focus stories
+- [x] Iterate on stories based on feedback (remove rejected options, refine indicators)
+- [x] Register in `src/ui/stories/index.ts`
+
+### Phase 4: Constraint-driven node shape (complete)
+
+- [x] Add `rendering: { shape: "rect" }` to `WORKSPACE_CONNECTIONS_CONSTRAINT` data
+- [x] Canvas reads `data.rendering.shape` from constraint applications
+- [x] Collapsed nodes render `<rect>` when shape is "rect", `<circle>` otherwise
+
+### Phase 5: Profile data model and storage
+
+- [ ] Define `Profile` interface in `workspace.ts`
+- [ ] Create `marlinspike_profiles` IndexedDB collection (separate from graph DB)
+- [ ] Implement default "Local" profile (`indxdb://marlinspike`)
+- [ ] Add `activeProfileId` to workspace/UI state
+- [ ] Load/save profiles on startup
+
+### Phase 6: Profile UI
+
+- [ ] Add profile dropdown to workspace bar (left of tabs)
+- [ ] Profile switching: flush current DB, connect to new profile's target, load workspaces
+- [ ] Add/edit profile form (name, URL, collapsible advanced section)
+- [ ] Default profile protection (cannot delete)
+
+### Phase 7: Workspace-as-tabs unification
+
+- [ ] Add `homeWorkspaceId` to `Tab` interface
+- [ ] Tab labels derive from workspace node labels
+- [ ] Creating a new tab creates a workspace node under the active profile
+- [ ] Closing a tab hides the workspace from the session (does not delete)
+
+### Phase 8: Focus navigation updates
+
+- [ ] Profile name as root label in focus breadcrumb (replace "(root)")
+- [ ] Home workspace indicator (green dot) on workspace nodes at root level
+- [ ] Home hint in focus breadcrumb when at root with nothing selected
+- [ ] Remove connected graphs dropdown from controls bar
+
+### Phase 9: Remove persona dropdown
+
+- [ ] Remove persona dropdown from workspace bar
+- [ ] Remove `personas` / `activePersona` from `WorkspaceState` (or keep in state, just hide UI)
+- [ ] Clean up persona-related stories if needed
+
+### Phase 10: Edge clipping for rect nodes
+
+- [ ] Update `surfacePoint` to use AABB clipping for rect-shaped collapsed nodes
+- [ ] Update arc exit point calculation for rect nodes
+
+### Ongoing
+
+- [ ] Update DESIGN.md to reflect implementation decisions as they land
+- [ ] `deno task ci` passes after each phase
 
 ## Open Questions
 
-- Should focusing on root show all workspace nodes as a "workspace browser" view?
-- Should profiles support scoped personas?
+- Should profiles support scoped personas? (deferred — personas removed from UI for now)
 - `indxdb://` key naming convention — is the key the same as the namespace, or should they be
   independent? (e.g. `indxdb://marlinspike` → key "marlinspike", namespace "marlinspike")
+- Should closing a tab delete the workspace node or just hide it from the session?
+- What constraints beyond `rendering.shape` might influence node appearance in future?
 
 ## Verification
+
+### Design (complete)
 
 - [x] DESIGN.md has four new subsections in Persistence Layer
 - [x] Outside-in principle stated as explicit axiom
@@ -51,3 +159,16 @@ story. This is a design-only branch — no implementation code changes.
 - [x] CardanoCubicRoots story added
 - [x] examples/README.md table updated
 - [x] `deno task ci` passes (358 tests)
+
+### Implementation
+
+- [ ] Profile data persists in IndexedDB across sessions
+- [ ] Profile dropdown shows all profiles, allows switching
+- [ ] Default "Local" profile exists on first launch
+- [ ] Tab labels reflect workspace node labels
+- [ ] Focus breadcrumb shows profile name as root
+- [ ] Workspace nodes render as rectangles on canvas
+- [ ] Home workspace dot visible at profile root level
+- [ ] Connected graphs dropdown removed
+- [ ] Persona dropdown removed
+- [ ] `deno task ci` passes after all changes
