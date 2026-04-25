@@ -1,9 +1,7 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { render, useEffect, useMemo, useRef, useState } from "@hono/hono/jsx/dom";
-import { Dropdown, DROPDOWN_WIDTH } from "./components/index.ts";
 import { FocusDropdown } from "./components/focus-dropdown.tsx";
-import { SmallBtn } from "./components/widgets.tsx";
 import { TreePanel } from "./components/tree-panel.tsx";
 import { ConstraintsPanel } from "./components/constraints-panel.tsx";
 import { CodePanel } from "./components/code-panel.tsx";
@@ -17,13 +15,13 @@ import {
   ensureWorkspaceConstraint,
   getActiveTab,
   getConnectionConfig,
-  type ListEditorConfig,
   loadDatabaseSnapshot,
   loadState,
   loadStateAsync,
   makeRootNode,
   PANEL_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
+  type Profile,
   type Tab,
   updateNodeInTree,
   type Updater,
@@ -73,7 +71,7 @@ let skipBaselineReset = false;
 function App() {
   const [ws, setWs] = useState<WorkspaceState | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
-  const [listEditor, setListEditor] = useState<ListEditorConfig | null>(null);
+
   const prevTabIdRef = useRef<string | null>(null);
   // Keep a ref to the latest ws so async closures (addTab, activateTab)
   // always see the current state — Hono doesn't re-render child components.
@@ -230,8 +228,6 @@ function App() {
     if (ws) globalThis.dispatchEvent(new CustomEvent("ws-updated", { detail: ws }));
   }, [ws]);
 
-  const showListEditor = (config: ListEditorConfig) => setListEditor(config);
-
   // Loading state while SurrealDB initialises
   if (!ws) {
     return (
@@ -244,62 +240,9 @@ function App() {
   return (
     <>
       <WorkspaceBar ws={ws} wsRef={wsRef} update={update} />
-      <WorkspaceControls ws={ws} update={update} showListEditor={showListEditor} />
+      <WorkspaceControls ws={ws} update={update} />
       <WorkspaceArea ws={ws} update={update} />
-      {listEditor && <ListEditorModal config={listEditor} onClose={() => setListEditor(null)} />}
     </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// List editor modal
-// ---------------------------------------------------------------------------
-
-function ListEditorModal(
-  { config, onClose }: { config: ListEditorConfig; onClose: () => void },
-) {
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-
-  useEffect(() => {
-    textareaRef.current?.focus();
-  }, []);
-
-  function handleSave() {
-    const val = textareaRef.current?.value ?? "";
-    config.onSave(val.split("\n").map((s) => s.trim()).filter((s) => s.length > 0));
-    onClose();
-  }
-
-  function handleOverlayClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) onClose();
-  }
-
-  return (
-    <div
-      style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:1000;"
-      onClick={handleOverlayClick}
-    >
-      <div style="background:#1a1a2e; border:1px solid #3a3a5a; border-radius:6px; padding:16px; width:280px; display:flex; flex-direction:column; gap:10px;">
-        <div style="font-size:13px; font-weight:600; color:#c0c0e0;">{config.title}</div>
-        <div style="font-size:11px; color:#555;">One item per line</div>
-        <textarea
-          ref={textareaRef}
-          style="background:#0f0f22; border:1px solid #2a2a4a; color:#c0c0e0; font-size:13px; padding:6px; border-radius:3px; resize:vertical; min-height:120px; font-family:inherit; width:100%;"
-        >
-          {config.items.join("\n")}
-        </textarea>
-        <div style="display:flex; gap:8px; justify-content:flex-end;">
-          <SmallBtn label="Cancel" onClick={onClose} />
-          <button
-            type="button"
-            style="background:#1e1e3a; border:1px solid #3a3a6a; color:#c0c0e0; font-size:12px; cursor:pointer; padding:4px 12px; border-radius:3px;"
-            onClick={handleSave}
-          >
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -395,21 +338,18 @@ function WorkspaceBar(
     update((s) => ({ ...s, activeProfileId: id }));
   }
 
-  const activeProfile = ws.profiles.find((p) => p.id === ws.activeProfileId);
-
   return (
     <div id="workspace-bar">
-      {/* Profile dropdown */}
-      <div
-        style={`width:${DROPDOWN_WIDTH}px; flex-shrink:0; border-right:1px solid #1a1a2e; display:flex; align-items:center;`}
-      >
-        <Dropdown
-          items={ws.profiles.map((p) => ({ value: p.id, label: p.name }))}
-          selectedValue={activeProfile?.id ?? null}
-          placeholder="Profile"
-          onSelect={selectProfile}
-        />
-      </div>
+      {/* Profile indicator */}
+      <ProfileSegment
+        profiles={ws.profiles}
+        activeProfileId={ws.activeProfileId}
+        onSelect={selectProfile}
+        onAdd={(p) =>
+          update((s) => ({ ...s, profiles: [...s.profiles, p], activeProfileId: p.id }))}
+        onUpdate={(p) =>
+          update((s) => ({ ...s, profiles: s.profiles.map((x) => x.id === p.id ? p : x) }))}
+      />
 
       {/* Tabs */}
       <div style="display:flex; align-items:center; gap:4px; flex:1; overflow:hidden; padding:0 8px;">
@@ -444,6 +384,293 @@ function WorkspaceBar(
           Marlinspike
         </a>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Profile segment — green dot + name, click to switch profiles
+// ---------------------------------------------------------------------------
+
+function ProfileSegment(
+  { profiles, activeProfileId, onSelect, onAdd, onUpdate }: {
+    profiles: Profile[];
+    activeProfileId: string;
+    onSelect: (id: string) => void;
+    onAdd: (p: Profile) => void;
+    onUpdate: (p: Profile) => void;
+  },
+) {
+  const [open, setOpen] = useState(false);
+  // null = no form, "new" = adding, string = editing that profile's id
+  const [formMode, setFormMode] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [formName, setFormName] = useState("");
+  const [formUrl, setFormUrl] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [formNamespace, setFormNamespace] = useState("");
+  const [formDatabase, setFormDatabase] = useState("");
+  const [formUsername, setFormUsername] = useState("");
+  const [formPassword, setFormPassword] = useState("");
+  const active = profiles.find((p) => p.id === activeProfileId);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    document.addEventListener("click", close, { once: true });
+    return () => document.removeEventListener("click", close);
+  }, [open]);
+
+  function resetForm() {
+    setFormName("");
+    setFormUrl("");
+    setFormNamespace("");
+    setFormDatabase("");
+    setFormUsername("");
+    setFormPassword("");
+    setShowAdvanced(false);
+    setFormMode(null);
+  }
+
+  function startEdit(p: Profile) {
+    setFormMode(p.id);
+    setFormName(p.name);
+    setFormUrl(p.url);
+    setFormNamespace(p.namespace ?? "");
+    setFormDatabase(p.database ?? "");
+    setFormUsername(p.username ?? "");
+    setFormPassword(p.password ?? "");
+    setShowAdvanced(Boolean(p.namespace || p.database || p.username || p.password));
+  }
+
+  function handleSave() {
+    if (!formName.trim() || !formUrl.trim()) return;
+    if (formMode === "new") {
+      const p: Profile = {
+        id: crypto.randomUUID(),
+        name: formName.trim(),
+        url: formUrl.trim(),
+      };
+      if (formNamespace.trim()) p.namespace = formNamespace.trim();
+      if (formDatabase.trim()) p.database = formDatabase.trim();
+      if (formUsername.trim()) p.username = formUsername.trim();
+      if (formPassword.trim()) p.password = formPassword.trim();
+      onAdd(p);
+    } else if (formMode) {
+      const existing = profiles.find((p) => p.id === formMode);
+      const p: Profile = {
+        id: formMode,
+        name: formName.trim(),
+        url: formUrl.trim(),
+        isDefault: existing?.isDefault,
+      };
+      if (formNamespace.trim()) p.namespace = formNamespace.trim();
+      if (formDatabase.trim()) p.database = formDatabase.trim();
+      if (formUsername.trim()) p.username = formUsername.trim();
+      if (formPassword.trim()) p.password = formPassword.trim();
+      onUpdate(p);
+    }
+    resetForm();
+    setOpen(false);
+  }
+
+  function isLocalUrl(url: string) {
+    return url.startsWith("indxdb://") || url.startsWith("indexdb://");
+  }
+
+  const FIELD =
+    "width:100%; box-sizing:border-box; background:#0a0a18; border:1px solid #252538; color:#999; font-size:12px; padding:5px 8px; border-radius:3px; outline:none;";
+  const LABEL = "font-size:10px; color:#3a3a5a; letter-spacing:0.05em; text-transform:uppercase;";
+
+  const isEditing = formMode !== null;
+  const formTitle = formMode === "new" ? "New Profile" : "Edit Profile";
+
+  return (
+    <div style="position:relative; display:flex; align-items:center; flex-shrink:0; border-right:1px solid #1a1a2e;">
+      <div
+        style="display:flex; align-items:center; gap:6px; padding:0 12px; cursor:pointer; user-select:none;"
+        onClick={(e: MouseEvent) => {
+          e.stopPropagation();
+          setOpen((prev) => !prev);
+          if (open) resetForm();
+        }}
+      >
+        <div style="width:6px; height:6px; border-radius:50%; background:#4a7; flex-shrink:0;" />
+        <span style="font-size:11px; color:#888; white-space:nowrap;">
+          {active?.name ?? "Profile"}
+        </span>
+      </div>
+      {open && (
+        <div
+          style="position:absolute; top:100%; left:0; min-width:300px; background:#0d0d1e; border:1px solid #252538; border-top:none; z-index:200; display:flex; flex-direction:column; box-shadow:0 4px 12px rgba(0,0,0,0.5);"
+          onClick={(e: MouseEvent) => e.stopPropagation()}
+        >
+          <div style={`${LABEL} padding:10px 12px 6px;`}>Profiles</div>
+          {profiles.map((p) => {
+            const isActive = p.id === activeProfileId;
+            const isHovered = hovered === p.id;
+            const scheme = isLocalUrl(p.url) ? "local" : "remote";
+            return (
+              <div
+                key={p.id}
+                style={[
+                  "display:flex; align-items:center; gap:8px; padding:8px 12px; cursor:pointer; border-bottom:1px solid #1a1a2e;",
+                  isActive
+                    ? "background:#141428; color:#9090c0;"
+                    : isHovered
+                    ? "background:#111122; color:#888;"
+                    : "color:#666;",
+                ].join("")}
+                onMouseEnter={() => setHovered(p.id)}
+                onMouseLeave={() => setHovered(null)}
+                onClick={() => {
+                  setOpen(false);
+                  resetForm();
+                  onSelect(p.id);
+                }}
+              >
+                <div style="flex:1; min-width:0;">
+                  <div style="font-size:12px;">{p.name}</div>
+                  <div style="font-size:10px; color:#3a3a5a; font-family:ui-monospace,monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    {p.url}
+                  </div>
+                </div>
+                <span style="font-size:10px; color:#3a3a5a; flex-shrink:0;">{scheme}</span>
+                {isActive && <span style="font-size:10px; color:#4a7; flex-shrink:0;">active</span>}
+                <span
+                  style="font-size:10px; color:#3a3a5a; flex-shrink:0; cursor:pointer;"
+                  onClick={(e: MouseEvent) => {
+                    e.stopPropagation();
+                    startEdit(p);
+                  }}
+                >
+                  ✎
+                </span>
+              </div>
+            );
+          })}
+
+          {isEditing
+            ? (
+              <div style="padding:10px 12px; border-top:1px solid #1a1a2e;">
+                <div style="font-size:12px; color:#999; font-weight:500; margin-bottom:10px;">
+                  {formTitle}
+                </div>
+                <div style="margin-bottom:8px;">
+                  <div style={`${LABEL} margin-bottom:3px;`}>Name</div>
+                  <input
+                    type="text"
+                    value={formName}
+                    onInput={(e: InputEvent) => setFormName((e.target as HTMLInputElement).value)}
+                    placeholder="e.g. Staging"
+                    style={FIELD}
+                  />
+                </div>
+                <div style="margin-bottom:8px;">
+                  <div style={`${LABEL} margin-bottom:3px;`}>URL</div>
+                  <input
+                    type="text"
+                    value={formUrl}
+                    onInput={(e: InputEvent) => setFormUrl((e.target as HTMLInputElement).value)}
+                    placeholder="indxdb://... or wss://..."
+                    style={`${FIELD} font-family:ui-monospace,monospace;`}
+                  />
+                </div>
+                <div
+                  style="display:flex; align-items:center; gap:4px; padding:4px 0; cursor:pointer; user-select:none;"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                >
+                  <span style="font-size:10px; color:#3a3a5a;">
+                    {showAdvanced ? "\u25be" : "\u25b8"}
+                  </span>
+                  <span style={LABEL}>Advanced</span>
+                </div>
+                {showAdvanced && (
+                  <div style="padding-left:10px; border-left:1px solid #1a1a2e; margin-bottom:4px;">
+                    <div style="margin-bottom:6px;">
+                      <div style={`${LABEL} margin-bottom:3px;`}>Namespace</div>
+                      <input
+                        type="text"
+                        value={formNamespace}
+                        onInput={(e: InputEvent) =>
+                          setFormNamespace((e.target as HTMLInputElement).value)}
+                        placeholder="marlinspike"
+                        style={FIELD}
+                      />
+                    </div>
+                    <div style="margin-bottom:6px;">
+                      <div style={`${LABEL} margin-bottom:3px;`}>Database</div>
+                      <input
+                        type="text"
+                        value={formDatabase}
+                        onInput={(e: InputEvent) =>
+                          setFormDatabase((e.target as HTMLInputElement).value)}
+                        placeholder="(auto)"
+                        style={FIELD}
+                      />
+                    </div>
+                    <div style="margin-bottom:6px;">
+                      <div style={`${LABEL} margin-bottom:3px;`}>Username</div>
+                      <input
+                        type="text"
+                        value={formUsername}
+                        onInput={(e: InputEvent) =>
+                          setFormUsername((e.target as HTMLInputElement).value)}
+                        placeholder="(optional)"
+                        style={FIELD}
+                      />
+                    </div>
+                    <div style="margin-bottom:6px;">
+                      <div style={`${LABEL} margin-bottom:3px;`}>Password</div>
+                      <input
+                        type="password"
+                        value={formPassword}
+                        onInput={(e: InputEvent) =>
+                          setFormPassword((e.target as HTMLInputElement).value)}
+                        placeholder="(optional)"
+                        style={FIELD}
+                      />
+                    </div>
+                  </div>
+                )}
+                <div style="display:flex; gap:8px; margin-top:8px; justify-content:flex-end;">
+                  <button
+                    type="button"
+                    style="background:none; border:1px solid #252538; color:#666; font-size:11px; padding:4px 10px; border-radius:3px; cursor:pointer;"
+                    onClick={() => resetForm()}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    style={`border:1px solid #3a3a6a; font-size:11px; padding:4px 10px; border-radius:3px; cursor:pointer; ${
+                      formName.trim() && formUrl.trim()
+                        ? "background:#1a1a3a; color:#9090c0;"
+                        : "background:none; color:#3a3a5a; cursor:default;"
+                    }`}
+                    onClick={handleSave}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            )
+            : (
+              <div
+                style={[
+                  "display:flex; align-items:center; gap:8px; padding:8px 12px; cursor:pointer;",
+                  hovered === "add" ? "color:#555;" : "color:#2a2a4a;",
+                ].join("")}
+                onMouseEnter={() => setHovered("add")}
+                onMouseLeave={() => setHovered(null)}
+                onClick={() => setFormMode("new")}
+              >
+                <span style="font-size:14px;">+</span>
+                <span style="font-size:11px;">New profile</span>
+              </div>
+            )}
+        </div>
+      )}
     </div>
   );
 }
@@ -621,32 +848,11 @@ function TabItem(
 // ---------------------------------------------------------------------------
 
 function WorkspaceControls(
-  { ws, update, showListEditor }: {
+  { ws, update }: {
     ws: WorkspaceState;
     update: Updater;
-    showListEditor: (c: ListEditorConfig) => void;
   },
 ) {
-  function setWorkflow(name: string) {
-    update((s) => ({ ...s, activeWorkflow: name }));
-  }
-
-  function editWorkflows() {
-    showListEditor({
-      title: "Edit Workflows",
-      items: ws.workflows,
-      onSave: (items) => {
-        update((s) => ({
-          ...s,
-          workflows: items,
-          activeWorkflow: items.includes(s.activeWorkflow ?? "")
-            ? s.activeWorkflow
-            : (items[0] ?? null),
-        }));
-      },
-    });
-  }
-
   function addPanel() {
     const tab = getActiveTab(ws);
     update((s) => ({
@@ -679,19 +885,6 @@ function WorkspaceControls(
 
   return (
     <div id="workspace-controls">
-      {/* Workflow dropdown */}
-      <div
-        style={`width:${DROPDOWN_WIDTH}px; flex-shrink:0; border-right:1px solid #1a1a2e; display:flex; align-items:center;`}
-      >
-        <Dropdown
-          items={ws.workflows.map((w) => ({ value: w, label: w }))}
-          selectedValue={ws.activeWorkflow}
-          placeholder="Workflow"
-          onSelect={setWorkflow}
-          onEdit={editWorkflows}
-        />
-      </div>
-
       {/* View controls */}
       <div style="display:flex; align-items:center; gap:8px;">
         <button

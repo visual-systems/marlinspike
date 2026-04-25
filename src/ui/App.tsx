@@ -22,6 +22,7 @@ export const App: FC = () => (
           background: #0f0f22; border-bottom: 1px solid #2a2a4a; flex-shrink: 0;
         }
         #workspace-area { flex: 1; display: flex; overflow: hidden; }
+        input::placeholder { color: #3a3a5a; opacity: 1; }
         `}
       </style>
     </head>
