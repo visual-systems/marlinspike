@@ -101,22 +101,40 @@ constraint-driven node shapes.
 - [x] Add `profiles` and `activeProfileId` to workspace/UI state
 - [x] Load/save profiles on startup (via existing sync mechanism)
 
-### Phase 6: Profile UI (partial)
+### Phase 6: Profile UI (mostly complete)
 
 - [x] Add profile dropdown to workspace bar (left of tabs)
+- [x] Profile browser: shows URL, local/remote label, active badge per profile
+- [x] Add/edit profile form (name, URL, collapsible advanced section)
+- [x] Edit button (✎) on each profile row opens pre-filled form
 - [ ] Profile switching: flush current DB, connect to new profile's target, load workspaces
-- [ ] Add/edit profile form (name, URL, collapsible advanced section)
 - [ ] Default profile protection (cannot delete)
 
-### Phase 7: Workspace-as-tabs unification (partial)
+### Phase 7: Workspace-as-tabs unification (requires architectural change)
 
 - [x] Add `homeWorkspaceId` to `Tab` interface
+- [ ] **Single-graph model**: all workspace nodes live in the profile's database as
+  top-level composite nodes in one `treeNodes` array — not one database per tab
+- [ ] Tabs become focus pointers: `Tab.focusId` references a workspace node ID in
+  the shared tree, not a separate `databaseId`
+- [ ] Profile root view (`focusId === null`) shows all workspace nodes on the canvas
 - [ ] Tab labels derive from workspace node labels
-- [ ] Creating a new tab creates a workspace node under the active profile
-- [ ] Closing a tab hides the workspace from the session (does not delete)
+- [ ] Creating a new tab creates a workspace node in the shared tree
+- [ ] Closing a tab hides the workspace from the session (does not delete the node)
+- [ ] `storage-location` constraint on a workspace node opts its children into a
+  different database — this is the only case where a separate DB is involved
+- [ ] Remove `DatabaseSnapshot` swap-on-tab-switch in favour of focus navigation
+- [ ] Migration: convert existing per-tab databases into workspace nodes in one graph
 
-Note: Full workspace-as-tabs unification (single graph, no separate databases per tab) is a deeper
-architectural change deferred to a follow-up branch.
+**Why this is required**: the current architecture creates a separate SurrealDB database
+per tab and swaps `treeNodes` entirely when switching tabs. This means at the profile root
+(`focusId === null`) only the active tab's workspace root is visible. The design requires
+all workspaces to be siblings in a single graph so that the profile root shows them all,
+edges can be drawn between workspaces, and the entity inspector works on workspace nodes.
+
+The `workspace` constraint makes a node tab-eligible. The `storage-location` constraint
+optionally declares that a node's children live in a different connection — this is
+independent of being a workspace. By default, children inherit the profile's connection.
 
 ### Phase 8: Focus navigation updates (complete)
 
@@ -135,6 +153,15 @@ architectural change deferred to a follow-up branch.
 - [x] Update `surfacePoint` to use AABB clipping for rect-shaped collapsed nodes
 - [x] Update arc exit point calculation for rect nodes (both `arcClipRect` and straight edges)
 
+### Phase 11: Refactoring and cleanup (complete)
+
+- [x] Move node shape from external `rectNodeIds` Set onto `ForceNode.shape` property
+- [x] `surfacePoint` reads `from.shape` directly instead of `isRect` parameter
+- [x] Remove workflow (explore/design/build) dropdown from controls bar
+- [x] Remove `ListEditorModal` and dead code (state fields preserved)
+- [x] Recognise both `indxdb://` and `indexdb://` as local profile schemes
+- [x] Add global `input::placeholder` style for dimmer placeholder text
+
 ### Ongoing
 
 - [ ] Update DESIGN.md to reflect implementation decisions as they land
@@ -147,6 +174,7 @@ architectural change deferred to a follow-up branch.
   independent? (e.g. `indxdb://marlinspike` → key "marlinspike", namespace "marlinspike")
 - Should closing a tab delete the workspace node or just hide it from the session?
 - What constraints beyond `rendering.shape` might influence node appearance in future?
+- How to migrate existing per-tab databases into workspace nodes in a single graph?
 
 ## Verification
 
@@ -165,13 +193,17 @@ architectural change deferred to a follow-up branch.
 ### Implementation
 
 - [x] Profile data persists in IndexedDB across sessions (via UI state sync)
-- [x] Profile dropdown shows all profiles in workspace bar
+- [x] Profile browser shows URL, local/remote, active badge, edit button
+- [x] Add/edit profile form with name, URL, collapsible advanced fields
 - [x] Default "Local" profile exists on first launch
 - [ ] Tab labels reflect workspace node labels (deferred — needs workspace-as-tabs)
+- [ ] Profile root shows all workspaces (deferred — needs workspace-as-tabs)
 - [x] Focus breadcrumb shows profile name as root
 - [x] Workspace nodes render as rectangles on canvas
 - [x] Home workspace dot visible at profile root level
 - [x] Connected graphs dropdown removed
 - [x] Persona dropdown removed
+- [x] Workflow dropdown removed
+- [x] Node shape on ForceNode interface (not external Set)
 - [x] Edge clipping works correctly for rect-shaped collapsed nodes
 - [x] `deno task ci` passes after all changes (358 tests)
