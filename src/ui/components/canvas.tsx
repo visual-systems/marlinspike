@@ -124,7 +124,6 @@ function surfacePoint(
   from: ForceNode,
   to: ForceNode,
   gap = 0,
-  isRect = false,
 ): { x: number; y: number } {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
@@ -133,7 +132,7 @@ function surfacePoint(
   const ux = dx / dist;
   const uy = dy / dist;
   if (from.w === LEAF_W && from.h === LEAF_H) {
-    if (isRect) {
+    if (from.shape === "rect") {
       // collapsed rect node: ray-AABB clip with rect dimensions
       const tx = Math.abs(ux) > 0.001 ? LEAF_R / Math.abs(ux) : Infinity;
       const ty = Math.abs(uy) > 0.001 ? RECT_HALF_H / Math.abs(uy) : Infinity;
@@ -414,6 +413,7 @@ function buildLevel(
   pinnedPositions: Record<string, { x: number; y: number; pinned?: boolean }>,
   levelEdges: { a: string; b: string }[],
   algorithm: LayoutAlgorithm,
+  shapeMap?: Map<string, "circle" | "rect">,
 ): LevelState {
   const prevMap = new Map(prev?.nodes.map((n) => [n.id, n]) ?? []);
   const defaults = new Map(Object.entries(pinnedPositions));
@@ -428,8 +428,9 @@ function buildLevel(
     const w = isExpanded ? (existing?.w ?? LEAF_W * 3) : LEAF_W;
     const h = isExpanded ? (existing?.h ?? LEAF_H * 3) : LEAF_H;
     const charge = charges.get(fn.id);
-    if (existing && algorithm.preservesPositions) return { ...existing, w, h, charge };
-    return { ...fn, w, h, charge };
+    const shape = shapeMap?.get(fn.id);
+    if (existing && algorithm.preservesPositions) return { ...existing, w, h, charge, shape };
+    return { ...fn, w, h, charge, shape };
   });
 
   return { nodes, settled: false, ticks: 0, bbox: null };
@@ -442,6 +443,7 @@ function syncLayout(
   pinnedPositions: Record<string, { x: number; y: number; pinned?: boolean }>,
   allEdges: Edge[],
   algorithm: LayoutAlgorithm,
+  shapeMap?: Map<string, "circle" | "rect">,
 ): LayoutMap {
   const expandedSet = new Set(canvasExpandedNodes);
   const next = new Map<string, LevelState>();
@@ -458,6 +460,7 @@ function syncLayout(
       pinnedPositions,
       rootEdges,
       algorithm,
+      shapeMap,
     ),
   );
 
@@ -476,6 +479,7 @@ function syncLayout(
         pinnedPositions,
         levelEdges,
         algorithm,
+        shapeMap,
       ),
     );
   }
@@ -900,12 +904,12 @@ export function Canvas(
   const focusedRootNodes = getFocusedRootNodes(ws);
   const focusNode = ws.focusId ? findNode(ws.treeNodes, ws.focusId) : null;
 
-  // Compute which nodes should render as rectangles (driven by constraint data.rendering.shape)
-  const rectNodeIds = new Set<string>();
+  // Compute node shapes driven by constraint data.rendering.shape
+  const shapeMap = new Map<string, "circle" | "rect">();
   for (const app of ws.constraintApplications) {
     const constraint = ws.constraints.find((c) => c.id === app.constraintId);
     const shape = (constraint?.data?.rendering as { shape?: string } | undefined)?.shape;
-    if (shape === "rect") rectNodeIds.add(app.entityId);
+    if (shape === "circle" || shape === "rect") shapeMap.set(app.entityId, shape);
   }
   const focusedEdges = focusNode
     ? (() => {
@@ -922,6 +926,7 @@ export function Canvas(
       ws.canvasNodePositions,
       focusedEdges,
       makeCanvasAlgorithm(ws.canvasAlgorithm),
+      shapeMap,
     )
   );
 
@@ -957,6 +962,7 @@ export function Canvas(
         ws.canvasNodePositions,
         edges,
         makeCanvasAlgorithm(ws.canvasAlgorithm),
+        shapeMap,
       )
     );
   }, [ws.treeNodes, ws.canvasExpandedNodes, ws.edges, ws.canvasAlgorithm, ws.focusId]);
@@ -1477,7 +1483,6 @@ export function Canvas(
             { x: 0, y: 0 },
             diagnostics,
             highlightEntityIds ?? new Set(),
-            rectNodeIds,
           )}
           {/* Ghost edge line while drawing */}
           {mode === "add-edge" && edgeDraw && mouseCanvas && (() => {
@@ -1562,7 +1567,6 @@ function renderLevel(
   worldOffset: { x: number; y: number },
   diagnostics: DiagnosticMap,
   highlightEntityIds: Set<string>,
-  rectNodeIds: Set<string>,
 ): unknown {
   const level = layout.get(levelId);
   if (!level) return null;
@@ -1698,7 +1702,6 @@ function renderLevel(
                 { x: worldOffset.x + pos.x, y: worldOffset.y + pos.y },
                 diagnostics,
                 highlightEntityIds,
-                rectNodeIds,
               )}
             </g>
           );
@@ -1706,7 +1709,7 @@ function renderLevel(
 
         // Collapsed node — rendered as a circle by default, or rect if constraint specifies
         const isComposite = node.kind === "composite";
-        const isRect = rectNodeIds.has(node.id);
+        const isRect = pos?.shape === "rect";
         const r = LEAF_R;
         const hasChildren = isComposite && node.children.length > 0;
 
@@ -1951,8 +1954,8 @@ function renderLevel(
             };
             const isSrcCollapsed = pa.w === LEAF_W && pa.h === LEAF_H;
             const isDstCollapsed = pb.w === LEAF_W && pb.h === LEAF_H;
-            const isSrcRect = isSrcCollapsed && rectNodeIds.has(edge.fromId);
-            const isDstRect = isDstCollapsed && rectNodeIds.has(edge.toId);
+            const isSrcRect = isSrcCollapsed && pa.shape === "rect";
+            const isDstRect = isDstCollapsed && pb.shape === "rect";
             src = isSrcCollapsed && !isSrcRect
               ? arcClipPoint(edgeArcC, r, pa, LEAF_R + 5, pb)
               : arcClipRect(
@@ -1986,8 +1989,8 @@ function renderLevel(
               (src.y - edgeArcC.y) * (dst.x - edgeArcC.x);
             sweep = crossZ > 0 ? 1 : 0;
           } else {
-            src = surfacePoint(pa, pb, 5, rectNodeIds.has(edge.fromId));
-            dst = surfacePoint(pb, pa, 5 + 10, rectNodeIds.has(edge.toId));
+            src = surfacePoint(pa, pb, 5);
+            dst = surfacePoint(pb, pa, 5 + 10);
           }
 
           // For straight edges, check if we need to bend around an obstructing node
