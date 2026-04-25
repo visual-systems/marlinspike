@@ -637,7 +637,10 @@ function ProfileSegment(
                   <button
                     type="button"
                     style="background:none; border:1px solid #252538; color:#666; font-size:11px; padding:4px 10px; border-radius:3px; cursor:pointer;"
-                    onClick={() => resetForm()}
+                    onClick={(e: MouseEvent) => {
+                      e.stopPropagation();
+                      resetForm();
+                    }}
                   >
                     Cancel
                   </button>
@@ -648,7 +651,10 @@ function ProfileSegment(
                         ? "background:#1a1a3a; color:#9090c0;"
                         : "background:none; color:#3a3a5a; cursor:default;"
                     }`}
-                    onClick={handleSave}
+                    onClick={(e: MouseEvent) => {
+                      e.stopPropagation();
+                      handleSave();
+                    }}
                   >
                     Save
                   </button>

@@ -119,8 +119,11 @@ constraint-driven node shapes.
   the shared tree, not a separate `databaseId`
 - [ ] Profile root view (`focusId === null`) shows all workspace nodes on the canvas
 - [ ] Tab labels derive from workspace node labels
-- [ ] Creating a new tab creates a workspace node in the shared tree
-- [ ] Closing a tab hides the workspace from the session (does not delete the node)
+- [ ] **New tab** creates a workspace node (composite, with `workspace` constraint) as a
+  top-level sibling in the shared tree, and opens a tab focused on it
+- [ ] **Close tab** deletes the workspace node and its subtree from the graph. This is
+  a destructive action — the workspace and its contents are removed. (May revisit with
+  soft-delete/archive later, but initially keep it simple: close = delete.)
 - [ ] `storage-location` constraint on a workspace node opts its children into a
   different database — this is the only case where a separate DB is involved
 - [ ] Remove `DatabaseSnapshot` swap-on-tab-switch in favour of focus navigation
@@ -172,7 +175,8 @@ independent of being a workspace. By default, children inherit the profile's con
 - Should profiles support scoped personas? (deferred — personas removed from UI for now)
 - `indxdb://` key naming convention — is the key the same as the namespace, or should they be
   independent? (e.g. `indxdb://marlinspike` → key "marlinspike", namespace "marlinspike")
-- Should closing a tab delete the workspace node or just hide it from the session?
+- ~~Should closing a tab delete the workspace node or just hide it from the session?~~
+  → Initially, close = delete. May revisit with soft-delete/archive later.
 - What constraints beyond `rendering.shape` might influence node appearance in future?
 - How to migrate existing per-tab databases into workspace nodes in a single graph?
 
