@@ -227,6 +227,8 @@ async function syncCanvasState(
 
 async function syncUiState(state: WorkspaceState): Promise<void> {
   const uiState: UiState = {
+    profiles: state.profiles,
+    activeProfileId: state.activeProfileId,
     tabs: state.tabs,
     activeTabId: state.activeTabId,
     personas: state.personas,

@@ -1,6 +1,7 @@
 import { assertEquals } from "@std/assert";
 import {
   type ConstraintApplication,
+  DEFAULT_PROFILE,
   defaultTreeNodes,
   ensureWorkspaceConstraint,
   ensureWorkspaceRoot,
@@ -22,6 +23,8 @@ function minimalWs(
 ): WorkspaceState {
   const rootNodeId = "test-root-id";
   return {
+    profiles: [DEFAULT_PROFILE],
+    activeProfileId: DEFAULT_PROFILE.id,
     tabs: [{
       id: "t1",
       name: "Test",

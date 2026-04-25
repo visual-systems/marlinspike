@@ -93,50 +93,52 @@ constraint-driven node shapes.
 - [x] Canvas reads `data.rendering.shape` from constraint applications
 - [x] Collapsed nodes render `<rect>` when shape is "rect", `<circle>` otherwise
 
-### Phase 5: Profile data model and storage
+### Phase 5: Profile data model and storage (complete)
 
-- [ ] Define `Profile` interface in `workspace.ts`
-- [ ] Create `marlinspike_profiles` IndexedDB collection (separate from graph DB)
-- [ ] Implement default "Local" profile (`indxdb://marlinspike`)
-- [ ] Add `activeProfileId` to workspace/UI state
-- [ ] Load/save profiles on startup
+- [x] Define `Profile` interface in `workspace.ts`
+- [x] Profiles stored in UI state (part of `WorkspaceState`, persisted via SurrealDB `_ui` database)
+- [x] Implement default "Local" profile (`indxdb://marlinspike`)
+- [x] Add `profiles` and `activeProfileId` to workspace/UI state
+- [x] Load/save profiles on startup (via existing sync mechanism)
 
-### Phase 6: Profile UI
+### Phase 6: Profile UI (partial)
 
-- [ ] Add profile dropdown to workspace bar (left of tabs)
+- [x] Add profile dropdown to workspace bar (left of tabs)
 - [ ] Profile switching: flush current DB, connect to new profile's target, load workspaces
 - [ ] Add/edit profile form (name, URL, collapsible advanced section)
 - [ ] Default profile protection (cannot delete)
 
-### Phase 7: Workspace-as-tabs unification
+### Phase 7: Workspace-as-tabs unification (partial)
 
-- [ ] Add `homeWorkspaceId` to `Tab` interface
+- [x] Add `homeWorkspaceId` to `Tab` interface
 - [ ] Tab labels derive from workspace node labels
 - [ ] Creating a new tab creates a workspace node under the active profile
 - [ ] Closing a tab hides the workspace from the session (does not delete)
 
-### Phase 8: Focus navigation updates
+Note: Full workspace-as-tabs unification (single graph, no separate databases per tab) is a deeper
+architectural change deferred to a follow-up branch.
 
-- [ ] Profile name as root label in focus breadcrumb (replace "(root)")
-- [ ] Home workspace indicator (green dot) on workspace nodes at root level
-- [ ] Home hint in focus breadcrumb when at root with nothing selected
-- [ ] Remove connected graphs dropdown from controls bar
+### Phase 8: Focus navigation updates (complete)
 
-### Phase 9: Remove persona dropdown
+- [x] Profile name as root label in focus breadcrumb (replace "(root)")
+- [x] Home workspace indicator (green dot) on workspace nodes at root level
+- [x] Home hint in focus breadcrumb when at root with nothing selected
+- [x] Remove connected graphs dropdown from controls bar
 
-- [ ] Remove persona dropdown from workspace bar
-- [ ] Remove `personas` / `activePersona` from `WorkspaceState` (or keep in state, just hide UI)
-- [ ] Clean up persona-related stories if needed
+### Phase 9: Remove persona dropdown (complete)
 
-### Phase 10: Edge clipping for rect nodes
+- [x] Remove persona dropdown from workspace bar
+- [x] Keep `personas` / `activePersona` in `WorkspaceState` (state preserved, UI hidden)
 
-- [ ] Update `surfacePoint` to use AABB clipping for rect-shaped collapsed nodes
-- [ ] Update arc exit point calculation for rect nodes
+### Phase 10: Edge clipping for rect nodes (complete)
+
+- [x] Update `surfacePoint` to use AABB clipping for rect-shaped collapsed nodes
+- [x] Update arc exit point calculation for rect nodes (both `arcClipRect` and straight edges)
 
 ### Ongoing
 
 - [ ] Update DESIGN.md to reflect implementation decisions as they land
-- [ ] `deno task ci` passes after each phase
+- [x] `deno task ci` passes after each phase (358 tests)
 
 ## Open Questions
 
@@ -162,13 +164,14 @@ constraint-driven node shapes.
 
 ### Implementation
 
-- [ ] Profile data persists in IndexedDB across sessions
-- [ ] Profile dropdown shows all profiles, allows switching
-- [ ] Default "Local" profile exists on first launch
-- [ ] Tab labels reflect workspace node labels
-- [ ] Focus breadcrumb shows profile name as root
-- [ ] Workspace nodes render as rectangles on canvas
-- [ ] Home workspace dot visible at profile root level
-- [ ] Connected graphs dropdown removed
-- [ ] Persona dropdown removed
-- [ ] `deno task ci` passes after all changes
+- [x] Profile data persists in IndexedDB across sessions (via UI state sync)
+- [x] Profile dropdown shows all profiles in workspace bar
+- [x] Default "Local" profile exists on first launch
+- [ ] Tab labels reflect workspace node labels (deferred — needs workspace-as-tabs)
+- [x] Focus breadcrumb shows profile name as root
+- [x] Workspace nodes render as rectangles on canvas
+- [x] Home workspace dot visible at profile root level
+- [x] Connected graphs dropdown removed
+- [x] Persona dropdown removed
+- [x] Edge clipping works correctly for rect-shaped collapsed nodes
+- [x] `deno task ci` passes after all changes (358 tests)

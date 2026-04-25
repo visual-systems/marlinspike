@@ -243,7 +243,7 @@ function App() {
 
   return (
     <>
-      <WorkspaceBar ws={ws} wsRef={wsRef} update={update} showListEditor={showListEditor} />
+      <WorkspaceBar ws={ws} wsRef={wsRef} update={update} />
       <WorkspaceControls ws={ws} update={update} showListEditor={showListEditor} />
       <WorkspaceArea ws={ws} update={update} />
       {listEditor && <ListEditorModal config={listEditor} onClose={() => setListEditor(null)} />}
@@ -308,33 +308,12 @@ function ListEditorModal(
 // ---------------------------------------------------------------------------
 
 function WorkspaceBar(
-  { ws, wsRef, update, showListEditor }: {
+  { ws, wsRef, update }: {
     ws: WorkspaceState;
     wsRef: { current: WorkspaceState | null };
     update: Updater;
-    showListEditor: (c: ListEditorConfig) => void;
   },
 ) {
-  function setPersona(name: string) {
-    update((s) => ({ ...s, activePersona: name }));
-  }
-
-  function editPersonas() {
-    showListEditor({
-      title: "Edit Personas",
-      items: ws.personas,
-      onSave: (items) => {
-        update((s) => ({
-          ...s,
-          personas: items,
-          activePersona: items.includes(s.activePersona ?? "")
-            ? s.activePersona
-            : (items[0] ?? null),
-        }));
-      },
-    });
-  }
-
   async function addTab() {
     try {
       // Flush current database to IndexedDB before switching
@@ -412,18 +391,23 @@ function WorkspaceBar(
     }
   }
 
+  function selectProfile(id: string) {
+    update((s) => ({ ...s, activeProfileId: id }));
+  }
+
+  const activeProfile = ws.profiles.find((p) => p.id === ws.activeProfileId);
+
   return (
     <div id="workspace-bar">
-      {/* Persona dropdown */}
+      {/* Profile dropdown */}
       <div
         style={`width:${DROPDOWN_WIDTH}px; flex-shrink:0; border-right:1px solid #1a1a2e; display:flex; align-items:center;`}
       >
         <Dropdown
-          items={ws.personas.map((p) => ({ value: p, label: p }))}
-          selectedValue={ws.activePersona}
-          placeholder="Persona"
-          onSelect={setPersona}
-          onEdit={editPersonas}
+          items={ws.profiles.map((p) => ({ value: p.id, label: p.name }))}
+          selectedValue={activeProfile?.id ?? null}
+          placeholder="Profile"
+          onSelect={selectProfile}
         />
       </div>
 
@@ -739,120 +723,7 @@ function WorkspaceControls(
       {/* Right-side controls */}
       <div style="display:flex; align-items:stretch; margin-left:auto; flex-shrink:0;">
         <FocusDropdown ws={ws} update={update} />
-        <ConnectedGraphsBtn ws={ws} update={update} />
       </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Connected graphs button
-// ---------------------------------------------------------------------------
-
-function ConnectedGraphsBtn({ ws, update }: { ws: WorkspaceState; update: Updater }) {
-  const [open, setOpen] = useState(false);
-
-  const connectedCount = ws.connectedGraphs.filter((g) => g.connected).length;
-
-  function toggleGraph(id: string) {
-    const graph = ws.connectedGraphs.find((g) => g.id === id);
-    if (!graph || graph.required) return;
-
-    if (graph.connected) {
-      // Disconnect remote
-      disconnectRemote(id);
-      update((s) => ({
-        ...s,
-        connectedGraphs: s.connectedGraphs.map((g) => g.id === id ? { ...g, connected: false } : g),
-      }));
-    } else {
-      // Reconnect — read config from root node and connect
-      const config = getConnectionConfig(ws);
-      if (config && config.entityId === id) {
-        connectRemote(id, {
-          url: config.url,
-          namespace: config.namespace,
-          database: config.database,
-          username: config.username,
-          password: config.password,
-        }).then(() => {
-          update((s) => ({
-            ...s,
-            connectedGraphs: s.connectedGraphs.map((g) =>
-              g.id === id ? { ...g, connected: true, label: config.url } : g
-            ),
-          }));
-        }).catch((err) => {
-          console.error(`[remote] Reconnect failed: ${config.url}`, err);
-          update((s) => ({
-            ...s,
-            connectedGraphs: s.connectedGraphs.map((g) =>
-              g.id === id ? { ...g, connected: false, label: `${config.url} (failed)` } : g
-            ),
-          }));
-        });
-      }
-    }
-  }
-
-  return (
-    <div
-      style="position:relative; flex-shrink:0;"
-      onClick={(e: MouseEvent) => e.stopPropagation()}
-    >
-      <div
-        title="Connected graphs"
-        style="display:flex; align-items:center; gap:4px; padding:0 8px; font-size:11px; color:#3a3a5a; cursor:pointer; user-select:none; height:100%; border-left:1px solid #1a1a2e;"
-        onMouseDown={(e: MouseEvent) => {
-          e.stopPropagation();
-          e.preventDefault();
-          setOpen((prev) => {
-            if (!prev) {
-              // See "Hono JSX DOM workaround" in client.tsx.
-              setTimeout(() => {
-                document.addEventListener("click", () => setOpen(false), { once: true });
-              }, 0);
-            }
-            return !prev;
-          });
-        }}
-      >
-        <span>{connectedCount} graph{connectedCount !== 1 ? "s" : ""}</span>
-        <span style="font-size:9px; color:#2a2a4a;">▾</span>
-      </div>
-      {open && (
-        <div
-          style="position:absolute; top:100%; right:0; min-width:280px; background:#0d0d1e; border:1px solid #252538; z-index:200; display:flex; flex-direction:column; box-shadow:0 4px 12px rgba(0,0,0,0.5);"
-          onClick={(e: MouseEvent) => e.stopPropagation()}
-        >
-          {ws.connectedGraphs.map((graph) => (
-            <div
-              key={graph.id}
-              style={`display:flex; align-items:center; gap:8px; padding:6px 10px; font-size:11px;${
-                graph.required ? "" : " cursor:pointer;"
-              }`}
-              onClick={graph.required ? undefined : () => toggleGraph(graph.id)}
-            >
-              <div
-                style={[
-                  "width:12px; height:12px; border:1px solid #2a2a4a; border-radius:2px;",
-                  "display:flex; align-items:center; justify-content:center; flex-shrink:0;",
-                  graph.connected ? "background:#1e2a4a;" : "background:#0f0f22;",
-                  graph.required ? "cursor:not-allowed; opacity:0.5;" : "cursor:pointer;",
-                ].join("")}
-              >
-                {graph.connected && <span style="font-size:9px; color:#7090d0;">✓</span>}
-              </div>
-              <span style={graph.connected ? "color:#888;" : "color:#3a3a5a;"}>
-                {graph.label}
-              </span>
-              {graph.required && (
-                <span style="font-size:10px; color:#2a2a4a; margin-left:auto;">required</span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

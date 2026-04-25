@@ -50,6 +50,8 @@ export interface Tab {
   databaseId: string;
   /** ID of this tab's workspace root node. Every tab's treeNodes has exactly one root. */
   rootNodeId: string;
+  /** Workspace node ID that this tab considers "home" — used for the home indicator at root level. */
+  homeWorkspaceId?: string;
   panels: Panel[];
 }
 
@@ -93,6 +95,8 @@ export interface ConstraintApplication {
 }
 
 export interface WorkspaceState {
+  profiles: Profile[];
+  activeProfileId: string;
   tabs: Tab[];
   activeTabId: string;
   treeNodes: TreeNode[];
@@ -147,6 +151,27 @@ export interface ConnectedGraph {
   connected: boolean;
   required: boolean;
 }
+
+export interface Profile {
+  id: string;
+  name: string;
+  /** Connection URL. Local: `indxdb://marlinspike`, remote: `wss://...` or `https://...` */
+  url: string;
+  namespace?: string;
+  database?: string;
+  username?: string;
+  password?: string;
+  /** Whether this is the built-in default profile (cannot be deleted). */
+  isDefault?: boolean;
+}
+
+export const DEFAULT_PROFILE: Profile = {
+  id: "default",
+  name: "Local",
+  url: "indxdb://marlinspike",
+  namespace: "marlinspike",
+  isDefault: true,
+};
 
 export type Updater = (fn: (s: WorkspaceState) => WorkspaceState) => void;
 
@@ -452,11 +477,14 @@ export function defaultState(): WorkspaceState {
   const databaseId = crypto.randomUUID();
   const treeNodes = defaultTreeNodes(rootNodeId);
   return {
+    profiles: [DEFAULT_PROFILE],
+    activeProfileId: DEFAULT_PROFILE.id,
     tabs: [{
       id: tabId,
       name: "Main",
       databaseId,
       rootNodeId,
+      homeWorkspaceId: rootNodeId,
       panels: [defaultPanel()],
     }],
     activeTabId: tabId,
@@ -606,6 +634,8 @@ export function loadState(): WorkspaceState {
         wrapped.rootNodeId,
       );
       return {
+        profiles: (parsed.profiles as Profile[] | undefined) ?? ds.profiles,
+        activeProfileId: (parsed.activeProfileId as string | undefined) ?? ds.activeProfileId,
         tabs,
         activeTabId: (parsed.activeTabId as string | undefined) ?? tabs[0].id,
         treeNodes,
@@ -838,6 +868,9 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       // UI-only fields from SurrealDB (tabs, personas, workflows, etc.)
       // Spread first so explicit graph/canvas fields below take precedence.
       ...uiState,
+      // Backfill profiles for databases that predate the profiles feature
+      profiles: uiState.profiles ?? ds.profiles,
+      activeProfileId: uiState.activeProfileId ?? ds.activeProfileId,
       // Graph data loaded from SurrealDB — must override any stale fields in uiState
       treeNodes,
       edges: normaliseEdges(edges),
@@ -998,6 +1031,8 @@ async function migrateToSurreal(state: WorkspaceState, databaseId: string): Prom
 
   // Write global UI state
   const uiState: UiState = {
+    profiles: state.profiles,
+    activeProfileId: state.activeProfileId,
     tabs: state.tabs,
     activeTabId: state.activeTabId,
     personas: state.personas,

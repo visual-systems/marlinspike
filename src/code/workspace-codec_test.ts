@@ -12,6 +12,7 @@
 import { assertEquals } from "@std/assert";
 import { emitWorkspace, parseWorkspace } from "./workspace-codec.ts";
 import {
+  DEFAULT_PROFILE,
   defaultTreeNodes,
   makeNode,
   makeRootNode,
@@ -27,6 +28,8 @@ const ROOT_ID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
 
 function wsWithFocus(focusId: string | null): WorkspaceState {
   return {
+    profiles: [DEFAULT_PROFILE],
+    activeProfileId: DEFAULT_PROFILE.id,
     tabs: [{
       id: "t1",
       name: "Test",
@@ -175,6 +178,8 @@ Deno.test("parseWorkspace: custom root label (non-'Workspace') still unwraps", (
 /** Build a WorkspaceState with an explicit tree and focus. */
 function wsWith(treeNodes: TreeNode[], focusId: string | null): WorkspaceState {
   return {
+    profiles: [DEFAULT_PROFILE],
+    activeProfileId: DEFAULT_PROFILE.id,
     tabs: [{
       id: "t1",
       name: "Test",

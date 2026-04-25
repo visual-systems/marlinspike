@@ -18,7 +18,9 @@ export function FocusDropdown({ ws, update }: { ws: WorkspaceState; update: Upda
   const focusNode: TreeNode | null = ws.focusId
     ? (findNode(ws.treeNodes, ws.focusId) ?? null)
     : null;
-  const label = focusNode ? focusNode.label : "(root)";
+  const activeProfile = ws.profiles.find((p) => p.id === ws.activeProfileId);
+  const rootLabel = activeProfile?.name ?? "Local";
+  const label = focusNode ? focusNode.label : rootLabel;
 
   // Path from focus down to selected canvas node (composites only, excluding focus itself)
   const selectedNodeId = ws.canvasSelected?.type === "node" ? ws.canvasSelected.id : null;
@@ -109,7 +111,7 @@ export function FocusDropdown({ ws, update }: { ws: WorkspaceState; update: Upda
                   onMouseLeave={(e: MouseEvent) =>
                     (e.currentTarget as HTMLElement).style.background = ""}
                 >
-                  (root)
+                  {rootLabel}
                 </div>
               )}
               {ancestors.map((n) => (

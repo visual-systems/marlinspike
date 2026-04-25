@@ -116,8 +116,16 @@ function arcMidpoint(
   return { x: arcC.x + r * bx / bl, y: arcC.y + r * by / bl };
 }
 
+/** Half-height of a collapsed rect node (rect uses LEAF_R as half-width, 0.7*LEAF_R as half-height). */
+const RECT_HALF_H = LEAF_R * 0.7;
+
 /** Returns the point on `from`'s boundary in the direction of `to`, offset outward by `gap` px. */
-function surfacePoint(from: ForceNode, to: ForceNode, gap = 0): { x: number; y: number } {
+function surfacePoint(
+  from: ForceNode,
+  to: ForceNode,
+  gap = 0,
+  isRect = false,
+): { x: number; y: number } {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const dist = Math.sqrt(dx * dx + dy * dy);
@@ -125,6 +133,13 @@ function surfacePoint(from: ForceNode, to: ForceNode, gap = 0): { x: number; y: 
   const ux = dx / dist;
   const uy = dy / dist;
   if (from.w === LEAF_W && from.h === LEAF_H) {
+    if (isRect) {
+      // collapsed rect node: ray-AABB clip with rect dimensions
+      const tx = Math.abs(ux) > 0.001 ? LEAF_R / Math.abs(ux) : Infinity;
+      const ty = Math.abs(uy) > 0.001 ? RECT_HALF_H / Math.abs(uy) : Infinity;
+      const t = Math.min(tx, ty);
+      return { x: from.x + ux * (t + gap), y: from.y + uy * (t + gap) };
+    }
     // collapsed circle node
     return { x: from.x + ux * (LEAF_R + gap), y: from.y + uy * (LEAF_R + gap) };
   }
@@ -717,6 +732,13 @@ function CanvasTopBar(
     items.push({ node: focusNode, dimmed: false });
   }
 
+  // Home hint: when at root with nothing selected, show a link to the home workspace
+  const activeTab = getActiveTab(ws);
+  const homeId = activeTab.homeWorkspaceId ?? activeTab.rootNodeId;
+  const homeNode = ws.focusId === null && !selectedNodeId
+    ? findNode(ws.treeNodes, homeId) ?? null
+    : null;
+
   const pillStyle =
     "display:flex; align-items:center; gap:6px; background:rgba(13,13,30,0.85); border:1px solid #2a2a4a; border-radius:4px; padding:4px 10px; font-size:11px;";
   const dividerStyle = "width:1px; height:14px; background:#2a2a4a; flex-shrink:0;";
@@ -783,6 +805,20 @@ function CanvasTopBar(
               </span>
             </>
           ))}
+        </div>
+      )}
+
+      {/* Home hint — shown at profile root when nothing is selected */}
+      {homeNode && (
+        <div
+          style={pillStyle + " cursor:pointer; color:#50c070; gap:4px;"}
+          title={`Go to ${homeNode.label}`}
+          onClick={() => update((s) => ({ ...s, focusId: homeId }))}
+        >
+          <svg width="8" height="8" viewBox="0 0 8 8" style="flex-shrink:0;">
+            <circle cx="4" cy="4" r="4" fill="#50c070" />
+          </svg>
+          <span>{homeNode.label}</span>
         </div>
       )}
     </div>
@@ -1805,6 +1841,21 @@ function renderLevel(
                 style="pointer-events:none;"
               />
             )}
+            {/* Home workspace indicator — small green dot at top-right */}
+            {levelId === "" &&
+              node.id ===
+                (getActiveTab(ws).homeWorkspaceId ?? getActiveTab(ws).rootNodeId) &&
+              (
+                <circle
+                  cx={r - 2}
+                  cy={-(isRect ? r * 0.7 - 2 : r - 2)}
+                  r={4}
+                  fill="#50c070"
+                  stroke="#0d0d1e"
+                  stroke-width={1}
+                  style="pointer-events:none;"
+                />
+              )}
             {node.ports && node.ports.length > 0 && (
               <NodePorts
                 ports={circlePortPositions(node.ports, r)}
@@ -1898,16 +1949,36 @@ function renderLevel(
               x: (pa.x + pb.x) / 2 + sign * hv * nx,
               y: (pa.y + pb.y) / 2 + sign * hv * ny,
             };
-            const isSrcCircle = pa.w === LEAF_W && pa.h === LEAF_H;
-            const isDstCircle = pb.w === LEAF_W && pb.h === LEAF_H;
-            src = isSrcCircle
+            const isSrcCollapsed = pa.w === LEAF_W && pa.h === LEAF_H;
+            const isDstCollapsed = pb.w === LEAF_W && pb.h === LEAF_H;
+            const isSrcRect = isSrcCollapsed && rectNodeIds.has(edge.fromId);
+            const isDstRect = isDstCollapsed && rectNodeIds.has(edge.toId);
+            src = isSrcCollapsed && !isSrcRect
               ? arcClipPoint(edgeArcC, r, pa, LEAF_R + 5, pb)
-              : arcClipRect(edgeArcC, r, pa, pa.w / 2, pa.h / 2, 5, arcSweep, pb);
+              : arcClipRect(
+                edgeArcC,
+                r,
+                pa,
+                isSrcRect ? LEAF_R : pa.w / 2,
+                isSrcRect ? RECT_HALF_H : pa.h / 2,
+                5,
+                arcSweep,
+                pb,
+              );
             // Destination: pull back by arrowhead length (10px) past the boundary.
-            dst = isDstCircle
+            dst = isDstCollapsed && !isDstRect
               ? arcClipPoint(edgeArcC, r, pb, LEAF_R + 5 + 10, pa)
               // For the destination we want the entry point — travel backward (1-arcSweep) from pb.
-              : arcClipRect(edgeArcC, r, pb, pb.w / 2, pb.h / 2, 5 + 10, 1 - arcSweep, pa);
+              : arcClipRect(
+                edgeArcC,
+                r,
+                pb,
+                isDstRect ? LEAF_R : pb.w / 2,
+                isDstRect ? RECT_HALF_H : pb.h / 2,
+                5 + 10,
+                1 - arcSweep,
+                pa,
+              );
             // arcC was computed from pa→pb, but src/dst are clipped points on that same circle.
             // The SVG sweep flag for src→dst must be derived from arcC directly (cross product).
             // In SVG screen coords (Y-down): positive crossZ → CW rotation → sweep=1.
@@ -1915,8 +1986,8 @@ function renderLevel(
               (src.y - edgeArcC.y) * (dst.x - edgeArcC.x);
             sweep = crossZ > 0 ? 1 : 0;
           } else {
-            src = surfacePoint(pa, pb, 5);
-            dst = surfacePoint(pb, pa, 5 + 10);
+            src = surfacePoint(pa, pb, 5, rectNodeIds.has(edge.fromId));
+            dst = surfacePoint(pb, pa, 5 + 10, rectNodeIds.has(edge.toId));
           }
 
           // For straight edges, check if we need to bend around an obstructing node
