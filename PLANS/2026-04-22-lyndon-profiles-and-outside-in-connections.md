@@ -23,7 +23,7 @@ constraint-driven node shapes.
 
 ### Profile placement
 - Profile dropdown sits left of the tab strip in the workspace bar (Option A)
-- Profile name is used as the root label in the focus breadcrumb (e.g. "Local" not "(root)")
+- Focus breadcrumb shows "(root)" above the profile level; profile node label shows when focused on it
 - Remove the persona dropdown for now — no persona functionality implemented yet
 
 ### Workspace focus and tab identity
@@ -109,6 +109,7 @@ constraint-driven node shapes.
 - [x] Edit button (✎) on each profile row opens pre-filled form
 - [x] Profile switching: flush current DB, connect to new profile's target, load workspaces
 - [x] Default profile protection (URL locked, `localDatabaseId` preserved on edit)
+- [x] Delete profile button (hidden for default profile, switches to default on delete)
 
 ### Phase 7: Workspace-as-tabs unification (mostly complete)
 
@@ -143,7 +144,7 @@ independent of being a workspace. By default, children inherit the profile's con
 
 ### Phase 8: Focus navigation updates (complete)
 
-- [x] Profile name as root label in focus breadcrumb (replace "(root)")
+- [x] Virtual root shows "(root)" in focus breadcrumb; profile node label at profile level
 - [x] Home workspace indicator (green dot) on workspace nodes at root level
 - [x] Home hint in focus breadcrumb when at root with nothing selected
 - [x] Remove connected graphs dropdown from controls bar
@@ -196,6 +197,17 @@ node containing children. A profile root node eliminates this special case.
 - [x] `profileRootId` added to `WorkspaceState`
 - [x] `deno task ci` passes after changes (358 tests)
 
+### Phase 13: Profile database IDs and UI polish (complete)
+
+- [x] Derive `localDatabaseId` from `indxdb://` URL path (not UUID) — e.g. `db:marlinspike`
+- [x] `localDbIdFromUrl()` helper extracts path from local profile URLs
+- [x] `createDatabase()` accepts optional `dbId` parameter
+- [x] `backfillProfileDatabaseIds()` derives from URL when possible
+- [x] Tab name defaults to `null` — display derives from workspace node label
+- [x] Node `kind` reverts from "composite" to "leaf" when all children removed
+- [x] Remove auth-service example from default bootstrap data
+- [x] `deno task ci` passes (358 tests)
+
 ### Ongoing
 
 - [ ] Update DESIGN.md to reflect implementation decisions as they land
@@ -210,6 +222,9 @@ node containing children. A profile root node eliminates this special case.
   → Initially, close = delete. May revisit with soft-delete/archive later.
 - What constraints beyond `rendering.shape` might influence node appearance in future?
 - How to migrate existing per-tab databases into workspace nodes in a single graph?
+- Should local databases have separate name and id keys? Currently the URL path is used as
+  both the database ID and dump key (`indxdb://foobar` → `db:foobar`). A separate id key
+  (e.g. a UUID) could avoid PK collisions when sharing/importing databases between instances.
 
 ## Verification
 
@@ -238,7 +253,7 @@ node containing children. A profile root node eliminates this special case.
 - [x] Tab switching is focus-only (no database swap)
 - [x] `DatabaseSnapshot` and `_snapshotCache` removed
 - [x] `databaseId` on `WorkspaceState`, optional on `Tab` (migration compat)
-- [x] Focus breadcrumb shows profile name as root
+- [x] Focus breadcrumb shows "(root)" above profile, profile label at profile level
 - [x] Workspace nodes render as rectangles on canvas
 - [x] Home workspace dot visible at profile root level
 - [x] Connected graphs dropdown removed
@@ -246,4 +261,7 @@ node containing children. A profile root node eliminates this special case.
 - [x] Workflow dropdown removed
 - [x] Node shape on ForceNode interface (not external Set)
 - [x] Edge clipping works correctly for rect-shaped collapsed nodes
+- [x] Local database IDs derived from profile URL path (human-readable dump keys)
+- [x] Delete profile works (non-default profiles only)
+- [x] Node kind reverts to leaf when children removed
 - [x] `deno task ci` passes after all changes (358 tests)
