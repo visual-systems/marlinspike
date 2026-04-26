@@ -308,7 +308,7 @@ export function ensureProfileRoot(
 
 /**
  * Read the connection config from the workspace root node's data.
- * Returns null if the root has no workspace.connections constraint applied
+ * Returns null if the root has no connections constraint applied
  * or if the URL is empty (purely local workspace).
  */
 export function getConnectionConfig(
@@ -322,7 +322,7 @@ export function getConnectionConfig(
   password?: string;
 } | null {
   const rootId = getWorkspaceRootId(ws);
-  const cId = WORKSPACE_CONNECTIONS_CONSTRAINT.id;
+  const cId = CONNECTIONS_CONSTRAINT.id;
   const app = ws.constraintApplications.find(
     (a) => a.constraintId === cId && a.entityId === rootId,
   );
@@ -719,7 +719,7 @@ export function loadState(): WorkspaceState {
       // Validate canvasExpandedNodes — drop IDs that no longer exist
       const rawExpanded = (parsed.canvasExpandedNodes as string[] | undefined) ?? [];
       const canvasExpandedNodes = rawExpanded.filter((id) => findNode(treeNodes, id) !== null);
-      // Ensure workspace.connections constraint is present and applied to the root
+      // Ensure workspace constraint is present and applied to the root
       const parsedConstraints =
         ((parsed.constraints as Record<string, unknown>[] | undefined) ?? [])
           .map(parseConstraint);
@@ -780,8 +780,8 @@ export function loadState(): WorkspaceState {
 // ---------------------------------------------------------------------------
 
 import {
+  CONNECTIONS_CONSTRAINT,
   PROFILE_CONSTRAINT,
-  WORKSPACE_CONNECTIONS_CONSTRAINT,
   WORKSPACE_CONSTRAINT,
 } from "../graph/builtin_constraints.ts";
 import { exportDb, getDb, importDb, initSurreal, useDatabase, useUiDb } from "./db/surreal.ts";
@@ -963,7 +963,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     }];
 
     const ds = defaultState();
-    // Ensure workspace.connections constraint is present and applied to the root
+    // Ensure workspace constraint is present and applied to the root
     const wsConstraint = ensureWorkspaceConstraint(constraints, applications, wrapped.rootNodeId);
     // Ensure profile root wraps workspace nodes
     const activeProfile = (uiState.profiles ?? ds.profiles).find(

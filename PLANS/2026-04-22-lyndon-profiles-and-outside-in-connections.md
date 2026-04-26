@@ -54,7 +54,7 @@ constraint-driven node shapes.
   `data.rendering.shape` in the workspace constraint.
 - The canvas reads `rendering.shape` from any constraint — this is a general mechanism, not
   workspace-specific.
-- `WORKSPACE_CONNECTIONS_CONSTRAINT` now has `data: { rendering: { shape: "rect" } }`.
+- `WORKSPACE_CONSTRAINT` has `data: { rendering: { shape: "rect" } }`.
 - Already implemented: canvas renders `<rect>` when `shape === "rect"`, `<circle>` otherwise.
 
 ### Connected graphs dropdown
@@ -89,7 +89,7 @@ constraint-driven node shapes.
 
 ### Phase 4: Constraint-driven node shape (complete)
 
-- [x] Add `rendering: { shape: "rect" }` to `WORKSPACE_CONNECTIONS_CONSTRAINT` data
+- [x] Add `rendering: { shape: "rect" }` to `WORKSPACE_CONSTRAINT` data
 - [x] Canvas reads `data.rendering.shape` from constraint applications
 - [x] Collapsed nodes render `<rect>` when shape is "rect", `<circle>` otherwise
 
@@ -206,6 +206,9 @@ node containing children. A profile root node eliminates this special case.
 - [x] Tab name defaults to `null` — display derives from workspace node label
 - [x] Node `kind` reverts from "composite" to "leaf" when all children removed
 - [x] Remove auth-service example from default bootstrap data
+- [x] Split `WORKSPACE_CONNECTIONS_CONSTRAINT` into orthogonal `WORKSPACE_CONSTRAINT` (tab-eligible,
+  rect shape) and `CONNECTIONS_CONSTRAINT` (remote connection config) — renamed across all source
+  and test files
 - [x] `deno task ci` passes (358 tests)
 
 ### Ongoing
@@ -233,7 +236,7 @@ node containing children. A profile root node eliminates this special case.
 - [x] DESIGN.md has four new subsections in Persistence Layer
 - [x] Outside-in principle stated as explicit axiom
 - [x] Profiles described as IndexedDB-stored with `indxdb://` URL convention for local
-- [x] `workspace.connections` split into `workspace` + `storage-location` documented
+- [x] Constraint split documented: `WORKSPACE_CONSTRAINT` + `CONNECTIONS_CONSTRAINT` (orthogonal)
 - [x] Connection inheritance chain documented (profile → workspace → children)
 - [x] Cardano example exists with README and .clj
 - [x] CardanoCubicRoots story added

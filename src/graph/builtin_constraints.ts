@@ -47,11 +47,11 @@ export const WORKSPACE_CONSTRAINT: Constraint = {
   version: 1,
 };
 
-export const WORKSPACE_CONNECTIONS_CONSTRAINT: Constraint = {
-  id: "builtin/workspace-connections",
+export const CONNECTIONS_CONSTRAINT: Constraint = {
+  id: "builtin/connections",
   label: "Remote Connection",
-  uri: "spike://builtin/constraints/workspace-connections",
-  type: "workspace.connections",
+  uri: "spike://builtin/constraints/connections",
+  type: "connections",
   targets: [{ type: "entity", class: "node" }],
   data: {},
   version: 1,

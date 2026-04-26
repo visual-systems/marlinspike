@@ -986,13 +986,14 @@ plugin protocol and a first real schema — not a full ecosystem.
 
 ### Phase 5b — Profiles and Storage
 
-- [ ] Profile storage (IndexedDB `marlinspike_profiles` collection)
-- [ ] Profile CRUD UI (account-style dropdown: add, edit, switch, delete)
-- [ ] `indxdb://` URL scheme interpretation in connection manager
-- [ ] Split `workspace.connections` into `workspace` + `storage-location` constraints
-- [ ] Profile–workspace binding (workspace nodes scoped to active profile)
-- [ ] Workspace-as-tabs unification (remove separate tab registry)
-- [ ] Connection inheritance: profile → workspace → children via outside-in principle
+- [x] Profile storage (IndexedDB, persisted via SurrealDB `_ui` database and dump/load bridge)
+- [x] Profile CRUD UI (dropdown with browser, add/edit form, delete, default protection)
+- [x] `indxdb://` URL scheme — local database IDs derived from URL path (human-readable dump keys)
+- [x] Split constraints: `workspace` (tab-eligible, rect shape) + `connections` (remote connection config)
+- [x] Profile root node (`PROFILE_CONSTRAINT`) wraps all workspace nodes in a single tree
+- [x] Workspace-as-tabs unification (single graph per profile, tabs are focus pointers)
+- [x] Connection inheritance: profile → workspace → children via outside-in principle
+- [ ] `storage-location` constraint — opts a node's children into a different database
 
 ### Phase 6 — Collaboration
 
@@ -1274,10 +1275,11 @@ WorkspaceState ←→ SurrealDB (mem://) ←→ export/import ←→ IndexedDB
 
 #### Database layout
 
-- **`_ui` database** — global UI state: tabs, personas, workflows, connected graphs, and a
+- **`_ui` database** — global UI state: profiles, active profile, tabs, personas, and a
   `db_registry` table listing all known graph databases.
-- **Per-graph databases** — one SurrealDB database per tab/project, identified by UUID. Contains
+- **Per-profile databases** — one SurrealDB database per profile (not per tab). Contains
   `tree_node`, `edge`, `constraint`, `constraint_application`, and `canvas_state` tables.
+  All workspace nodes live in a single tree under the profile root node.
 
 #### Sync strategy
 
@@ -1348,8 +1350,8 @@ workspace root nodes" and "you need a connection to read workspace root nodes":
 
 - **Root nodes are always local.** Every workspace root node lives in the local embedded database,
   which is always available without any external connection. The root node holds the workspace's
-  identity, constraint applications, and connection config (via the `workspace.connections`
-  constraint on `entity.data`).
+  identity and constraint applications. Connection config is provided by the `connections`
+  constraint (applied separately from the `workspace` constraint).
 - **Only children are remote.** The workspace's graph content (children, edges, etc.) may live in a
   remote SurrealDB instance. The root node is the local pointer to that remote data.
 - **Empty URL = purely local.** A workspace whose connection config has no URL stores everything in
@@ -1357,15 +1359,17 @@ workspace root nodes" and "you need a connection to read workspace root nodes":
   then children are synced from/to that remote.
 
 ```
-┌─────────────────────────────────────┐
-│  Local DB (mem:// via WASM)         │
-│                                     │
-│  Root "My Project"                  │
-│    data.url: "wss://db.example.com" │──connect──▶  Remote SurrealDB
-│                                     │              (children synced)
-│  Root "Local Workspace"             │
-│    data.url: ""                     │  (children also in local db)
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  Local DB (mem:// via WASM)                      │
+│                                                  │
+│  Profile Root "Local"          (profile)         │
+│  ├─ Workspace "My Project"     (workspace)       │
+│  │    connections constraint:                    │
+│  │    data.connection.url: "wss://db.example.com"│──connect──▶  Remote SurrealDB
+│  │                                               │              (children synced)
+│  └─ Workspace "Local Dev"      (workspace)       │
+│       (no connections constraint)                │  (children in local db)
+└──────────────────────────────────────────────────┘
 ```
 
 Startup flow:
@@ -1509,41 +1513,48 @@ and loads its workspace nodes. A brief loading indicator is acceptable during th
 
 ### Workspace Nodes as Tabs
 
-Currently, `tabs[]` in the `_ui` database and workspace root nodes are maintained as separate
-concepts that must be kept in sync. The design intent is to unify them:
+Workspace nodes and tabs are unified. There is one graph per profile — all workspace nodes are
+children of the profile root node in a single `treeNodes` array.
 
-- **Workspace nodes under the active profile ARE the tabs.** There is no separate tab registry.
-- A workspace node's label becomes the tab name. Its database ID is derived from its node ID.
-- Creating a new tab creates a new workspace node under the current profile.
-- Closing a tab hides the workspace node from the session but does not delete it.
+- **Tabs are focus pointers.** Each `Tab` has a `rootNodeId` referencing a workspace node in the
+  shared tree. Tab switching sets `focusId` — no database swap.
+- **Tab labels derive from workspace node labels.** `tab.name` is `null`; the display name comes
+  from the workspace node's `label` field (single source of truth).
+- **New tab** creates a composite workspace node (with `workspace` constraint) as a child of the
+  profile root, and opens a tab focused on it.
+- **Close tab** deletes the workspace node and its subtree from the graph.
+- **Profile root view** (`focusId === profileRootId`): all workspace nodes are visible on the
+  canvas as rectangular nodes. The focus breadcrumb shows the profile node label (e.g. "Local").
+- **Virtual root** (`focusId === null`): shows the profile root node itself — rarely used.
+- **One database per profile**, not one per tab. `databaseId` lives on `WorkspaceState`, not `Tab`.
 
-Open question: should focusing on root (null focusId) show all workspace nodes as a "workspace
-browser" view? This would provide a natural place to see and manage all workspaces under a profile.
+### Workspace, Connections, and Storage-Location Constraints
 
-### Workspace and Storage-Location Constraints
+Three orthogonal constraints govern workspace identity, connection config, and storage boundaries:
 
-The current `workspace.connections` constraint conflates two independent concerns. These should be
-split:
+| Constraint | Type | Purpose | Data |
+|---|---|---|---|
+| `workspace` | `workspace` | Makes a node tab-eligible, renders as rect | `{ rendering: { shape: "rect" } }` |
+| `connections` | `connections` | Remote connection config (URL, namespace, etc.) | `{}` (entity data schema on `entity.data.connection`) |
+| `storage-location` | — | Specifies where children are stored | Not yet implemented |
 
-| Constraint | Purpose | Data |
-|---|---|---|
-| `workspace` | Makes a node tab-eligible | `{}` (presence is sufficient) |
-| `storage-location` | Specifies where children are stored | `{url, namespace?, database?, username?, password?}` |
+**`workspace` constraint** (`WORKSPACE_CONSTRAINT`): Any node carrying this constraint can appear
+as a tab in the session UI. It also drives rectangular rendering on the canvas via
+`data.rendering.shape`. This is not limited to root-level nodes — a deeply nested composite with
+the workspace constraint could be opened as a focused tab.
 
-**`workspace` constraint:** Any node carrying this constraint can appear as a tab in the session
-UI. This is not limited to root-level nodes — a deeply nested composite node with the workspace
-constraint could be opened as a focused tab, providing a scoped view into a subgraph.
+**`connections` constraint** (`CONNECTIONS_CONSTRAINT`): Provides schema-driven connection fields
+(`url`, `namespace`, `database`, `username`, `password`) on the entity inspector. Applied
+independently of the workspace constraint — a node can have connection config without being
+tab-eligible, or be a workspace tab without connection config.
 
-Tab opening is manual by default: the user explicitly opens a workspace-constrained node as a tab.
-An optional auto-open flag on the constraint could be added later if needed.
+**`storage-location` constraint** (not yet implemented): Will specify the connection context for a
+node's children (the outside-in principle), replacing the direct use of `connections` for storage
+routing.
 
-**`storage-location` constraint:** Specifies the connection context for a node's children (the
-outside-in principle). This is the successor to the current `workspace.connections` constraint's
-connection fields.
-
-The two constraints are orthogonal:
-- A workspace tab with no `storage-location` inherits its parent's connection.
-- A node with `storage-location` but no `workspace` constraint acts as a storage boundary without
+The constraints are orthogonal:
+- A workspace tab with no `connections` inherits its parent's connection.
+- A node with `connections` but no `workspace` constraint provides connection config without
   being tab-eligible.
 
 ### Future Direction

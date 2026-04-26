@@ -12,10 +12,7 @@ import {
   makeRootNode,
   type WorkspaceState,
 } from "./workspace.ts";
-import {
-  WORKSPACE_CONNECTIONS_CONSTRAINT,
-  WORKSPACE_CONSTRAINT,
-} from "../graph/builtin_constraints.ts";
+import { CONNECTIONS_CONSTRAINT, WORKSPACE_CONSTRAINT } from "../graph/builtin_constraints.ts";
 
 // ---------------------------------------------------------------------------
 // Helper to build a minimal WorkspaceState for testing
@@ -228,10 +225,10 @@ Deno.test("getConnectionConfig: returns null when no constraint applied", () => 
 Deno.test("getConnectionConfig: returns null when URL is empty", () => {
   const rootId = "test-root-id";
   const ws = minimalWs({
-    constraints: [WORKSPACE_CONNECTIONS_CONSTRAINT],
+    constraints: [CONNECTIONS_CONSTRAINT],
     constraintApplications: [{
       id: "app-1",
-      constraintId: WORKSPACE_CONNECTIONS_CONSTRAINT.id,
+      constraintId: CONNECTIONS_CONSTRAINT.id,
       entityId: rootId,
       version: 1,
     }],
@@ -256,10 +253,10 @@ Deno.test("getConnectionConfig: returns config when URL is set", () => {
   };
   const ws = minimalWs({
     treeNodes: [rootNode],
-    constraints: [WORKSPACE_CONNECTIONS_CONSTRAINT],
+    constraints: [CONNECTIONS_CONSTRAINT],
     constraintApplications: [{
       id: "app-1",
-      constraintId: WORKSPACE_CONNECTIONS_CONSTRAINT.id,
+      constraintId: CONNECTIONS_CONSTRAINT.id,
       entityId: rootId,
       version: 1,
     }],
