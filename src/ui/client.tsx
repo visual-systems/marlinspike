@@ -353,6 +353,13 @@ function WorkspaceBar(
         onAdd={addProfile}
         onUpdate={(p) =>
           update((s) => ({ ...s, profiles: s.profiles.map((x) => x.id === p.id ? p : x) }))}
+        onDelete={(id) => {
+          const remaining = ws.profiles.filter((p) => p.id !== id);
+          if (remaining.length === 0) return;
+          const switchTo = remaining.find((p) => p.isDefault) ?? remaining[0];
+          update((s) => ({ ...s, profiles: remaining }));
+          if (id === ws.activeProfileId) selectProfile(switchTo.id);
+        }}
       />
 
       {/* Tabs */}
@@ -401,12 +408,13 @@ function WorkspaceBar(
 // ---------------------------------------------------------------------------
 
 function ProfileSegment(
-  { profiles, activeProfileId, onSelect, onAdd, onUpdate }: {
+  { profiles, activeProfileId, onSelect, onAdd, onUpdate, onDelete }: {
     profiles: Profile[];
     activeProfileId: string;
     onSelect: (id: string) => void;
     onAdd: (p: Profile) => void;
     onUpdate: (p: Profile) => void;
+    onDelete: (id: string) => void;
   },
 ) {
   const [open, setOpen] = useState(false);
@@ -655,6 +663,22 @@ function ProfileSegment(
                   </div>
                 )}
                 <div style="display:flex; gap:8px; margin-top:8px; justify-content:flex-end;">
+                  {formMode !== "new" && !isEditingDefault && (
+                    <button
+                      type="button"
+                      style="background:none; border:1px solid #3a2020; color:#a05050; font-size:11px; padding:4px 10px; border-radius:3px; cursor:pointer; margin-right:auto;"
+                      onClick={(e: MouseEvent) => {
+                        e.stopPropagation();
+                        if (formMode) {
+                          onDelete(formMode);
+                          resetForm();
+                          setOpen(false);
+                        }
+                      }}
+                    >
+                      Delete
+                    </button>
+                  )}
                   <button
                     type="button"
                     style="background:none; border:1px solid #252538; color:#666; font-size:11px; padding:4px 10px; border-radius:3px; cursor:pointer;"

@@ -535,7 +535,7 @@ export function freshProfileState(
     profileRootId,
     tabs: [{
       id: tabId,
-      name: "Main",
+      name: null,
       rootNodeId,
       homeWorkspaceId: rootNodeId,
       panels: [defaultPanel()],
@@ -1148,7 +1148,11 @@ export function updateNodeInTree(
 export function removeNodeFromTree(nodes: TreeNode[], nodeId: string): TreeNode[] {
   return nodes
     .filter((n) => n.id !== nodeId)
-    .map((n) => ({ ...n, children: removeNodeFromTree(n.children, nodeId) }));
+    .map((n) => {
+      const children = removeNodeFromTree(n.children, nodeId);
+      const kind = children.length === 0 ? "leaf" as const : n.kind;
+      return { ...n, children, kind };
+    });
 }
 
 export function withConstraintMutation(
