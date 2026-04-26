@@ -101,14 +101,14 @@ constraint-driven node shapes.
 - [x] Add `profiles` and `activeProfileId` to workspace/UI state
 - [x] Load/save profiles on startup (via existing sync mechanism)
 
-### Phase 6: Profile UI (mostly complete)
+### Phase 6: Profile UI (complete)
 
 - [x] Add profile dropdown to workspace bar (left of tabs)
 - [x] Profile browser: shows URL, local/remote label, active badge per profile
 - [x] Add/edit profile form (name, URL, collapsible advanced section)
 - [x] Edit button (✎) on each profile row opens pre-filled form
-- [ ] Profile switching: flush current DB, connect to new profile's target, load workspaces
-- [ ] Default profile protection (cannot delete)
+- [x] Profile switching: flush current DB, connect to new profile's target, load workspaces
+- [x] Default profile protection (URL locked, `localDatabaseId` preserved on edit)
 
 ### Phase 7: Workspace-as-tabs unification (mostly complete)
 
@@ -118,7 +118,7 @@ constraint-driven node shapes.
 - [x] Tabs become focus pointers: `Tab.rootNodeId` references a workspace node ID in
   the shared tree, not a separate `databaseId`
 - [x] Profile root view (`focusId === null`) shows all workspace nodes on the canvas
-- [ ] Tab labels derive from workspace node labels
+- [x] Tab labels derive from workspace node labels
 - [x] **New tab** creates a workspace node (composite, with `workspace` constraint) as a
   top-level sibling in the shared tree, and opens a tab focused on it
 - [x] **Close tab** deletes the workspace node and its subtree from the graph. This is
@@ -231,7 +231,7 @@ node containing children. A profile root node eliminates this special case.
 - [x] Profile browser shows URL, local/remote, active badge, edit button
 - [x] Add/edit profile form with name, URL, collapsible advanced fields
 - [x] Default "Local" profile exists on first launch
-- [ ] Tab labels reflect workspace node labels
+- [x] Tab labels reflect workspace node labels
 - [x] Profile root shows all workspaces (single-graph model implemented)
 - [x] New tab creates workspace node in shared tree (no database creation)
 - [x] Close tab deletes workspace node and subtree

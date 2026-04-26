@@ -26,6 +26,16 @@ import {
 
 const ROOT_ID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
 
+/** Build a workspace with a backend composite containing auth-service + frontend. */
+function testTreeNodes(rootId: string): TreeNode[] {
+  return [makeRootNode(rootId, [
+    makeNode("spike://acme/backend", "acme/backend", "composite", [
+      makeNode("spike://acme/backend/auth-service", "auth-service", "leaf", []),
+      makeNode("spike://acme/backend/frontend", "frontend", "leaf", []),
+    ]),
+  ])];
+}
+
 function wsWithFocus(focusId: string | null): WorkspaceState {
   return {
     profiles: [DEFAULT_PROFILE],
@@ -39,7 +49,7 @@ function wsWithFocus(focusId: string | null): WorkspaceState {
       panels: [],
     }],
     activeTabId: "t1",
-    treeNodes: defaultTreeNodes(ROOT_ID),
+    treeNodes: testTreeNodes(ROOT_ID),
     edges: [],
     constraints: [],
     constraintApplications: [],

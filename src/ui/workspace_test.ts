@@ -160,8 +160,7 @@ Deno.test("defaultTreeNodes: returns tree wrapped in workspace root with given I
   const nodes = defaultTreeNodes("my-root");
   assertEquals(nodes.length, 1);
   assertEquals(nodes[0].id, "my-root");
-  assertEquals(nodes[0].children.length, 1);
-  assertEquals(nodes[0].children[0].id, "spike://acme/backend");
+  assertEquals(nodes[0].children.length, 0);
 });
 
 // ---------------------------------------------------------------------------
@@ -169,12 +168,15 @@ Deno.test("defaultTreeNodes: returns tree wrapped in workspace root with given I
 // ---------------------------------------------------------------------------
 
 Deno.test("getFocusedRootNodes: focused on workspace root returns its children", () => {
-  const ws = minimalWs(); // focusId = rootNodeId by default
+  const child = makeNode("child-1", "Child", "leaf", []);
+  const ws = minimalWs({
+    treeNodes: [makeRootNode("test-root-id", [child])],
+  });
   const focused = getFocusedRootNodes(ws);
   // Should return the children of the workspace root, not the root node
   assertEquals(focused.every((n) => n.id !== "test-root-id"), true);
   assertEquals(focused.length, 1);
-  assertEquals(focused[0].id, "spike://acme/backend");
+  assertEquals(focused[0].id, "child-1");
 });
 
 Deno.test("getFocusedRootNodes: virtual root (focusId=null) returns treeNodes including workspace root", () => {
@@ -186,9 +188,16 @@ Deno.test("getFocusedRootNodes: virtual root (focusId=null) returns treeNodes in
 });
 
 Deno.test("getFocusedRootNodes: focused on a composite returns its children", () => {
-  const ws = minimalWs({ focusId: "spike://acme/backend" });
+  const composite = makeNode("composite-1", "Composite", "composite", [
+    makeNode("leaf-a", "A", "leaf", []),
+    makeNode("leaf-b", "B", "leaf", []),
+  ]);
+  const ws = minimalWs({
+    treeNodes: [makeRootNode("test-root-id", [composite])],
+    focusId: "composite-1",
+  });
   const focused = getFocusedRootNodes(ws);
-  assertEquals(focused.length, 2); // auth-service + frontend
+  assertEquals(focused.length, 2);
 });
 
 // ---------------------------------------------------------------------------

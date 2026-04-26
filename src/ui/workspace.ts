@@ -153,6 +153,8 @@ export interface Profile {
   password?: string;
   /** Whether this is the built-in default profile (cannot be deleted). */
   isDefault?: boolean;
+  /** SurrealDB database UUID for this profile's graph data. */
+  localDatabaseId?: string;
 }
 
 export const DEFAULT_PROFILE: Profile = {
@@ -464,20 +466,7 @@ export function makeNode(
 }
 
 export function defaultTreeNodes(rootNodeId: string): TreeNode[] {
-  return ensureWorkspaceRoot([
-    makeNode("spike://acme/backend", "acme/backend", "composite", [
-      makeNode("spike://acme/backend/auth-service", "auth-service", "composite", [
-        makeNode(
-          "spike://acme/backend/auth-service/token-validator",
-          "token-validator",
-          "leaf",
-          [],
-        ),
-        makeNode("spike://acme/backend/auth-service/ingress", "ingress", "leaf", []),
-      ]),
-      makeNode("spike://acme/backend/frontend", "frontend", "composite", []),
-    ], "spike://acme/backend"),
-  ], rootNodeId).treeNodes;
+  return ensureWorkspaceRoot([], rootNodeId).treeNodes;
 }
 
 export function defaultPanel(): Panel {
@@ -511,17 +500,37 @@ export function defaultCodePanel(): Panel {
   };
 }
 
-export function defaultState(): WorkspaceState {
+/**
+ * Create graph/tab state for a fresh profile — empty workspace under a profile root.
+ * Used for both default state and new profile creation.
+ */
+export function freshProfileState(
+  profileLabel: string,
+  databaseId: string,
+): Pick<
+  WorkspaceState,
+  | "databaseId"
+  | "profileRootId"
+  | "tabs"
+  | "activeTabId"
+  | "treeNodes"
+  | "edges"
+  | "constraints"
+  | "constraintApplications"
+  | "focusId"
+  | "canvasExpandedNodes"
+  | "canvasNodePositions"
+  | "canvasSelected"
+  | "canvasAlgorithm"
+  | "entityDrafts"
+  | "connectedGraphs"
+> {
   const tabId = crypto.randomUUID();
   const rootNodeId = crypto.randomUUID();
   const profileRootId = crypto.randomUUID();
-  const databaseId = crypto.randomUUID();
   const workspaceNodes = defaultTreeNodes(rootNodeId);
-  // Wrap workspace nodes under a profile root
-  const profileRoot = makeRootNode(profileRootId, workspaceNodes, "Local");
+  const profileRoot = makeRootNode(profileRootId, workspaceNodes, profileLabel);
   return {
-    profiles: [DEFAULT_PROFILE],
-    activeProfileId: DEFAULT_PROFILE.id,
     databaseId,
     profileRootId,
     tabs: [{
@@ -549,22 +558,33 @@ export function defaultState(): WorkspaceState {
         version: 1,
       },
     ],
-    personas: ["Architect", "Developer", "Reviewer"],
-    activePersona: "Architect",
-    workflows: ["Explore", "Design", "Build"],
-    activeWorkflow: "Explore",
-    connectedGraphs: [{
-      id: databaseId,
-      label: `localStorage/Default (${databaseId.slice(0, 8)})`,
-      connected: true,
-      required: true,
-    }],
     focusId: rootNodeId,
-    canvasExpandedNodes: workspaceNodes[0]?.children.map((n) => n.id) ?? [],
+    canvasExpandedNodes: [],
     canvasNodePositions: {},
     canvasSelected: null,
     canvasAlgorithm: "SDF",
     entityDrafts: {},
+    connectedGraphs: [{
+      id: databaseId,
+      label: `localStorage/${profileLabel} (${databaseId.slice(0, 8)})`,
+      connected: true,
+      required: true,
+    }],
+  };
+}
+
+export function defaultState(): WorkspaceState {
+  const databaseId = crypto.randomUUID();
+  const profile = freshProfileState("Local", databaseId);
+  const defaultProfile = { ...DEFAULT_PROFILE, localDatabaseId: databaseId };
+  return {
+    profiles: [defaultProfile],
+    activeProfileId: defaultProfile.id,
+    ...profile,
+    personas: ["Architect", "Developer", "Reviewer"],
+    activePersona: "Architect",
+    workflows: ["Explore", "Design", "Build"],
+    activeWorkflow: "Explore",
   };
 }
 
@@ -609,6 +629,26 @@ function parseConstraintApplication(raw: Record<string, unknown>): ConstraintApp
     constraintId: raw.constraintId as string,
     entityId: raw.entityId as string,
     version: (raw.version as number | undefined) ?? 1,
+  };
+}
+
+/**
+ * Ensure every profile has a `localDatabaseId`. Profiles created before
+ * this field existed won't have one — backfill the active profile with
+ * the state-level `databaseId`.
+ */
+function backfillProfileDatabaseIds(state: WorkspaceState): WorkspaceState {
+  const needsBackfill = state.profiles.some((p) => !p.localDatabaseId);
+  if (!needsBackfill) return state;
+  return {
+    ...state,
+    profiles: state.profiles.map((p) =>
+      p.localDatabaseId
+        ? p
+        : p.id === state.activeProfileId
+        ? { ...p, localDatabaseId: state.databaseId }
+        : p
+    ),
   };
 }
 
@@ -695,7 +735,7 @@ export function loadState(): WorkspaceState {
         undefined,
         activeProfile?.name ?? "Local",
       );
-      return {
+      return backfillProfileDatabaseIds({
         profiles: (parsed.profiles as Profile[] | undefined) ?? ds.profiles,
         activeProfileId: (parsed.activeProfileId as string | undefined) ?? ds.activeProfileId,
         databaseId: tabs[0]?.databaseId ?? ds.databaseId,
@@ -720,7 +760,7 @@ export function loadState(): WorkspaceState {
         canvasSelected: null,
         canvasAlgorithm: (parsed.canvasAlgorithm as AlgorithmId | undefined) ?? "SDF",
         entityDrafts: {},
-      };
+      });
     }
   } catch {
     // ignore corrupt state
@@ -808,9 +848,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     // Check for existing localStorage data to migrate
     const existingState = loadState();
     const rootChildren = getWorkspaceRoot(existingState)?.children ?? existingState.treeNodes;
-    const hasExistingData = rootChildren.length > 0 &&
-      !(rootChildren.length === 1 &&
-        rootChildren[0].id === "spike://acme/backend");
+    const hasExistingData = rootChildren.length > 0;
 
     const stateToMigrate = hasExistingData ? existingState : defaultState();
     await migrateToSurreal(stateToMigrate, defaultUuid);
@@ -825,7 +863,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       // Ignore — may not have access to localStorage
     }
 
-    return {
+    return backfillProfileDatabaseIds({
       ...stateToMigrate,
       databaseId: defaultUuid,
       connectedGraphs: [{
@@ -834,7 +872,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
         connected: true,
         required: true,
       }],
-    };
+    });
   }
 
   // 4. Load UI state to find active tab / database
@@ -930,7 +968,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       undefined,
       activeProfile?.name ?? "Local",
     );
-    return {
+    return backfillProfileDatabaseIds({
       ...ds,
       // UI-only fields from SurrealDB (tabs, personas, workflows, etc.)
       // Spread first so explicit graph/canvas fields below take precedence.
@@ -955,7 +993,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       canvasSelected: canvasState?.canvasSelected ?? null,
       canvasAlgorithm: canvasState?.canvasAlgorithm ?? ds.canvasAlgorithm,
       entityDrafts: canvasState?.entityDrafts ?? {},
-    };
+    });
   }
 
   // No UI state saved yet — return defaults with loaded graph data
@@ -966,7 +1004,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     wsConstraint2.constraints,
     wsConstraint2.constraintApplications,
   );
-  return {
+  return backfillProfileDatabaseIds({
     ...ds,
     databaseId: activeDatabaseId,
     profileRootId: profile2.profileRootId,
@@ -974,7 +1012,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     edges: normaliseEdges(edges),
     constraints: profile2.constraints,
     constraintApplications: profile2.constraintApplications,
-  };
+  });
 }
 
 /** Persist the initial SurrealDB state to IndexedDB after migration. */

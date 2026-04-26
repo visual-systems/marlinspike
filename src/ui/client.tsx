@@ -14,6 +14,7 @@ import {
   defaultPanel,
   ensureWorkspaceConstraint,
   findNode,
+  freshProfileState,
   getActiveTab,
   getConnectionConfig,
   loadState,
@@ -30,12 +31,17 @@ import {
   type WorkspaceState,
 } from "./workspace.ts";
 import { flushSync, scheduleSyncToDb, setSyncBaseline } from "./db/sync.ts";
+import { createDatabase } from "./db/operations.ts";
 import {
   type ConnectionConfig,
   connectRemote,
   disconnectRemote,
+  exportDb,
   remoteConnectionIds,
+  useDatabase,
+  useUiDb,
 } from "./db/surreal.ts";
+import { saveDump } from "./db/bridge.ts";
 // ---------------------------------------------------------------------------
 // App root
 // ---------------------------------------------------------------------------
@@ -220,7 +226,7 @@ function App() {
 
   return (
     <>
-      <WorkspaceBar ws={ws} update={update} />
+      <WorkspaceBar ws={ws} wsRef={wsRef} update={update} />
       <WorkspaceControls ws={ws} update={update} />
       <WorkspaceArea ws={ws} update={update} />
     </>
@@ -232,8 +238,9 @@ function App() {
 // ---------------------------------------------------------------------------
 
 function WorkspaceBar(
-  { ws, update }: {
+  { ws, wsRef, update }: {
     ws: WorkspaceState;
+    wsRef: { current: WorkspaceState | null };
     update: Updater;
   },
 ) {
@@ -269,8 +276,71 @@ function WorkspaceBar(
     });
   }
 
-  function selectProfile(id: string) {
-    update((s) => ({ ...s, activeProfileId: id }));
+  async function selectProfile(id: string) {
+    if (id === ws.activeProfileId) return;
+    const targetProfile = ws.profiles.find((p) => p.id === id);
+    if (!targetProfile?.localDatabaseId) {
+      console.warn("[profile] No localDatabaseId for profile", id);
+      return;
+    }
+
+    try {
+      // Flush current state to its database
+      const current = wsRef.current;
+      if (current) await flushSync(current);
+
+      // Create fresh state for the target profile's database
+      const dbId = targetProfile.localDatabaseId;
+      await useDatabase(dbId);
+
+      // Load the target profile's graph state
+      const fresh = freshProfileState(targetProfile.name, dbId);
+      update((s) => ({
+        ...s,
+        activeProfileId: id,
+        ...fresh,
+      }));
+      setSyncBaseline(wsRef.current!);
+    } catch (err) {
+      console.error("[profile] Failed to switch profile:", err);
+    }
+  }
+
+  async function addProfile(p: Profile) {
+    try {
+      // Create a new SurrealDB database for this profile
+      const dbId = await createDatabase(p.name);
+      p.localDatabaseId = dbId;
+
+      // Flush current state first
+      const current = wsRef.current;
+      if (current) await flushSync(current);
+
+      // Initialize the new database with fresh profile state
+      const fresh = freshProfileState(p.name, dbId);
+
+      // Persist the new empty database to IndexedDB
+      await useDatabase(dbId);
+      const graphDump = await exportDb();
+      await saveDump(`db:${dbId}`, graphDump);
+
+      update((s) => ({
+        ...s,
+        profiles: [...s.profiles, p],
+        activeProfileId: p.id,
+        ...fresh,
+      }));
+      setSyncBaseline(wsRef.current!);
+
+      // Persist UI state with new profile
+      await useUiDb();
+      const uiDump = await exportDb();
+      await saveDump("ui", uiDump);
+
+      console.log(`[profile] Created profile "${p.name}" with db:${dbId}`);
+    } catch (err) {
+      console.error("[profile] Failed to create profile:", err);
+    }
   }
 
   return (
@@ -280,23 +350,27 @@ function WorkspaceBar(
         profiles={ws.profiles}
         activeProfileId={ws.activeProfileId}
         onSelect={selectProfile}
-        onAdd={(p) =>
-          update((s) => ({ ...s, profiles: [...s.profiles, p], activeProfileId: p.id }))}
+        onAdd={addProfile}
         onUpdate={(p) =>
           update((s) => ({ ...s, profiles: s.profiles.map((x) => x.id === p.id ? p : x) }))}
       />
 
       {/* Tabs */}
       <div style="display:flex; align-items:center; gap:4px; flex:1; overflow:hidden; padding:0 8px;">
-        {ws.tabs.map((tab) => (
-          <TabItem
-            key={tab.id}
-            tab={tab}
-            isActive={tab.id === ws.activeTabId}
-            canClose={ws.tabs.length > 1}
-            update={update}
-          />
-        ))}
+        {ws.tabs.map((tab) => {
+          const wsNode = findNode(ws.treeNodes, tab.rootNodeId);
+          const nodeLabel = wsNode?.label === "Untitled" ? undefined : wsNode?.label;
+          return (
+            <TabItem
+              key={tab.id}
+              tab={tab}
+              isActive={tab.id === ws.activeTabId}
+              canClose={ws.tabs.length > 1}
+              update={update}
+              nodeLabel={nodeLabel}
+            />
+          );
+        })}
         <button
           type="button"
           style="background:none; border:none; color:#555; font-size:18px; cursor:pointer; padding:0 6px; line-height:1;"
@@ -395,8 +469,9 @@ function ProfileSegment(
       const p: Profile = {
         id: formMode,
         name: formName.trim(),
-        url: formUrl.trim(),
+        url: existing?.isDefault ? existing.url : formUrl.trim(),
         isDefault: existing?.isDefault,
+        localDatabaseId: existing?.localDatabaseId,
       };
       if (formNamespace.trim()) p.namespace = formNamespace.trim();
       if (formDatabase.trim()) p.database = formDatabase.trim();
@@ -417,6 +492,10 @@ function ProfileSegment(
   const LABEL = "font-size:10px; color:#3a3a5a; letter-spacing:0.05em; text-transform:uppercase;";
 
   const isEditing = formMode !== null;
+  const editingProfile = formMode && formMode !== "new"
+    ? profiles.find((p) => p.id === formMode)
+    : null;
+  const isEditingDefault = editingProfile?.isDefault === true;
   const formTitle = formMode === "new" ? "New Profile" : "Edit Profile";
 
   return (
@@ -505,10 +584,18 @@ function ProfileSegment(
                   <input
                     type="text"
                     value={formUrl}
+                    disabled={isEditingDefault}
                     onInput={(e: InputEvent) => setFormUrl((e.target as HTMLInputElement).value)}
                     placeholder="indxdb://... or wss://..."
-                    style={`${FIELD} font-family:ui-monospace,monospace;`}
+                    style={`${FIELD} font-family:ui-monospace,monospace;${
+                      isEditingDefault ? " opacity:0.4; cursor:not-allowed;" : ""
+                    }`}
                   />
+                  {isEditingDefault && (
+                    <div style="font-size:10px; color:#3a3a5a; margin-top:2px;">
+                      Default profile URL cannot be changed
+                    </div>
+                  )}
                 </div>
                 <div
                   style="display:flex; align-items:center; gap:4px; padding:4px 0; cursor:pointer; user-select:none;"
@@ -620,11 +707,13 @@ function ProfileSegment(
 // ---------------------------------------------------------------------------
 
 function TabItem(
-  { tab, isActive, canClose, update }: {
+  { tab, isActive, canClose, update, nodeLabel }: {
     tab: Tab;
     isActive: boolean;
     canClose: boolean;
     update: Updater;
+    /** Label from the workspace node — source of truth for display. */
+    nodeLabel?: string;
   },
 ) {
   const [renaming, setRenaming] = useState(false);
@@ -725,7 +814,7 @@ function TabItem(
         ? (
           <input
             ref={inputRef}
-            value={tab.name ?? ""}
+            value={nodeLabel ?? tab.name ?? ""}
             placeholder="Untitled"
             style="background:#0f0f22; border:1px solid #4a4a7a; color:#e0e0e0; font-size:13px; padding:0 4px; width:100px; border-radius:2px;"
             onBlur={finishRename}
@@ -737,10 +826,10 @@ function TabItem(
         )
         : (
           <span
-            style={isActive ? "cursor:text;" : (tab.name ? "" : "color:#555;")}
+            style={isActive ? "cursor:text;" : (nodeLabel || tab.name ? "" : "color:#555;")}
             onClick={handleLabelClick}
           >
-            {tab.name || "Untitled"}
+            {nodeLabel || tab.name || "Untitled"}
           </span>
         )}
       {canClose && (
