@@ -25,10 +25,10 @@ function minimalWs(
   return {
     profiles: [DEFAULT_PROFILE],
     activeProfileId: DEFAULT_PROFILE.id,
+    databaseId: "test-db-id",
     tabs: [{
       id: "t1",
       name: "Test",
-      databaseId: "test-db-id",
       rootNodeId,
       panels: [],
     }],
@@ -48,7 +48,6 @@ function minimalWs(
     canvasSelected: null,
     canvasAlgorithm: "SDF",
     entityDrafts: {},
-    _snapshotCache: {},
     ...overrides,
   };
 }

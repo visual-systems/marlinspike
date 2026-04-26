@@ -46,8 +46,8 @@ export interface Tab {
   id: string;
   /** Display name. Null means unnamed — UI shows "Untitled" as placeholder. */
   name: string | null;
-  /** SurrealDB database identifier (UUID). */
-  databaseId: string;
+  /** @deprecated — database ID is now on WorkspaceState. Kept for migration only. */
+  databaseId?: string;
   /** ID of this tab's workspace root node. Every tab's treeNodes has exactly one root. */
   rootNodeId: string;
   /** Workspace node ID that this tab considers "home" — used for the home indicator at root level. */
@@ -55,19 +55,7 @@ export interface Tab {
   panels: Panel[];
 }
 
-/** Per-database state that gets swapped when switching tabs. */
-export interface DatabaseSnapshot {
-  treeNodes: TreeNode[];
-  edges: Edge[];
-  constraints: Constraint[];
-  constraintApplications: ConstraintApplication[];
-  focusId: string | null;
-  canvasExpandedNodes: string[];
-  canvasNodePositions: Record<string, { x: number; y: number; pinned?: boolean }>;
-  canvasSelected: Selection;
-  canvasAlgorithm: AlgorithmId;
-  entityDrafts: Record<string, string>;
-}
+// DatabaseSnapshot removed — single-graph model, no per-tab database swap.
 
 // Describes what kind of entities a constraint is relevant to.
 // Discriminated union — more target types will be added in future (e.g. meta-constraints).
@@ -97,6 +85,8 @@ export interface ConstraintApplication {
 export interface WorkspaceState {
   profiles: Profile[];
   activeProfileId: string;
+  /** SurrealDB database identifier for the profile's single graph database. */
+  databaseId: string;
   tabs: Tab[];
   activeTabId: string;
   treeNodes: TreeNode[];
@@ -115,8 +105,6 @@ export interface WorkspaceState {
   canvasAlgorithm: AlgorithmId;
   /** Live unsaved edits keyed by entity ID. Shared between code panels and inspector. */
   entityDrafts: Record<string, string>;
-  /** In-memory cache of other tabs' database snapshots. Not persisted. */
-  _snapshotCache: Record<string, DatabaseSnapshot>;
 }
 
 export interface Port {
@@ -479,10 +467,10 @@ export function defaultState(): WorkspaceState {
   return {
     profiles: [DEFAULT_PROFILE],
     activeProfileId: DEFAULT_PROFILE.id,
+    databaseId,
     tabs: [{
       id: tabId,
       name: "Main",
-      databaseId,
       rootNodeId,
       homeWorkspaceId: rootNodeId,
       panels: [defaultPanel()],
@@ -513,7 +501,6 @@ export function defaultState(): WorkspaceState {
     canvasSelected: null,
     canvasAlgorithm: "SDF",
     entityDrafts: {},
-    _snapshotCache: {},
   };
 }
 
@@ -636,6 +623,7 @@ export function loadState(): WorkspaceState {
       return {
         profiles: (parsed.profiles as Profile[] | undefined) ?? ds.profiles,
         activeProfileId: (parsed.activeProfileId as string | undefined) ?? ds.activeProfileId,
+        databaseId: tabs[0]?.databaseId ?? ds.databaseId,
         tabs,
         activeTabId: (parsed.activeTabId as string | undefined) ?? tabs[0].id,
         treeNodes,
@@ -656,7 +644,6 @@ export function loadState(): WorkspaceState {
         canvasSelected: null,
         canvasAlgorithm: (parsed.canvasAlgorithm as AlgorithmId | undefined) ?? "SDF",
         entityDrafts: {},
-        _snapshotCache: {},
       };
     }
   } catch {
@@ -761,17 +748,13 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
 
     return {
       ...stateToMigrate,
-      tabs: stateToMigrate.tabs.map((t) => ({
-        ...t,
-        databaseId: t.databaseId ?? defaultUuid,
-      })),
+      databaseId: defaultUuid,
       connectedGraphs: [{
         id: defaultUuid,
         label: `localStorage/Default (${defaultUuid.slice(0, 8)})`,
         connected: true,
         required: true,
       }],
-      _snapshotCache: stateToMigrate._snapshotCache ?? {},
     };
   }
 
@@ -839,23 +822,17 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
   console.log("[init] Canvas state:", canvasState ? "found" : "not found");
 
   if (uiState) {
-    // Backfill databaseId and rootNodeId on tabs that predate these fields.
-    // Only the active tab gets the wrapped rootNodeId — inactive tabs will get
-    // their rootNodeId when their database is loaded via loadDatabaseSnapshot.
+    // Backfill rootNodeId on tabs that predate this field.
     const activeTabId = uiState.activeTabId;
-    const fallbackDbId = dbs[0]?.uuid ?? activeDatabaseId;
     const tabs = uiState.tabs.map((t: Tab) => ({
       ...t,
-      databaseId: t.databaseId ?? fallbackDbId,
       rootNodeId: t.rootNodeId || (t.id === activeTabId ? wrapped.rootNodeId : ""),
     }));
     // Update connectedGraphs to show current database
-    const activeTab = tabs.find((t: Tab) => t.id === uiState.activeTabId) ?? tabs[0];
-    const dbEntry = dbs.find((d) => d.uuid === activeTab?.databaseId);
-    const activeDbId = activeTab?.databaseId ?? fallbackDbId;
+    const dbEntry = dbs.find((d) => d.uuid === activeDatabaseId);
     const connectedGraphs = [{
-      id: activeDbId,
-      label: `localStorage/${dbEntry?.name ?? "Default"} (${activeDbId.slice(0, 8)})`,
+      id: activeDatabaseId,
+      label: `localStorage/${dbEntry?.name ?? "Default"} (${activeDatabaseId.slice(0, 8)})`,
       connected: true,
       required: true,
     }];
@@ -871,6 +848,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       // Backfill profiles for databases that predate the profiles feature
       profiles: uiState.profiles ?? ds.profiles,
       activeProfileId: uiState.activeProfileId ?? ds.activeProfileId,
+      databaseId: activeDatabaseId,
       // Graph data loaded from SurrealDB — must override any stale fields in uiState
       treeNodes,
       edges: normaliseEdges(edges),
@@ -886,7 +864,6 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       canvasSelected: canvasState?.canvasSelected ?? null,
       canvasAlgorithm: canvasState?.canvasAlgorithm ?? ds.canvasAlgorithm,
       entityDrafts: canvasState?.entityDrafts ?? {},
-      _snapshotCache: {},
     };
   }
 
@@ -895,6 +872,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
   const wsConstraint2 = ensureWorkspaceConstraint(constraints, applications, wrapped.rootNodeId);
   return {
     ...ds,
+    databaseId: activeDatabaseId,
     treeNodes,
     edges: normaliseEdges(edges),
     constraints: wsConstraint2.constraints,
@@ -919,55 +897,7 @@ async function persistInitialDumps(graphDatabaseId: string): Promise<void> {
   }
 }
 
-/** Load graph + canvas data for a specific database. Restores from IndexedDB dump if needed. */
-export async function loadDatabaseSnapshot(
-  databaseId: string,
-  rootNodeId?: string,
-): Promise<DatabaseSnapshot> {
-  console.log(`[snapshot] Loading database ${databaseId}...`);
-  // Restore from IndexedDB dump if this database hasn't been loaded yet
-  const dump = await loadDump(`db:${databaseId}`);
-  if (dump) {
-    console.log(`[snapshot] Found dump for ${databaseId} (${dump.length} bytes), importing...`);
-    await useDatabase(databaseId);
-    await importDb(dump);
-    console.log(`[snapshot] Restored database ${databaseId} from IndexedDB`);
-  } else {
-    console.log(`[snapshot] No dump found for db:${databaseId}, initialising fresh schema`);
-    await initGraphSchema(databaseId);
-  }
-
-  await useDatabase(databaseId);
-  const [flatNodes, edges, constraints, applications] = await Promise.all([
-    loadAllNodes(),
-    loadAllEdges(),
-    loadAllConstraints(),
-    loadAllApplications(),
-  ]);
-  console.log(`[snapshot] Loaded from SurrealDB:`, {
-    nodes: flatNodes.length,
-    edges: edges.length,
-    constraints: constraints.length,
-    applications: applications.length,
-  });
-  const canvasState = await loadCanvasState();
-  const ds = defaultState();
-  const wrapped = ensureWorkspaceRoot(buildTree(flatNodes), rootNodeId || undefined);
-  const wsConstraint = ensureWorkspaceConstraint(constraints, applications, wrapped.rootNodeId);
-  return {
-    treeNodes: wrapped.treeNodes,
-    edges: normaliseEdges(edges),
-    constraints: wsConstraint.constraints,
-    constraintApplications: wsConstraint.constraintApplications,
-    // Default to workspace root so users see graph contents; null = "virtual root" level
-    focusId: canvasState?.focusId ?? wrapped.rootNodeId,
-    canvasExpandedNodes: canvasState?.canvasExpandedNodes ?? ds.canvasExpandedNodes,
-    canvasNodePositions: canvasState?.canvasNodePositions ?? {},
-    canvasSelected: canvasState?.canvasSelected ?? null,
-    canvasAlgorithm: canvasState?.canvasAlgorithm ?? ds.canvasAlgorithm,
-    entityDrafts: canvasState?.entityDrafts ?? {},
-  };
-}
+// loadDatabaseSnapshot removed — single-graph model, no per-tab database loading.
 
 /**
  * Normalise edge records coming from SurrealDB.

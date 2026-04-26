@@ -30,10 +30,10 @@ function wsWithFocus(focusId: string | null): WorkspaceState {
   return {
     profiles: [DEFAULT_PROFILE],
     activeProfileId: DEFAULT_PROFILE.id,
+    databaseId: "db-uuid",
     tabs: [{
       id: "t1",
       name: "Test",
-      databaseId: "db-uuid",
       rootNodeId: ROOT_ID,
       panels: [],
     }],
@@ -53,7 +53,6 @@ function wsWithFocus(focusId: string | null): WorkspaceState {
     canvasSelected: null,
     canvasAlgorithm: "SDF",
     entityDrafts: {},
-    _snapshotCache: {},
   };
 }
 
@@ -180,10 +179,10 @@ function wsWith(treeNodes: TreeNode[], focusId: string | null): WorkspaceState {
   return {
     profiles: [DEFAULT_PROFILE],
     activeProfileId: DEFAULT_PROFILE.id,
+    databaseId: "db-uuid",
     tabs: [{
       id: "t1",
       name: "Test",
-      databaseId: "db-uuid",
       rootNodeId: ROOT_ID,
       panels: [],
     }],
@@ -203,7 +202,6 @@ function wsWith(treeNodes: TreeNode[], focusId: string | null): WorkspaceState {
     canvasSelected: null,
     canvasAlgorithm: "SDF",
     entityDrafts: {},
-    _snapshotCache: {},
   };
 }
 

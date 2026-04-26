@@ -590,7 +590,6 @@ function CanvasInspector(
   const fakeTab: Tab = {
     id: "__canvas_tab__",
     name: "Canvas",
-    databaseId: getActiveTab(ws).databaseId,
     rootNodeId: getWorkspaceRootId(ws),
     panels: [fakePanel],
   };

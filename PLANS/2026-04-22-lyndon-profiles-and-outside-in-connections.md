@@ -110,24 +110,26 @@ constraint-driven node shapes.
 - [ ] Profile switching: flush current DB, connect to new profile's target, load workspaces
 - [ ] Default profile protection (cannot delete)
 
-### Phase 7: Workspace-as-tabs unification (requires architectural change)
+### Phase 7: Workspace-as-tabs unification (mostly complete)
 
 - [x] Add `homeWorkspaceId` to `Tab` interface
-- [ ] **Single-graph model**: all workspace nodes live in the profile's database as
+- [x] **Single-graph model**: all workspace nodes live in the profile's database as
   top-level composite nodes in one `treeNodes` array — not one database per tab
-- [ ] Tabs become focus pointers: `Tab.focusId` references a workspace node ID in
+- [x] Tabs become focus pointers: `Tab.rootNodeId` references a workspace node ID in
   the shared tree, not a separate `databaseId`
-- [ ] Profile root view (`focusId === null`) shows all workspace nodes on the canvas
+- [x] Profile root view (`focusId === null`) shows all workspace nodes on the canvas
 - [ ] Tab labels derive from workspace node labels
-- [ ] **New tab** creates a workspace node (composite, with `workspace` constraint) as a
+- [x] **New tab** creates a workspace node (composite, with `workspace` constraint) as a
   top-level sibling in the shared tree, and opens a tab focused on it
-- [ ] **Close tab** deletes the workspace node and its subtree from the graph. This is
+- [x] **Close tab** deletes the workspace node and its subtree from the graph. This is
   a destructive action — the workspace and its contents are removed. (May revisit with
   soft-delete/archive later, but initially keep it simple: close = delete.)
 - [ ] `storage-location` constraint on a workspace node opts its children into a
   different database — this is the only case where a separate DB is involved
-- [ ] Remove `DatabaseSnapshot` swap-on-tab-switch in favour of focus navigation
-- [ ] Migration: convert existing per-tab databases into workspace nodes in one graph
+- [x] Remove `DatabaseSnapshot` swap-on-tab-switch in favour of focus navigation
+- [x] `databaseId` moved from `Tab` to `WorkspaceState` (single DB per profile)
+- [x] Sync layer uses `state.databaseId` instead of per-tab database
+- [~] ~~Migration: convert existing per-tab databases into workspace nodes in one graph~~ (deferred — not yet stable)
 
 **Why this is required**: the current architecture creates a separate SurrealDB database
 per tab and swaps `treeNodes` entirely when switching tabs. This means at the profile root
@@ -165,6 +167,34 @@ independent of being a workspace. By default, children inherit the profile's con
 - [x] Recognise both `indxdb://` and `indexdb://` as local profile schemes
 - [x] Add global `input::placeholder` style for dimmer placeholder text
 
+### Phase 12: Profile root node
+
+Currently workspace nodes sit as top-level siblings in a flat `treeNodes` array (a forest).
+This is inconsistent with every other level of the tree, which follows the pattern: a composite
+node containing children. A profile root node eliminates this special case.
+
+**Design:**
+- A `PROFILE_CONSTRAINT` (type `profile`, `rendering.shape: "rect"`) marks the profile root
+- `treeNodes` always has exactly one root: the profile node
+- Workspace nodes are children of the profile node
+- The profile root is the default focus on startup (`focusId === profileRootId`)
+- `focusId === null` is the true virtual root (shows just the profile node — rarely used)
+- Profile root carries profile metadata (name, etc.) in its `data`
+- `ensureWorkspaceRoot` → `ensureProfileRoot` — wraps all workspace nodes under the profile node
+
+**Implementation:**
+- [ ] Add `PROFILE_CONSTRAINT` to `builtin_constraints.ts`
+- [ ] Add `ensureProfileRoot()` to `workspace.ts` — wraps workspace nodes under a profile
+  root node with the profile constraint applied
+- [ ] Update `defaultState()` — profile root contains the workspace root as a child
+- [ ] Update `addTab()` — new workspace node becomes a child of the profile root, not a
+  top-level sibling
+- [ ] Update `closeTab()` — remove workspace node from profile root's children
+- [ ] Update `loadStateAsync()` / `loadState()` — ensure profile root exists on load
+- [ ] Update focus breadcrumb — profile root label replaces the current profile name injection
+- [ ] Remove `focusId === null` special-casing where it was used for "profile root view"
+- [ ] `deno task ci` passes after changes
+
 ### Ongoing
 
 - [ ] Update DESIGN.md to reflect implementation decisions as they land
@@ -200,8 +230,13 @@ independent of being a workspace. By default, children inherit the profile's con
 - [x] Profile browser shows URL, local/remote, active badge, edit button
 - [x] Add/edit profile form with name, URL, collapsible advanced fields
 - [x] Default "Local" profile exists on first launch
-- [ ] Tab labels reflect workspace node labels (deferred — needs workspace-as-tabs)
-- [ ] Profile root shows all workspaces (deferred — needs workspace-as-tabs)
+- [ ] Tab labels reflect workspace node labels
+- [x] Profile root shows all workspaces (single-graph model implemented)
+- [x] New tab creates workspace node in shared tree (no database creation)
+- [x] Close tab deletes workspace node and subtree
+- [x] Tab switching is focus-only (no database swap)
+- [x] `DatabaseSnapshot` and `_snapshotCache` removed
+- [x] `databaseId` on `WorkspaceState`, optional on `Tab` (migration compat)
 - [x] Focus breadcrumb shows profile name as root
 - [x] Workspace nodes render as rectangles on canvas
 - [x] Home workspace dot visible at profile root level

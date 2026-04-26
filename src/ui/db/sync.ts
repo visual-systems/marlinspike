@@ -4,7 +4,7 @@
  * and issues targeted SurrealDB operations for only what changed.
  */
 
-import { getActiveTab, type WorkspaceState } from "../workspace.ts";
+import { type WorkspaceState } from "../workspace.ts";
 import { exportDb, useDatabase, useUiDb } from "./surreal.ts";
 import {
   type CanvasState,
@@ -159,7 +159,7 @@ async function syncToDb(
 // ---------------------------------------------------------------------------
 
 function getActiveDatabaseId(state: WorkspaceState): string {
-  return getActiveTab(state).databaseId;
+  return state.databaseId;
 }
 
 async function syncGraphData(

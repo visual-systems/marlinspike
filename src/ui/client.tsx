@@ -8,20 +8,21 @@ import { CodePanel } from "./components/code-panel.tsx";
 import { Canvas } from "./components/canvas.tsx";
 import { validateWorkspace } from "../graph/validate_workspace.ts";
 import {
-  type DatabaseSnapshot,
+  collectSubtreeIds,
   defaultCodePanel,
   defaultConstraintsPanel,
   defaultPanel,
   ensureWorkspaceConstraint,
+  findNode,
   getActiveTab,
   getConnectionConfig,
-  loadDatabaseSnapshot,
   loadState,
   loadStateAsync,
   makeRootNode,
   PANEL_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
   type Profile,
+  removeNodeFromTree,
   type Tab,
   updateNodeInTree,
   type Updater,
@@ -29,21 +30,12 @@ import {
   type WorkspaceState,
 } from "./workspace.ts";
 import { flushSync, scheduleSyncToDb, setSyncBaseline } from "./db/sync.ts";
-import { createDatabase } from "./db/operations.ts";
 import {
   type ConnectionConfig,
   connectRemote,
   disconnectRemote,
-  exportDb,
   remoteConnectionIds,
-  useDatabase,
-  useUiDb,
 } from "./db/surreal.ts";
-import { saveDump } from "./db/bridge.ts";
-
-// Module-level flag: skip baseline reset when addTab handles its own persistence
-let skipBaselineReset = false;
-
 // ---------------------------------------------------------------------------
 // App root
 // ---------------------------------------------------------------------------
@@ -72,9 +64,8 @@ function App() {
   const [ws, setWs] = useState<WorkspaceState | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
 
-  const prevTabIdRef = useRef<string | null>(null);
-  // Keep a ref to the latest ws so async closures (addTab, activateTab)
-  // always see the current state — Hono doesn't re-render child components.
+  // Keep a ref to the latest ws so async closures always see current state —
+  // Hono doesn't re-render child components.
   const wsRef = useRef<WorkspaceState | null>(null);
   wsRef.current = ws;
 
@@ -110,16 +101,6 @@ function App() {
   // Persist to SurrealDB + IndexedDB on every state change (debounced)
   useEffect(() => {
     if (!ws) return;
-    // Reset sync baseline when active tab changes (new database context)
-    // Skip if addTab already handled persistence (avoids clobbering the diff)
-    if (prevTabIdRef.current !== null && prevTabIdRef.current !== ws.activeTabId) {
-      if (skipBaselineReset) {
-        skipBaselineReset = false;
-      } else {
-        setSyncBaseline(ws);
-      }
-    }
-    prevTabIdRef.current = ws.activeTabId;
     if (!dbError) {
       scheduleSyncToDb(ws);
     }
@@ -239,7 +220,7 @@ function App() {
 
   return (
     <>
-      <WorkspaceBar ws={ws} wsRef={wsRef} update={update} />
+      <WorkspaceBar ws={ws} update={update} />
       <WorkspaceControls ws={ws} update={update} />
       <WorkspaceArea ws={ws} update={update} />
     </>
@@ -251,87 +232,35 @@ function App() {
 // ---------------------------------------------------------------------------
 
 function WorkspaceBar(
-  { ws, wsRef, update }: {
+  { ws, update }: {
     ws: WorkspaceState;
-    wsRef: { current: WorkspaceState | null };
     update: Updater;
   },
 ) {
-  async function addTab() {
-    try {
-      // Flush current database to IndexedDB before switching
-      const currentWs = wsRef.current;
-      if (currentWs) await flushSync(currentWs);
-
-      const uuid = await createDatabase("Untitled");
-      const tabId = crypto.randomUUID();
-      const rootNodeId = crypto.randomUUID();
-      // Snapshot current tab's data before switching
-      update((s) => {
-        const currentTab = getActiveTab(s);
-        const snapshot: DatabaseSnapshot = {
-          treeNodes: s.treeNodes,
-          edges: s.edges,
-          constraints: s.constraints,
-          constraintApplications: s.constraintApplications,
-          focusId: s.focusId,
-          canvasExpandedNodes: s.canvasExpandedNodes,
-          canvasNodePositions: s.canvasNodePositions,
-          canvasSelected: s.canvasSelected,
-          canvasAlgorithm: s.canvasAlgorithm,
-          entityDrafts: s.entityDrafts,
-        };
-        return {
-          ...s,
-          tabs: [...s.tabs, {
-            id: tabId,
-            name: null,
-            databaseId: uuid,
-            rootNodeId,
-            panels: [defaultPanel()],
-          }],
-          activeTabId: tabId,
-          // New empty database with workspace root + builtin constraint
-          treeNodes: [makeRootNode(rootNodeId, [])],
-          edges: [],
-          ...ensureWorkspaceConstraint([], [], rootNodeId),
-          focusId: rootNodeId,
-          canvasExpandedNodes: [],
-          canvasNodePositions: {},
-          canvasSelected: null,
-          canvasAlgorithm: s.canvasAlgorithm,
-          entityDrafts: {},
-          connectedGraphs: [{
-            id: uuid,
-            label: `localStorage/Untitled (${uuid.slice(0, 8)})`,
-            connected: true,
-            required: true,
-          }],
-          _snapshotCache: {
-            ...s._snapshotCache,
-            [currentTab.databaseId]: snapshot,
-          },
-        };
-      });
-      // Tell the useEffect not to reset the sync baseline — we need the
-      // diff to detect the new tab/UI changes and persist them.
-      skipBaselineReset = true;
-
-      // Immediately persist the new (empty) database and updated UI state
-      // to IndexedDB. We can't rely on the sync cycle because the useEffect
-      // resets the sync baseline on tab change, causing the diff to see no changes.
-      await useDatabase(uuid);
-      const graphDump = await exportDb();
-      await saveDump(`db:${uuid}`, graphDump);
-      console.log(`[addTab] Persisted db:${uuid} (${graphDump.length} bytes)`);
-
-      await useUiDb();
-      const uiDump = await exportDb();
-      await saveDump("ui", uiDump);
-      console.log(`[addTab] Persisted ui (${uiDump.length} bytes)`);
-    } catch (err) {
-      console.error("[addTab] Failed to create database:", err);
-    }
+  function addTab() {
+    const tabId = crypto.randomUUID();
+    const rootNodeId = crypto.randomUUID();
+    update((s) => {
+      const newRoot = makeRootNode(rootNodeId, []);
+      const wsConstraint = ensureWorkspaceConstraint(
+        s.constraints,
+        s.constraintApplications,
+        rootNodeId,
+      );
+      return {
+        ...s,
+        tabs: [...s.tabs, {
+          id: tabId,
+          name: null,
+          rootNodeId,
+          panels: [defaultPanel()],
+        }],
+        activeTabId: tabId,
+        treeNodes: [...s.treeNodes, newRoot],
+        ...wsConstraint,
+        focusId: rootNodeId,
+      };
+    });
   }
 
   function selectProfile(id: string) {
@@ -360,7 +289,6 @@ function WorkspaceBar(
             isActive={tab.id === ws.activeTabId}
             canClose={ws.tabs.length > 1}
             update={update}
-            wsRef={wsRef}
           />
         ))}
         <button
@@ -686,16 +614,14 @@ function ProfileSegment(
 // ---------------------------------------------------------------------------
 
 function TabItem(
-  { tab, isActive, canClose, update, wsRef }: {
+  { tab, isActive, canClose, update }: {
     tab: Tab;
     isActive: boolean;
     canClose: boolean;
     update: Updater;
-    wsRef: { current: WorkspaceState | null };
   },
 ) {
   const [renaming, setRenaming] = useState(false);
-  const [switching, setSwitching] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -705,63 +631,11 @@ function TabItem(
     }
   }, [renaming]);
 
-  async function activateTab() {
-    const currentWs = wsRef.current;
-    if (switching || !currentWs || tab.id === currentWs.activeTabId) return;
-    setSwitching(true);
-    try {
-      // 1. Flush any pending writes to the current database
-      await flushSync(currentWs);
-
-      // 2. Snapshot current tab's data
-      const currentTab = getActiveTab(currentWs);
-      const snapshot: DatabaseSnapshot = {
-        treeNodes: currentWs.treeNodes,
-        edges: currentWs.edges,
-        constraints: currentWs.constraints,
-        constraintApplications: currentWs.constraintApplications,
-        focusId: currentWs.focusId,
-        canvasExpandedNodes: currentWs.canvasExpandedNodes,
-        canvasNodePositions: currentWs.canvasNodePositions,
-        canvasSelected: currentWs.canvasSelected,
-        canvasAlgorithm: currentWs.canvasAlgorithm,
-        entityDrafts: currentWs.entityDrafts,
-      };
-
-      // 3. Load target tab's data (from cache or DB)
-      let targetData: DatabaseSnapshot;
-      if (currentWs._snapshotCache[tab.databaseId]) {
-        targetData = currentWs._snapshotCache[tab.databaseId];
-      } else {
-        targetData = await loadDatabaseSnapshot(tab.databaseId, tab.rootNodeId);
-      }
-
-      // 4. Update state atomically
-      update((s) => {
-        const newCache = { ...s._snapshotCache };
-        newCache[currentTab.databaseId] = snapshot;
-        delete newCache[tab.databaseId]; // Now "live", remove from cache
-        return {
-          ...s,
-          activeTabId: tab.id,
-          ...targetData,
-          connectedGraphs: [{
-            id: tab.databaseId,
-            label: `localStorage/${tab.name || "Untitled"} (${tab.databaseId.slice(0, 8)})`,
-            connected: true,
-            required: true,
-          }],
-          _snapshotCache: newCache,
-        };
-      });
-
-      // 5. Reset sync baseline for the new database context
-      // (We need to get the updated state, but since update is async in Hono
-      // we set a flag and let the useEffect handle baseline reset)
-    } catch (err) {
-      console.error("[activateTab] Failed to switch tab:", err);
-    }
-    setSwitching(false);
+  function activateTab() {
+    update((s) => {
+      if (tab.id === s.activeTabId) return s;
+      return { ...s, activeTabId: tab.id, focusId: tab.rootNodeId };
+    });
   }
 
   function closeTab(e: MouseEvent) {
@@ -772,7 +646,34 @@ function TabItem(
       const newActiveId = s.activeTabId === tab.id
         ? (newTabs[Math.max(0, idx - 1)]?.id ?? newTabs[0]?.id)
         : s.activeTabId;
-      return { ...s, tabs: newTabs, activeTabId: newActiveId };
+
+      // Delete workspace node and its entire subtree from the graph
+      const rootNode = findNode(s.treeNodes, tab.rootNodeId);
+      if (!rootNode) {
+        return { ...s, tabs: newTabs, activeTabId: newActiveId };
+      }
+      const subtreeIds = collectSubtreeIds(rootNode);
+      const newTreeNodes = removeNodeFromTree(s.treeNodes, tab.rootNodeId);
+      const newEdges = s.edges.filter(
+        (edge) => !subtreeIds.has(edge.fromId) && !subtreeIds.has(edge.toId),
+      );
+      const newApps = s.constraintApplications.filter(
+        (a) => !subtreeIds.has(a.entityId),
+      );
+
+      // Focus the new active tab's workspace root
+      const newActiveTab = newTabs.find((t) => t.id === newActiveId);
+      const newFocusId = newActiveTab?.rootNodeId ?? s.focusId;
+
+      return {
+        ...s,
+        tabs: newTabs,
+        activeTabId: newActiveId,
+        treeNodes: newTreeNodes,
+        edges: newEdges,
+        constraintApplications: newApps,
+        focusId: newFocusId,
+      };
     });
   }
 
