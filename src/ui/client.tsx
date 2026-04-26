@@ -19,6 +19,7 @@ import {
   getConnectionConfig,
   loadState,
   loadStateAsync,
+  localDbIdFromUrl,
   makeRootNode,
   PANEL_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
@@ -309,7 +310,9 @@ function WorkspaceBar(
   async function addProfile(p: Profile) {
     try {
       // Create a new SurrealDB database for this profile
-      const dbId = await createDatabase(p.name);
+      // Derive database ID from local URL path (e.g. indxdb://foobar → "foobar")
+      const localId = localDbIdFromUrl(p.url);
+      const dbId = await createDatabase(p.name, localId ?? undefined);
       p.localDatabaseId = dbId;
 
       // Flush current state first

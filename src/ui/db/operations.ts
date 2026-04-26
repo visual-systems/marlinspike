@@ -404,21 +404,21 @@ export async function listDatabases(): Promise<DbRegistryEntry[]> {
 }
 
 /** Register a new database entry and initialise its schema. Returns the UUID. */
-export async function createDatabase(name: string): Promise<string> {
+export async function createDatabase(name: string, dbId?: string): Promise<string> {
   const db = getDb();
-  const uuid = crypto.randomUUID();
+  const id = dbId ?? crypto.randomUUID();
 
   // Register in the _ui db
   await useUiDb();
   await db.query(
     `CREATE db_registry SET name = $name, uuid = $uuid`,
-    { name, uuid },
+    { name, uuid: id },
   );
 
   // Initialise graph schema in the new database
-  await initGraphSchema(uuid);
+  await initGraphSchema(id);
 
-  return uuid;
+  return id;
 }
 
 /** Rename a database (update display name only). */

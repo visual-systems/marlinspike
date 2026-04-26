@@ -165,6 +165,12 @@ export const DEFAULT_PROFILE: Profile = {
   isDefault: true,
 };
 
+/** Extract the database ID from a local profile URL (indxdb:// or indexdb://). */
+export function localDbIdFromUrl(url: string): string | null {
+  const match = url.match(/^ind(?:x|ex)db:\/\/(.+)$/);
+  return match ? match[1] : null;
+}
+
 export type Updater = (fn: (s: WorkspaceState) => WorkspaceState) => void;
 
 export interface ListEditorConfig {
@@ -566,7 +572,7 @@ export function freshProfileState(
     entityDrafts: {},
     connectedGraphs: [{
       id: databaseId,
-      label: `localStorage/${profileLabel} (${databaseId.slice(0, 8)})`,
+      label: `localStorage/${profileLabel} (${databaseId})`,
       connected: true,
       required: true,
     }],
@@ -574,7 +580,7 @@ export function freshProfileState(
 }
 
 export function defaultState(): WorkspaceState {
-  const databaseId = crypto.randomUUID();
+  const databaseId = localDbIdFromUrl(DEFAULT_PROFILE.url) ?? crypto.randomUUID();
   const profile = freshProfileState("Local", databaseId);
   const defaultProfile = { ...DEFAULT_PROFILE, localDatabaseId: databaseId };
   return {
@@ -642,13 +648,14 @@ function backfillProfileDatabaseIds(state: WorkspaceState): WorkspaceState {
   if (!needsBackfill) return state;
   return {
     ...state,
-    profiles: state.profiles.map((p) =>
-      p.localDatabaseId
-        ? p
-        : p.id === state.activeProfileId
-        ? { ...p, localDatabaseId: state.databaseId }
-        : p
-    ),
+    profiles: state.profiles.map((p) => {
+      if (p.localDatabaseId) return p;
+      // Derive from URL for local profiles, fall back to state.databaseId for active
+      const fromUrl = localDbIdFromUrl(p.url);
+      if (fromUrl) return { ...p, localDatabaseId: fromUrl };
+      if (p.id === state.activeProfileId) return { ...p, localDatabaseId: state.databaseId };
+      return p;
+    }),
   };
 }
 
@@ -835,7 +842,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
 
   if (!hasDefault) {
     // First launch — create default DB and attempt localStorage migration
-    const defaultUuid = crypto.randomUUID();
+    const defaultUuid = localDbIdFromUrl(DEFAULT_PROFILE.url) ?? crypto.randomUUID();
     await initGraphSchema(defaultUuid);
 
     // Register it
@@ -868,7 +875,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       databaseId: defaultUuid,
       connectedGraphs: [{
         id: defaultUuid,
-        label: `localStorage/Default (${defaultUuid.slice(0, 8)})`,
+        label: `localStorage/Default (${defaultUuid})`,
         connected: true,
         required: true,
       }],
@@ -949,7 +956,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     const dbEntry = dbs.find((d) => d.uuid === activeDatabaseId);
     const connectedGraphs = [{
       id: activeDatabaseId,
-      label: `localStorage/${dbEntry?.name ?? "Default"} (${activeDatabaseId.slice(0, 8)})`,
+      label: `localStorage/${dbEntry?.name ?? "Default"} (${activeDatabaseId})`,
       connected: true,
       required: true,
     }];
