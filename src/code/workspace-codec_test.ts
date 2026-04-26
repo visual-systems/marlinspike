@@ -31,6 +31,7 @@ function wsWithFocus(focusId: string | null): WorkspaceState {
     profiles: [DEFAULT_PROFILE],
     activeProfileId: DEFAULT_PROFILE.id,
     databaseId: "db-uuid",
+    profileRootId: "profile-root",
     tabs: [{
       id: "t1",
       name: "Test",
@@ -180,6 +181,7 @@ function wsWith(treeNodes: TreeNode[], focusId: string | null): WorkspaceState {
     profiles: [DEFAULT_PROFILE],
     activeProfileId: DEFAULT_PROFILE.id,
     databaseId: "db-uuid",
+    profileRootId: "profile-root",
     tabs: [{
       id: "t1",
       name: "Test",

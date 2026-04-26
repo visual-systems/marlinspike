@@ -183,17 +183,18 @@ node containing children. A profile root node eliminates this special case.
 - `ensureWorkspaceRoot` → `ensureProfileRoot` — wraps all workspace nodes under the profile node
 
 **Implementation:**
-- [ ] Add `PROFILE_CONSTRAINT` to `builtin_constraints.ts`
-- [ ] Add `ensureProfileRoot()` to `workspace.ts` — wraps workspace nodes under a profile
+- [x] Add `PROFILE_CONSTRAINT` to `builtin_constraints.ts`
+- [x] Add `ensureProfileRoot()` to `workspace.ts` — wraps workspace nodes under a profile
   root node with the profile constraint applied
-- [ ] Update `defaultState()` — profile root contains the workspace root as a child
-- [ ] Update `addTab()` — new workspace node becomes a child of the profile root, not a
+- [x] Update `defaultState()` — profile root contains the workspace root as a child
+- [x] Update `addTab()` — new workspace node becomes a child of the profile root, not a
   top-level sibling
-- [ ] Update `closeTab()` — remove workspace node from profile root's children
-- [ ] Update `loadStateAsync()` / `loadState()` — ensure profile root exists on load
-- [ ] Update focus breadcrumb — profile root label replaces the current profile name injection
-- [ ] Remove `focusId === null` special-casing where it was used for "profile root view"
-- [ ] `deno task ci` passes after changes
+- [x] Update `closeTab()` — already works (recursive `removeNodeFromTree`)
+- [x] Update `loadStateAsync()` / `loadState()` — ensure profile root exists on load
+- [x] Update focus breadcrumb — reads label from profile root node instead of profile lookup
+- [x] Update home workspace indicator — checks `focusId === profileRootId` instead of `null`
+- [x] `profileRootId` added to `WorkspaceState`
+- [x] `deno task ci` passes after changes (358 tests)
 
 ### Ongoing
 

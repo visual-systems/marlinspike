@@ -87,6 +87,8 @@ export interface WorkspaceState {
   activeProfileId: string;
   /** SurrealDB database identifier for the profile's single graph database. */
   databaseId: string;
+  /** ID of the profile root node in treeNodes. */
+  profileRootId: string;
   tabs: Tab[];
   activeTabId: string;
   treeNodes: TreeNode[];
@@ -241,6 +243,56 @@ export function ensureWorkspaceConstraint(
       id: crypto.randomUUID(),
       constraintId: cId,
       entityId: rootNodeId,
+      version: 1,
+    }],
+  };
+}
+
+/**
+ * Ensure a profile root node exists wrapping all workspace nodes.
+ * If treeNodes already has a single node with the profile constraint applied,
+ * returns as-is. Otherwise wraps all existing nodes under a new profile root.
+ */
+export function ensureProfileRoot(
+  treeNodes: TreeNode[],
+  constraints: Constraint[],
+  constraintApplications: ConstraintApplication[],
+  profileRootId?: string,
+  profileLabel = "Local",
+): {
+  treeNodes: TreeNode[];
+  profileRootId: string;
+  constraints: Constraint[];
+  constraintApplications: ConstraintApplication[];
+} {
+  const pId = PROFILE_CONSTRAINT.id;
+  // Check if profile root already exists
+  if (treeNodes.length === 1) {
+    const isProfile = constraintApplications.some(
+      (a) => a.constraintId === pId && a.entityId === treeNodes[0].id,
+    );
+    if (isProfile) {
+      return {
+        treeNodes,
+        profileRootId: treeNodes[0].id,
+        constraints,
+        constraintApplications,
+      };
+    }
+  }
+
+  // Wrap all existing nodes under a new profile root
+  const id = profileRootId ?? crypto.randomUUID();
+  const profileRoot = makeRootNode(id, treeNodes, profileLabel);
+  const hasConstraint = constraints.some((c) => c.id === pId);
+  return {
+    treeNodes: [profileRoot],
+    profileRootId: id,
+    constraints: hasConstraint ? constraints : [...constraints, PROFILE_CONSTRAINT],
+    constraintApplications: [...constraintApplications, {
+      id: crypto.randomUUID(),
+      constraintId: pId,
+      entityId: id,
       version: 1,
     }],
   };
@@ -462,12 +514,16 @@ export function defaultCodePanel(): Panel {
 export function defaultState(): WorkspaceState {
   const tabId = crypto.randomUUID();
   const rootNodeId = crypto.randomUUID();
+  const profileRootId = crypto.randomUUID();
   const databaseId = crypto.randomUUID();
-  const treeNodes = defaultTreeNodes(rootNodeId);
+  const workspaceNodes = defaultTreeNodes(rootNodeId);
+  // Wrap workspace nodes under a profile root
+  const profileRoot = makeRootNode(profileRootId, workspaceNodes, "Local");
   return {
     profiles: [DEFAULT_PROFILE],
     activeProfileId: DEFAULT_PROFILE.id,
     databaseId,
+    profileRootId,
     tabs: [{
       id: tabId,
       name: "Main",
@@ -476,15 +532,23 @@ export function defaultState(): WorkspaceState {
       panels: [defaultPanel()],
     }],
     activeTabId: tabId,
-    treeNodes,
+    treeNodes: [profileRoot],
     edges: [],
-    constraints: [WORKSPACE_CONNECTIONS_CONSTRAINT],
-    constraintApplications: [{
-      id: crypto.randomUUID(),
-      constraintId: WORKSPACE_CONNECTIONS_CONSTRAINT.id,
-      entityId: rootNodeId,
-      version: 1,
-    }],
+    constraints: [PROFILE_CONSTRAINT, WORKSPACE_CONNECTIONS_CONSTRAINT],
+    constraintApplications: [
+      {
+        id: crypto.randomUUID(),
+        constraintId: PROFILE_CONSTRAINT.id,
+        entityId: profileRootId,
+        version: 1,
+      },
+      {
+        id: crypto.randomUUID(),
+        constraintId: WORKSPACE_CONNECTIONS_CONSTRAINT.id,
+        entityId: rootNodeId,
+        version: 1,
+      },
+    ],
     personas: ["Architect", "Developer", "Reviewer"],
     activePersona: "Architect",
     workflows: ["Explore", "Design", "Build"],
@@ -496,7 +560,7 @@ export function defaultState(): WorkspaceState {
       required: true,
     }],
     focusId: rootNodeId,
-    canvasExpandedNodes: treeNodes[0]?.children.map((n) => n.id) ?? [],
+    canvasExpandedNodes: workspaceNodes[0]?.children.map((n) => n.id) ?? [],
     canvasNodePositions: {},
     canvasSelected: null,
     canvasAlgorithm: "SDF",
@@ -620,16 +684,28 @@ export function loadState(): WorkspaceState {
         parsedApps,
         wrapped.rootNodeId,
       );
+      // Ensure profile root wraps workspace nodes
+      const activeProfile = (parsed.profiles as Profile[] | undefined)?.find(
+        (p: Profile) => p.id === (parsed.activeProfileId as string),
+      );
+      const profile = ensureProfileRoot(
+        treeNodes,
+        wsConstraint.constraints,
+        wsConstraint.constraintApplications,
+        undefined,
+        activeProfile?.name ?? "Local",
+      );
       return {
         profiles: (parsed.profiles as Profile[] | undefined) ?? ds.profiles,
         activeProfileId: (parsed.activeProfileId as string | undefined) ?? ds.activeProfileId,
         databaseId: tabs[0]?.databaseId ?? ds.databaseId,
+        profileRootId: profile.profileRootId,
         tabs,
         activeTabId: (parsed.activeTabId as string | undefined) ?? tabs[0].id,
-        treeNodes,
+        treeNodes: profile.treeNodes,
         edges: (parsed.edges as Edge[] | undefined) ?? [],
-        constraints: wsConstraint.constraints,
-        constraintApplications: wsConstraint.constraintApplications,
+        constraints: profile.constraints,
+        constraintApplications: profile.constraintApplications,
         personas: (parsed.personas as string[] | undefined) ?? ds.personas,
         activePersona: (parsed.activePersona as string | null | undefined) ?? null,
         workflows: (parsed.workflows as string[] | undefined) ?? ds.workflows,
@@ -656,7 +732,10 @@ export function loadState(): WorkspaceState {
 // Async load (SurrealDB with localStorage migration)
 // ---------------------------------------------------------------------------
 
-import { WORKSPACE_CONNECTIONS_CONSTRAINT } from "../graph/builtin_constraints.ts";
+import {
+  PROFILE_CONSTRAINT,
+  WORKSPACE_CONNECTIONS_CONSTRAINT,
+} from "../graph/builtin_constraints.ts";
 import { exportDb, getDb, importDb, initSurreal, useDatabase, useUiDb } from "./db/surreal.ts";
 import {
   buildTree,
@@ -840,6 +919,17 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     const ds = defaultState();
     // Ensure workspace.connections constraint is present and applied to the root
     const wsConstraint = ensureWorkspaceConstraint(constraints, applications, wrapped.rootNodeId);
+    // Ensure profile root wraps workspace nodes
+    const activeProfile = (uiState.profiles ?? ds.profiles).find(
+      (p: Profile) => p.id === (uiState.activeProfileId ?? ds.activeProfileId),
+    );
+    const profile = ensureProfileRoot(
+      treeNodes,
+      wsConstraint.constraints,
+      wsConstraint.constraintApplications,
+      undefined,
+      activeProfile?.name ?? "Local",
+    );
     return {
       ...ds,
       // UI-only fields from SurrealDB (tabs, personas, workflows, etc.)
@@ -849,11 +939,12 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       profiles: uiState.profiles ?? ds.profiles,
       activeProfileId: uiState.activeProfileId ?? ds.activeProfileId,
       databaseId: activeDatabaseId,
+      profileRootId: profile.profileRootId,
       // Graph data loaded from SurrealDB — must override any stale fields in uiState
-      treeNodes,
+      treeNodes: profile.treeNodes,
       edges: normaliseEdges(edges),
-      constraints: wsConstraint.constraints,
-      constraintApplications: wsConstraint.constraintApplications,
+      constraints: profile.constraints,
+      constraintApplications: profile.constraintApplications,
       // Overrides
       tabs,
       connectedGraphs,
@@ -870,13 +961,19 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
   // No UI state saved yet — return defaults with loaded graph data
   const ds = defaultState();
   const wsConstraint2 = ensureWorkspaceConstraint(constraints, applications, wrapped.rootNodeId);
+  const profile2 = ensureProfileRoot(
+    treeNodes,
+    wsConstraint2.constraints,
+    wsConstraint2.constraintApplications,
+  );
   return {
     ...ds,
     databaseId: activeDatabaseId,
-    treeNodes,
+    profileRootId: profile2.profileRootId,
+    treeNodes: profile2.treeNodes,
     edges: normaliseEdges(edges),
-    constraints: wsConstraint2.constraints,
-    constraintApplications: wsConstraint2.constraintApplications,
+    constraints: profile2.constraints,
+    constraintApplications: profile2.constraintApplications,
   };
 }
 

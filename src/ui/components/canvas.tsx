@@ -738,9 +738,8 @@ function CanvasTopBar(
   // Home hint: when at root with nothing selected, show a link to the home workspace
   const activeTab = getActiveTab(ws);
   const homeId = activeTab.homeWorkspaceId ?? activeTab.rootNodeId;
-  const homeNode = ws.focusId === null && !selectedNodeId
-    ? findNode(ws.treeNodes, homeId) ?? null
-    : null;
+  const atProfileRoot = ws.focusId === ws.profileRootId;
+  const homeNode = atProfileRoot && !selectedNodeId ? findNode(ws.treeNodes, homeId) ?? null : null;
 
   const pillStyle =
     "display:flex; align-items:center; gap:6px; background:rgba(13,13,30,0.85); border:1px solid #2a2a4a; border-radius:4px; padding:4px 10px; font-size:11px;";

@@ -22,10 +22,12 @@ function minimalWs(
   overrides: Partial<WorkspaceState> = {},
 ): WorkspaceState {
   const rootNodeId = "test-root-id";
+  const profileRootId = "test-profile-root";
   return {
     profiles: [DEFAULT_PROFILE],
     activeProfileId: DEFAULT_PROFILE.id,
     databaseId: "test-db-id",
+    profileRootId,
     tabs: [{
       id: "t1",
       name: "Test",

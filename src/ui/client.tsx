@@ -247,6 +247,12 @@ function WorkspaceBar(
         s.constraintApplications,
         rootNodeId,
       );
+      // Add workspace node as child of the profile root
+      const treeNodes = updateNodeInTree(
+        s.treeNodes,
+        s.profileRootId,
+        (n) => ({ ...n, children: [...n.children, newRoot] }),
+      );
       return {
         ...s,
         tabs: [...s.tabs, {
@@ -256,7 +262,7 @@ function WorkspaceBar(
           panels: [defaultPanel()],
         }],
         activeTabId: tabId,
-        treeNodes: [...s.treeNodes, newRoot],
+        treeNodes,
         ...wsConstraint,
         focusId: rootNodeId,
       };

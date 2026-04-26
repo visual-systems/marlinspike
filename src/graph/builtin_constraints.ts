@@ -47,6 +47,16 @@ export const WORKSPACE_CONNECTIONS_CONSTRAINT: Constraint = {
   version: 1,
 };
 
+export const PROFILE_CONSTRAINT: Constraint = {
+  id: "builtin/profile",
+  label: "Profile",
+  uri: "spike://builtin/constraints/profile",
+  type: "profile",
+  targets: [{ type: "entity", class: "node" }],
+  data: { rendering: { shape: "rect" } },
+  version: 1,
+};
+
 export const MAX_GROUP_SIZE_CONSTRAINT: Constraint = {
   id: "builtin/max-group-size",
   label: "Max Group Size (5)",
