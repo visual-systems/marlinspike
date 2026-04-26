@@ -111,7 +111,7 @@ constraint-driven node shapes.
 - [x] Default profile protection (URL locked, `localDatabaseId` preserved on edit)
 - [x] Delete profile button (hidden for default profile, switches to default on delete)
 
-### Phase 7: Workspace-as-tabs unification (mostly complete)
+### Phase 7: Workspace-as-tabs unification (complete)
 
 - [x] Add `homeWorkspaceId` to `Tab` interface
 - [x] **Single-graph model**: all workspace nodes live in the profile's database as
@@ -168,7 +168,7 @@ independent of being a workspace. By default, children inherit the profile's con
 - [x] Recognise both `indxdb://` and `indexdb://` as local profile schemes
 - [x] Add global `input::placeholder` style for dimmer placeholder text
 
-### Phase 12: Profile root node
+### Phase 12: Profile root node (complete)
 
 Currently workspace nodes sit as top-level siblings in a flat `treeNodes` array (a forest).
 This is inconsistent with every other level of the tree, which follows the pattern: a composite
@@ -213,7 +213,7 @@ node containing children. A profile root node eliminates this special case.
 
 ### Ongoing
 
-- [ ] Update DESIGN.md to reflect implementation decisions as they land
+- [x] Update DESIGN.md to reflect implementation decisions as they land
 - [x] `deno task ci` passes after each phase (358 tests)
 
 ## Open Questions
