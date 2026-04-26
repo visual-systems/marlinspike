@@ -41,16 +41,16 @@ function wsWithNode(
 }
 
 // ---------------------------------------------------------------------------
-// workspace.connections — registration
+// connections — registration
 // ---------------------------------------------------------------------------
 
-Deno.test("workspace.connections: is registered", () => {
+Deno.test("connections: is registered", () => {
   const types = registeredConstraintTypes();
-  assertEquals(types.includes("workspace.connections"), true);
+  assertEquals(types.includes("connections"), true);
 });
 
-Deno.test("workspace.connections: has entity data schema with connection object", () => {
-  const schema = getEntityDataSchema("workspace.connections");
+Deno.test("connections: has entity data schema with connection object", () => {
+  const schema = getEntityDataSchema("connections");
   assertEquals(schema !== null, true);
   assertEquals("connection" in schema!.properties, true);
   assertEquals(schema!.required, ["connection"]);
@@ -64,24 +64,24 @@ Deno.test("workspace.connections: has entity data schema with connection object"
   assertEquals("username" in connProps, true);
   assertEquals("password" in connProps, true);
   // Constraint's own dataSchema should be empty — config lives on the entity.
-  const constraintSchema = getConstraintDataSchema("workspace.connections");
+  const constraintSchema = getConstraintDataSchema("connections");
   assertEquals(Object.keys(constraintSchema!.properties).length, 0);
 });
 
 // ---------------------------------------------------------------------------
-// workspace.connections — validation
+// connections — validation
 // ---------------------------------------------------------------------------
 
 const CONN_CONSTRAINT: Constraint = {
   id: "c1",
   label: "Connection",
-  type: "workspace.connections",
+  type: "connections",
   targets: [{ type: "entity", class: "node" }],
   data: {},
   version: 1,
 };
 
-Deno.test("workspace.connections: empty URL produces error", () => {
+Deno.test("connections: empty URL produces error", () => {
   const { ws, apps } = wsWithNode("n1", CONN_CONSTRAINT, { connection: { url: "" } });
   const diags = validateWorkspace(ws, apps);
   assertEquals(diags["n1"]?.length, 1);
@@ -89,14 +89,14 @@ Deno.test("workspace.connections: empty URL produces error", () => {
   assertEquals(diags["n1"][0].message.includes("requires a URL"), true);
 });
 
-Deno.test("workspace.connections: invalid URL produces error", () => {
+Deno.test("connections: invalid URL produces error", () => {
   const { ws, apps } = wsWithNode("n1", CONN_CONSTRAINT, { connection: { url: "not-a-url" } });
   const diags = validateWorkspace(ws, apps);
   assertEquals(diags["n1"]?.length, 1);
   assertEquals(diags["n1"][0].message.includes("not a valid URL"), true);
 });
 
-Deno.test("workspace.connections: wrong protocol produces error", () => {
+Deno.test("connections: wrong protocol produces error", () => {
   const { ws, apps } = wsWithNode("n1", CONN_CONSTRAINT, {
     connection: { url: "ftp://example.com" },
   });
@@ -105,7 +105,7 @@ Deno.test("workspace.connections: wrong protocol produces error", () => {
   assertEquals(diags["n1"][0].message.includes("ws://"), true);
 });
 
-Deno.test("workspace.connections: valid wss:// URL produces no diagnostics", () => {
+Deno.test("connections: valid wss:// URL produces no diagnostics", () => {
   const { ws, apps } = wsWithNode("n1", CONN_CONSTRAINT, {
     connection: { url: "wss://db.example.com/rpc" },
   });
@@ -113,7 +113,7 @@ Deno.test("workspace.connections: valid wss:// URL produces no diagnostics", () 
   assertEquals(diags["n1"], undefined);
 });
 
-Deno.test("workspace.connections: valid https:// URL produces no diagnostics", () => {
+Deno.test("connections: valid https:// URL produces no diagnostics", () => {
   const { ws, apps } = wsWithNode("n1", CONN_CONSTRAINT, {
     connection: { url: "https://db.example.com/rpc" },
   });

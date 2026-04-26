@@ -1,29 +1,30 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { render, useEffect, useMemo, useRef, useState } from "@hono/hono/jsx/dom";
-import { Dropdown, DROPDOWN_WIDTH } from "./components/index.ts";
 import { FocusDropdown } from "./components/focus-dropdown.tsx";
-import { SmallBtn } from "./components/widgets.tsx";
 import { TreePanel } from "./components/tree-panel.tsx";
 import { ConstraintsPanel } from "./components/constraints-panel.tsx";
 import { CodePanel } from "./components/code-panel.tsx";
 import { Canvas } from "./components/canvas.tsx";
 import { validateWorkspace } from "../graph/validate_workspace.ts";
 import {
-  type DatabaseSnapshot,
+  collectSubtreeIds,
   defaultCodePanel,
   defaultConstraintsPanel,
   defaultPanel,
   ensureWorkspaceConstraint,
+  findNode,
+  freshProfileState,
   getActiveTab,
   getConnectionConfig,
-  type ListEditorConfig,
-  loadDatabaseSnapshot,
   loadState,
   loadStateAsync,
+  localDbIdFromUrl,
   makeRootNode,
   PANEL_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
+  type Profile,
+  removeNodeFromTree,
   type Tab,
   updateNodeInTree,
   type Updater,
@@ -42,10 +43,6 @@ import {
   useUiDb,
 } from "./db/surreal.ts";
 import { saveDump } from "./db/bridge.ts";
-
-// Module-level flag: skip baseline reset when addTab handles its own persistence
-let skipBaselineReset = false;
-
 // ---------------------------------------------------------------------------
 // App root
 // ---------------------------------------------------------------------------
@@ -73,10 +70,9 @@ let skipBaselineReset = false;
 function App() {
   const [ws, setWs] = useState<WorkspaceState | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
-  const [listEditor, setListEditor] = useState<ListEditorConfig | null>(null);
-  const prevTabIdRef = useRef<string | null>(null);
-  // Keep a ref to the latest ws so async closures (addTab, activateTab)
-  // always see the current state — Hono doesn't re-render child components.
+
+  // Keep a ref to the latest ws so async closures always see current state —
+  // Hono doesn't re-render child components.
   const wsRef = useRef<WorkspaceState | null>(null);
   wsRef.current = ws;
 
@@ -112,16 +108,6 @@ function App() {
   // Persist to SurrealDB + IndexedDB on every state change (debounced)
   useEffect(() => {
     if (!ws) return;
-    // Reset sync baseline when active tab changes (new database context)
-    // Skip if addTab already handled persistence (avoids clobbering the diff)
-    if (prevTabIdRef.current !== null && prevTabIdRef.current !== ws.activeTabId) {
-      if (skipBaselineReset) {
-        skipBaselineReset = false;
-      } else {
-        setSyncBaseline(ws);
-      }
-    }
-    prevTabIdRef.current = ws.activeTabId;
     if (!dbError) {
       scheduleSyncToDb(ws);
     }
@@ -230,8 +216,6 @@ function App() {
     if (ws) globalThis.dispatchEvent(new CustomEvent("ws-updated", { detail: ws }));
   }, [ws]);
 
-  const showListEditor = (config: ListEditorConfig) => setListEditor(config);
-
   // Loading state while SurrealDB initialises
   if (!ws) {
     return (
@@ -243,63 +227,10 @@ function App() {
 
   return (
     <>
-      <WorkspaceBar ws={ws} wsRef={wsRef} update={update} showListEditor={showListEditor} />
-      <WorkspaceControls ws={ws} update={update} showListEditor={showListEditor} />
+      <WorkspaceBar ws={ws} wsRef={wsRef} update={update} />
+      <WorkspaceControls ws={ws} update={update} />
       <WorkspaceArea ws={ws} update={update} />
-      {listEditor && <ListEditorModal config={listEditor} onClose={() => setListEditor(null)} />}
     </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// List editor modal
-// ---------------------------------------------------------------------------
-
-function ListEditorModal(
-  { config, onClose }: { config: ListEditorConfig; onClose: () => void },
-) {
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-
-  useEffect(() => {
-    textareaRef.current?.focus();
-  }, []);
-
-  function handleSave() {
-    const val = textareaRef.current?.value ?? "";
-    config.onSave(val.split("\n").map((s) => s.trim()).filter((s) => s.length > 0));
-    onClose();
-  }
-
-  function handleOverlayClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) onClose();
-  }
-
-  return (
-    <div
-      style="position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:1000;"
-      onClick={handleOverlayClick}
-    >
-      <div style="background:#1a1a2e; border:1px solid #3a3a5a; border-radius:6px; padding:16px; width:280px; display:flex; flex-direction:column; gap:10px;">
-        <div style="font-size:13px; font-weight:600; color:#c0c0e0;">{config.title}</div>
-        <div style="font-size:11px; color:#555;">One item per line</div>
-        <textarea
-          ref={textareaRef}
-          style="background:#0f0f22; border:1px solid #2a2a4a; color:#c0c0e0; font-size:13px; padding:6px; border-radius:3px; resize:vertical; min-height:120px; font-family:inherit; width:100%;"
-        >
-          {config.items.join("\n")}
-        </textarea>
-        <div style="display:flex; gap:8px; justify-content:flex-end;">
-          <SmallBtn label="Cancel" onClick={onClose} />
-          <button
-            type="button"
-            style="background:#1e1e3a; border:1px solid #3a3a6a; color:#c0c0e0; font-size:12px; cursor:pointer; padding:4px 12px; border-radius:3px;"
-            onClick={handleSave}
-          >
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -308,137 +239,148 @@ function ListEditorModal(
 // ---------------------------------------------------------------------------
 
 function WorkspaceBar(
-  { ws, wsRef, update, showListEditor }: {
+  { ws, wsRef, update }: {
     ws: WorkspaceState;
     wsRef: { current: WorkspaceState | null };
     update: Updater;
-    showListEditor: (c: ListEditorConfig) => void;
   },
 ) {
-  function setPersona(name: string) {
-    update((s) => ({ ...s, activePersona: name }));
-  }
-
-  function editPersonas() {
-    showListEditor({
-      title: "Edit Personas",
-      items: ws.personas,
-      onSave: (items) => {
-        update((s) => ({
-          ...s,
-          personas: items,
-          activePersona: items.includes(s.activePersona ?? "")
-            ? s.activePersona
-            : (items[0] ?? null),
-        }));
-      },
+  function addTab() {
+    const tabId = crypto.randomUUID();
+    const rootNodeId = crypto.randomUUID();
+    update((s) => {
+      const newRoot = makeRootNode(rootNodeId, []);
+      const wsConstraint = ensureWorkspaceConstraint(
+        s.constraints,
+        s.constraintApplications,
+        rootNodeId,
+      );
+      // Add workspace node as child of the profile root
+      const treeNodes = updateNodeInTree(
+        s.treeNodes,
+        s.profileRootId,
+        (n) => ({ ...n, children: [...n.children, newRoot] }),
+      );
+      return {
+        ...s,
+        tabs: [...s.tabs, {
+          id: tabId,
+          name: null,
+          rootNodeId,
+          panels: [defaultPanel()],
+        }],
+        activeTabId: tabId,
+        treeNodes,
+        ...wsConstraint,
+        focusId: rootNodeId,
+      };
     });
   }
 
-  async function addTab() {
+  async function selectProfile(id: string) {
+    if (id === ws.activeProfileId) return;
+    const targetProfile = ws.profiles.find((p) => p.id === id);
+    if (!targetProfile?.localDatabaseId) {
+      console.warn("[profile] No localDatabaseId for profile", id);
+      return;
+    }
+
     try {
-      // Flush current database to IndexedDB before switching
-      const currentWs = wsRef.current;
-      if (currentWs) await flushSync(currentWs);
+      // Flush current state to its database
+      const current = wsRef.current;
+      if (current) await flushSync(current);
 
-      const uuid = await createDatabase("Untitled");
-      const tabId = crypto.randomUUID();
-      const rootNodeId = crypto.randomUUID();
-      // Snapshot current tab's data before switching
-      update((s) => {
-        const currentTab = getActiveTab(s);
-        const snapshot: DatabaseSnapshot = {
-          treeNodes: s.treeNodes,
-          edges: s.edges,
-          constraints: s.constraints,
-          constraintApplications: s.constraintApplications,
-          focusId: s.focusId,
-          canvasExpandedNodes: s.canvasExpandedNodes,
-          canvasNodePositions: s.canvasNodePositions,
-          canvasSelected: s.canvasSelected,
-          canvasAlgorithm: s.canvasAlgorithm,
-          entityDrafts: s.entityDrafts,
-        };
-        return {
-          ...s,
-          tabs: [...s.tabs, {
-            id: tabId,
-            name: null,
-            databaseId: uuid,
-            rootNodeId,
-            panels: [defaultPanel()],
-          }],
-          activeTabId: tabId,
-          // New empty database with workspace root + builtin constraint
-          treeNodes: [makeRootNode(rootNodeId, [])],
-          edges: [],
-          ...ensureWorkspaceConstraint([], [], rootNodeId),
-          focusId: rootNodeId,
-          canvasExpandedNodes: [],
-          canvasNodePositions: {},
-          canvasSelected: null,
-          canvasAlgorithm: s.canvasAlgorithm,
-          entityDrafts: {},
-          connectedGraphs: [{
-            id: uuid,
-            label: `localStorage/Untitled (${uuid.slice(0, 8)})`,
-            connected: true,
-            required: true,
-          }],
-          _snapshotCache: {
-            ...s._snapshotCache,
-            [currentTab.databaseId]: snapshot,
-          },
-        };
-      });
-      // Tell the useEffect not to reset the sync baseline — we need the
-      // diff to detect the new tab/UI changes and persist them.
-      skipBaselineReset = true;
+      // Create fresh state for the target profile's database
+      const dbId = targetProfile.localDatabaseId;
+      await useDatabase(dbId);
 
-      // Immediately persist the new (empty) database and updated UI state
-      // to IndexedDB. We can't rely on the sync cycle because the useEffect
-      // resets the sync baseline on tab change, causing the diff to see no changes.
-      await useDatabase(uuid);
+      // Load the target profile's graph state
+      const fresh = freshProfileState(targetProfile.name, dbId);
+      update((s) => ({
+        ...s,
+        activeProfileId: id,
+        ...fresh,
+      }));
+      setSyncBaseline(wsRef.current!);
+    } catch (err) {
+      console.error("[profile] Failed to switch profile:", err);
+    }
+  }
+
+  async function addProfile(p: Profile) {
+    try {
+      // Create a new SurrealDB database for this profile
+      // Derive database ID from local URL path (e.g. indxdb://foobar → "foobar")
+      const localId = localDbIdFromUrl(p.url);
+      const dbId = await createDatabase(p.name, localId ?? undefined);
+      p.localDatabaseId = dbId;
+
+      // Flush current state first
+      const current = wsRef.current;
+      if (current) await flushSync(current);
+
+      // Initialize the new database with fresh profile state
+      const fresh = freshProfileState(p.name, dbId);
+
+      // Persist the new empty database to IndexedDB
+      await useDatabase(dbId);
       const graphDump = await exportDb();
-      await saveDump(`db:${uuid}`, graphDump);
-      console.log(`[addTab] Persisted db:${uuid} (${graphDump.length} bytes)`);
+      await saveDump(`db:${dbId}`, graphDump);
 
+      update((s) => ({
+        ...s,
+        profiles: [...s.profiles, p],
+        activeProfileId: p.id,
+        ...fresh,
+      }));
+      setSyncBaseline(wsRef.current!);
+
+      // Persist UI state with new profile
       await useUiDb();
       const uiDump = await exportDb();
       await saveDump("ui", uiDump);
-      console.log(`[addTab] Persisted ui (${uiDump.length} bytes)`);
+
+      console.log(`[profile] Created profile "${p.name}" with db:${dbId}`);
     } catch (err) {
-      console.error("[addTab] Failed to create database:", err);
+      console.error("[profile] Failed to create profile:", err);
     }
   }
 
   return (
     <div id="workspace-bar">
-      {/* Persona dropdown */}
-      <div
-        style={`width:${DROPDOWN_WIDTH}px; flex-shrink:0; border-right:1px solid #1a1a2e; display:flex; align-items:center;`}
-      >
-        <Dropdown
-          items={ws.personas.map((p) => ({ value: p, label: p }))}
-          selectedValue={ws.activePersona}
-          placeholder="Persona"
-          onSelect={setPersona}
-          onEdit={editPersonas}
-        />
-      </div>
+      {/* Profile indicator */}
+      <ProfileSegment
+        profiles={ws.profiles}
+        activeProfileId={ws.activeProfileId}
+        onSelect={selectProfile}
+        onAdd={addProfile}
+        onUpdate={(p) =>
+          update((s) => ({ ...s, profiles: s.profiles.map((x) => x.id === p.id ? p : x) }))}
+        onDelete={(id) => {
+          const remaining = ws.profiles.filter((p) => p.id !== id);
+          if (remaining.length === 0) return;
+          const switchTo = remaining.find((p) => p.isDefault) ?? remaining[0];
+          update((s) => ({ ...s, profiles: remaining }));
+          if (id === ws.activeProfileId) selectProfile(switchTo.id);
+        }}
+      />
 
       {/* Tabs */}
       <div style="display:flex; align-items:center; gap:4px; flex:1; overflow:hidden; padding:0 8px;">
-        {ws.tabs.map((tab) => (
-          <TabItem
-            key={tab.id}
-            tab={tab}
-            isActive={tab.id === ws.activeTabId}
-            canClose={ws.tabs.length > 1}
-            update={update}
-            wsRef={wsRef}
-          />
-        ))}
+        {ws.tabs.map((tab) => {
+          const wsNode = findNode(ws.treeNodes, tab.rootNodeId);
+          const nodeLabel = wsNode?.label === "Untitled" ? undefined : wsNode?.label;
+          return (
+            <TabItem
+              key={tab.id}
+              tab={tab}
+              isActive={tab.id === ws.activeTabId}
+              canClose={ws.tabs.length > 1}
+              update={update}
+              nodeLabel={nodeLabel}
+            />
+          );
+        })}
         <button
           type="button"
           style="background:none; border:none; color:#555; font-size:18px; cursor:pointer; padding:0 6px; line-height:1;"
@@ -465,20 +407,343 @@ function WorkspaceBar(
 }
 
 // ---------------------------------------------------------------------------
+// Profile segment — green dot + name, click to switch profiles
+// ---------------------------------------------------------------------------
+
+function ProfileSegment(
+  { profiles, activeProfileId, onSelect, onAdd, onUpdate, onDelete }: {
+    profiles: Profile[];
+    activeProfileId: string;
+    onSelect: (id: string) => void;
+    onAdd: (p: Profile) => void;
+    onUpdate: (p: Profile) => void;
+    onDelete: (id: string) => void;
+  },
+) {
+  const [open, setOpen] = useState(false);
+  // null = no form, "new" = adding, string = editing that profile's id
+  const [formMode, setFormMode] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [formName, setFormName] = useState("");
+  const [formUrl, setFormUrl] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [formNamespace, setFormNamespace] = useState("");
+  const [formDatabase, setFormDatabase] = useState("");
+  const [formUsername, setFormUsername] = useState("");
+  const [formPassword, setFormPassword] = useState("");
+  const active = profiles.find((p) => p.id === activeProfileId);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    document.addEventListener("click", close, { once: true });
+    return () => document.removeEventListener("click", close);
+  }, [open]);
+
+  function resetForm() {
+    setFormName("");
+    setFormUrl("");
+    setFormNamespace("");
+    setFormDatabase("");
+    setFormUsername("");
+    setFormPassword("");
+    setShowAdvanced(false);
+    setFormMode(null);
+  }
+
+  function startEdit(p: Profile) {
+    setFormMode(p.id);
+    setFormName(p.name);
+    setFormUrl(p.url);
+    setFormNamespace(p.namespace ?? "");
+    setFormDatabase(p.database ?? "");
+    setFormUsername(p.username ?? "");
+    setFormPassword(p.password ?? "");
+    setShowAdvanced(Boolean(p.namespace || p.database || p.username || p.password));
+  }
+
+  function handleSave() {
+    if (!formName.trim() || !formUrl.trim()) return;
+    if (formMode === "new") {
+      const p: Profile = {
+        id: crypto.randomUUID(),
+        name: formName.trim(),
+        url: formUrl.trim(),
+      };
+      if (formNamespace.trim()) p.namespace = formNamespace.trim();
+      if (formDatabase.trim()) p.database = formDatabase.trim();
+      if (formUsername.trim()) p.username = formUsername.trim();
+      if (formPassword.trim()) p.password = formPassword.trim();
+      onAdd(p);
+    } else if (formMode) {
+      const existing = profiles.find((p) => p.id === formMode);
+      const p: Profile = {
+        id: formMode,
+        name: formName.trim(),
+        url: existing?.isDefault ? existing.url : formUrl.trim(),
+        isDefault: existing?.isDefault,
+        localDatabaseId: existing?.localDatabaseId,
+      };
+      if (formNamespace.trim()) p.namespace = formNamespace.trim();
+      if (formDatabase.trim()) p.database = formDatabase.trim();
+      if (formUsername.trim()) p.username = formUsername.trim();
+      if (formPassword.trim()) p.password = formPassword.trim();
+      onUpdate(p);
+    }
+    resetForm();
+    setOpen(false);
+  }
+
+  function isLocalUrl(url: string) {
+    return url.startsWith("indxdb://") || url.startsWith("indexdb://");
+  }
+
+  const FIELD =
+    "width:100%; box-sizing:border-box; background:#0a0a18; border:1px solid #252538; color:#999; font-size:12px; padding:5px 8px; border-radius:3px; outline:none;";
+  const LABEL = "font-size:10px; color:#3a3a5a; letter-spacing:0.05em; text-transform:uppercase;";
+
+  const isEditing = formMode !== null;
+  const editingProfile = formMode && formMode !== "new"
+    ? profiles.find((p) => p.id === formMode)
+    : null;
+  const isEditingDefault = editingProfile?.isDefault === true;
+  const formTitle = formMode === "new" ? "New Profile" : "Edit Profile";
+
+  return (
+    <div style="position:relative; display:flex; align-items:center; flex-shrink:0; border-right:1px solid #1a1a2e;">
+      <div
+        style="display:flex; align-items:center; gap:6px; padding:0 12px; cursor:pointer; user-select:none;"
+        onClick={(e: MouseEvent) => {
+          e.stopPropagation();
+          setOpen((prev) => !prev);
+          if (open) resetForm();
+        }}
+      >
+        <div style="width:6px; height:6px; border-radius:50%; background:#4a7; flex-shrink:0;" />
+        <span style="font-size:11px; color:#888; white-space:nowrap;">
+          {active?.name ?? "Profile"}
+        </span>
+      </div>
+      {open && (
+        <div
+          style="position:absolute; top:100%; left:0; min-width:300px; background:#0d0d1e; border:1px solid #252538; border-top:none; z-index:200; display:flex; flex-direction:column; box-shadow:0 4px 12px rgba(0,0,0,0.5);"
+          onClick={(e: MouseEvent) => e.stopPropagation()}
+        >
+          <div style={`${LABEL} padding:10px 12px 6px;`}>Profiles</div>
+          {profiles.map((p) => {
+            const isActive = p.id === activeProfileId;
+            const isHovered = hovered === p.id;
+            const scheme = isLocalUrl(p.url) ? "local" : "remote";
+            return (
+              <div
+                key={p.id}
+                style={[
+                  "display:flex; align-items:center; gap:8px; padding:8px 12px; cursor:pointer; border-bottom:1px solid #1a1a2e;",
+                  isActive
+                    ? "background:#141428; color:#9090c0;"
+                    : isHovered
+                    ? "background:#111122; color:#888;"
+                    : "color:#666;",
+                ].join("")}
+                onMouseEnter={() => setHovered(p.id)}
+                onMouseLeave={() => setHovered(null)}
+                onClick={() => {
+                  setOpen(false);
+                  resetForm();
+                  onSelect(p.id);
+                }}
+              >
+                <div style="flex:1; min-width:0;">
+                  <div style="font-size:12px;">{p.name}</div>
+                  <div style="font-size:10px; color:#3a3a5a; font-family:ui-monospace,monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                    {p.url}
+                  </div>
+                </div>
+                <span style="font-size:10px; color:#3a3a5a; flex-shrink:0;">{scheme}</span>
+                {isActive && <span style="font-size:10px; color:#4a7; flex-shrink:0;">active</span>}
+                <span
+                  style="font-size:10px; color:#3a3a5a; flex-shrink:0; cursor:pointer;"
+                  onClick={(e: MouseEvent) => {
+                    e.stopPropagation();
+                    startEdit(p);
+                  }}
+                >
+                  ✎
+                </span>
+              </div>
+            );
+          })}
+
+          {isEditing
+            ? (
+              <div style="padding:10px 12px; border-top:1px solid #1a1a2e;">
+                <div style="font-size:12px; color:#999; font-weight:500; margin-bottom:10px;">
+                  {formTitle}
+                </div>
+                <div style="margin-bottom:8px;">
+                  <div style={`${LABEL} margin-bottom:3px;`}>Name</div>
+                  <input
+                    type="text"
+                    value={formName}
+                    onInput={(e: InputEvent) => setFormName((e.target as HTMLInputElement).value)}
+                    placeholder="e.g. Staging"
+                    style={FIELD}
+                  />
+                </div>
+                <div style="margin-bottom:8px;">
+                  <div style={`${LABEL} margin-bottom:3px;`}>URL</div>
+                  <input
+                    type="text"
+                    value={formUrl}
+                    disabled={isEditingDefault}
+                    onInput={(e: InputEvent) => setFormUrl((e.target as HTMLInputElement).value)}
+                    placeholder="indxdb://... or wss://..."
+                    style={`${FIELD} font-family:ui-monospace,monospace;${
+                      isEditingDefault ? " opacity:0.4; cursor:not-allowed;" : ""
+                    }`}
+                  />
+                  {isEditingDefault && (
+                    <div style="font-size:10px; color:#3a3a5a; margin-top:2px;">
+                      Default profile URL cannot be changed
+                    </div>
+                  )}
+                </div>
+                <div
+                  style="display:flex; align-items:center; gap:4px; padding:4px 0; cursor:pointer; user-select:none;"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                >
+                  <span style="font-size:10px; color:#3a3a5a;">
+                    {showAdvanced ? "\u25be" : "\u25b8"}
+                  </span>
+                  <span style={LABEL}>Advanced</span>
+                </div>
+                {showAdvanced && (
+                  <div style="padding-left:10px; border-left:1px solid #1a1a2e; margin-bottom:4px;">
+                    <div style="margin-bottom:6px;">
+                      <div style={`${LABEL} margin-bottom:3px;`}>Namespace</div>
+                      <input
+                        type="text"
+                        value={formNamespace}
+                        onInput={(e: InputEvent) =>
+                          setFormNamespace((e.target as HTMLInputElement).value)}
+                        placeholder="marlinspike"
+                        style={FIELD}
+                      />
+                    </div>
+                    <div style="margin-bottom:6px;">
+                      <div style={`${LABEL} margin-bottom:3px;`}>Database</div>
+                      <input
+                        type="text"
+                        value={formDatabase}
+                        onInput={(e: InputEvent) =>
+                          setFormDatabase((e.target as HTMLInputElement).value)}
+                        placeholder="(auto)"
+                        style={FIELD}
+                      />
+                    </div>
+                    <div style="margin-bottom:6px;">
+                      <div style={`${LABEL} margin-bottom:3px;`}>Username</div>
+                      <input
+                        type="text"
+                        value={formUsername}
+                        onInput={(e: InputEvent) =>
+                          setFormUsername((e.target as HTMLInputElement).value)}
+                        placeholder="(optional)"
+                        style={FIELD}
+                      />
+                    </div>
+                    <div style="margin-bottom:6px;">
+                      <div style={`${LABEL} margin-bottom:3px;`}>Password</div>
+                      <input
+                        type="password"
+                        value={formPassword}
+                        onInput={(e: InputEvent) =>
+                          setFormPassword((e.target as HTMLInputElement).value)}
+                        placeholder="(optional)"
+                        style={FIELD}
+                      />
+                    </div>
+                  </div>
+                )}
+                <div style="display:flex; gap:8px; margin-top:8px; justify-content:flex-end;">
+                  {formMode !== "new" && !isEditingDefault && (
+                    <button
+                      type="button"
+                      style="background:none; border:1px solid #3a2020; color:#a05050; font-size:11px; padding:4px 10px; border-radius:3px; cursor:pointer; margin-right:auto;"
+                      onClick={(e: MouseEvent) => {
+                        e.stopPropagation();
+                        if (formMode) {
+                          onDelete(formMode);
+                          resetForm();
+                          setOpen(false);
+                        }
+                      }}
+                    >
+                      Delete
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    style="background:none; border:1px solid #252538; color:#666; font-size:11px; padding:4px 10px; border-radius:3px; cursor:pointer;"
+                    onClick={(e: MouseEvent) => {
+                      e.stopPropagation();
+                      resetForm();
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    style={`border:1px solid #3a3a6a; font-size:11px; padding:4px 10px; border-radius:3px; cursor:pointer; ${
+                      formName.trim() && formUrl.trim()
+                        ? "background:#1a1a3a; color:#9090c0;"
+                        : "background:none; color:#3a3a5a; cursor:default;"
+                    }`}
+                    onClick={(e: MouseEvent) => {
+                      e.stopPropagation();
+                      handleSave();
+                    }}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            )
+            : (
+              <div
+                style={[
+                  "display:flex; align-items:center; gap:8px; padding:8px 12px; cursor:pointer;",
+                  hovered === "add" ? "color:#555;" : "color:#2a2a4a;",
+                ].join("")}
+                onMouseEnter={() => setHovered("add")}
+                onMouseLeave={() => setHovered(null)}
+                onClick={() => setFormMode("new")}
+              >
+                <span style="font-size:14px;">+</span>
+                <span style="font-size:11px;">New profile</span>
+              </div>
+            )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Tab item
 // ---------------------------------------------------------------------------
 
 function TabItem(
-  { tab, isActive, canClose, update, wsRef }: {
+  { tab, isActive, canClose, update, nodeLabel }: {
     tab: Tab;
     isActive: boolean;
     canClose: boolean;
     update: Updater;
-    wsRef: { current: WorkspaceState | null };
+    /** Label from the workspace node — source of truth for display. */
+    nodeLabel?: string;
   },
 ) {
   const [renaming, setRenaming] = useState(false);
-  const [switching, setSwitching] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -488,63 +753,11 @@ function TabItem(
     }
   }, [renaming]);
 
-  async function activateTab() {
-    const currentWs = wsRef.current;
-    if (switching || !currentWs || tab.id === currentWs.activeTabId) return;
-    setSwitching(true);
-    try {
-      // 1. Flush any pending writes to the current database
-      await flushSync(currentWs);
-
-      // 2. Snapshot current tab's data
-      const currentTab = getActiveTab(currentWs);
-      const snapshot: DatabaseSnapshot = {
-        treeNodes: currentWs.treeNodes,
-        edges: currentWs.edges,
-        constraints: currentWs.constraints,
-        constraintApplications: currentWs.constraintApplications,
-        focusId: currentWs.focusId,
-        canvasExpandedNodes: currentWs.canvasExpandedNodes,
-        canvasNodePositions: currentWs.canvasNodePositions,
-        canvasSelected: currentWs.canvasSelected,
-        canvasAlgorithm: currentWs.canvasAlgorithm,
-        entityDrafts: currentWs.entityDrafts,
-      };
-
-      // 3. Load target tab's data (from cache or DB)
-      let targetData: DatabaseSnapshot;
-      if (currentWs._snapshotCache[tab.databaseId]) {
-        targetData = currentWs._snapshotCache[tab.databaseId];
-      } else {
-        targetData = await loadDatabaseSnapshot(tab.databaseId, tab.rootNodeId);
-      }
-
-      // 4. Update state atomically
-      update((s) => {
-        const newCache = { ...s._snapshotCache };
-        newCache[currentTab.databaseId] = snapshot;
-        delete newCache[tab.databaseId]; // Now "live", remove from cache
-        return {
-          ...s,
-          activeTabId: tab.id,
-          ...targetData,
-          connectedGraphs: [{
-            id: tab.databaseId,
-            label: `localStorage/${tab.name || "Untitled"} (${tab.databaseId.slice(0, 8)})`,
-            connected: true,
-            required: true,
-          }],
-          _snapshotCache: newCache,
-        };
-      });
-
-      // 5. Reset sync baseline for the new database context
-      // (We need to get the updated state, but since update is async in Hono
-      // we set a flag and let the useEffect handle baseline reset)
-    } catch (err) {
-      console.error("[activateTab] Failed to switch tab:", err);
-    }
-    setSwitching(false);
+  function activateTab() {
+    update((s) => {
+      if (tab.id === s.activeTabId) return s;
+      return { ...s, activeTabId: tab.id, focusId: tab.rootNodeId };
+    });
   }
 
   function closeTab(e: MouseEvent) {
@@ -555,7 +768,34 @@ function TabItem(
       const newActiveId = s.activeTabId === tab.id
         ? (newTabs[Math.max(0, idx - 1)]?.id ?? newTabs[0]?.id)
         : s.activeTabId;
-      return { ...s, tabs: newTabs, activeTabId: newActiveId };
+
+      // Delete workspace node and its entire subtree from the graph
+      const rootNode = findNode(s.treeNodes, tab.rootNodeId);
+      if (!rootNode) {
+        return { ...s, tabs: newTabs, activeTabId: newActiveId };
+      }
+      const subtreeIds = collectSubtreeIds(rootNode);
+      const newTreeNodes = removeNodeFromTree(s.treeNodes, tab.rootNodeId);
+      const newEdges = s.edges.filter(
+        (edge) => !subtreeIds.has(edge.fromId) && !subtreeIds.has(edge.toId),
+      );
+      const newApps = s.constraintApplications.filter(
+        (a) => !subtreeIds.has(a.entityId),
+      );
+
+      // Focus the new active tab's workspace root
+      const newActiveTab = newTabs.find((t) => t.id === newActiveId);
+      const newFocusId = newActiveTab?.rootNodeId ?? s.focusId;
+
+      return {
+        ...s,
+        tabs: newTabs,
+        activeTabId: newActiveId,
+        treeNodes: newTreeNodes,
+        edges: newEdges,
+        constraintApplications: newApps,
+        focusId: newFocusId,
+      };
     });
   }
 
@@ -601,7 +841,7 @@ function TabItem(
         ? (
           <input
             ref={inputRef}
-            value={tab.name ?? ""}
+            value={nodeLabel ?? tab.name ?? ""}
             placeholder="Untitled"
             style="background:#0f0f22; border:1px solid #4a4a7a; color:#e0e0e0; font-size:13px; padding:0 4px; width:100px; border-radius:2px;"
             onBlur={finishRename}
@@ -613,10 +853,10 @@ function TabItem(
         )
         : (
           <span
-            style={isActive ? "cursor:text;" : (tab.name ? "" : "color:#555;")}
+            style={isActive ? "cursor:text;" : (nodeLabel || tab.name ? "" : "color:#555;")}
             onClick={handleLabelClick}
           >
-            {tab.name || "Untitled"}
+            {nodeLabel || tab.name || "Untitled"}
           </span>
         )}
       {canClose && (
@@ -637,32 +877,11 @@ function TabItem(
 // ---------------------------------------------------------------------------
 
 function WorkspaceControls(
-  { ws, update, showListEditor }: {
+  { ws, update }: {
     ws: WorkspaceState;
     update: Updater;
-    showListEditor: (c: ListEditorConfig) => void;
   },
 ) {
-  function setWorkflow(name: string) {
-    update((s) => ({ ...s, activeWorkflow: name }));
-  }
-
-  function editWorkflows() {
-    showListEditor({
-      title: "Edit Workflows",
-      items: ws.workflows,
-      onSave: (items) => {
-        update((s) => ({
-          ...s,
-          workflows: items,
-          activeWorkflow: items.includes(s.activeWorkflow ?? "")
-            ? s.activeWorkflow
-            : (items[0] ?? null),
-        }));
-      },
-    });
-  }
-
   function addPanel() {
     const tab = getActiveTab(ws);
     update((s) => ({
@@ -695,19 +914,6 @@ function WorkspaceControls(
 
   return (
     <div id="workspace-controls">
-      {/* Workflow dropdown */}
-      <div
-        style={`width:${DROPDOWN_WIDTH}px; flex-shrink:0; border-right:1px solid #1a1a2e; display:flex; align-items:center;`}
-      >
-        <Dropdown
-          items={ws.workflows.map((w) => ({ value: w, label: w }))}
-          selectedValue={ws.activeWorkflow}
-          placeholder="Workflow"
-          onSelect={setWorkflow}
-          onEdit={editWorkflows}
-        />
-      </div>
-
       {/* View controls */}
       <div style="display:flex; align-items:center; gap:8px;">
         <button
@@ -739,120 +945,7 @@ function WorkspaceControls(
       {/* Right-side controls */}
       <div style="display:flex; align-items:stretch; margin-left:auto; flex-shrink:0;">
         <FocusDropdown ws={ws} update={update} />
-        <ConnectedGraphsBtn ws={ws} update={update} />
       </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Connected graphs button
-// ---------------------------------------------------------------------------
-
-function ConnectedGraphsBtn({ ws, update }: { ws: WorkspaceState; update: Updater }) {
-  const [open, setOpen] = useState(false);
-
-  const connectedCount = ws.connectedGraphs.filter((g) => g.connected).length;
-
-  function toggleGraph(id: string) {
-    const graph = ws.connectedGraphs.find((g) => g.id === id);
-    if (!graph || graph.required) return;
-
-    if (graph.connected) {
-      // Disconnect remote
-      disconnectRemote(id);
-      update((s) => ({
-        ...s,
-        connectedGraphs: s.connectedGraphs.map((g) => g.id === id ? { ...g, connected: false } : g),
-      }));
-    } else {
-      // Reconnect — read config from root node and connect
-      const config = getConnectionConfig(ws);
-      if (config && config.entityId === id) {
-        connectRemote(id, {
-          url: config.url,
-          namespace: config.namespace,
-          database: config.database,
-          username: config.username,
-          password: config.password,
-        }).then(() => {
-          update((s) => ({
-            ...s,
-            connectedGraphs: s.connectedGraphs.map((g) =>
-              g.id === id ? { ...g, connected: true, label: config.url } : g
-            ),
-          }));
-        }).catch((err) => {
-          console.error(`[remote] Reconnect failed: ${config.url}`, err);
-          update((s) => ({
-            ...s,
-            connectedGraphs: s.connectedGraphs.map((g) =>
-              g.id === id ? { ...g, connected: false, label: `${config.url} (failed)` } : g
-            ),
-          }));
-        });
-      }
-    }
-  }
-
-  return (
-    <div
-      style="position:relative; flex-shrink:0;"
-      onClick={(e: MouseEvent) => e.stopPropagation()}
-    >
-      <div
-        title="Connected graphs"
-        style="display:flex; align-items:center; gap:4px; padding:0 8px; font-size:11px; color:#3a3a5a; cursor:pointer; user-select:none; height:100%; border-left:1px solid #1a1a2e;"
-        onMouseDown={(e: MouseEvent) => {
-          e.stopPropagation();
-          e.preventDefault();
-          setOpen((prev) => {
-            if (!prev) {
-              // See "Hono JSX DOM workaround" in client.tsx.
-              setTimeout(() => {
-                document.addEventListener("click", () => setOpen(false), { once: true });
-              }, 0);
-            }
-            return !prev;
-          });
-        }}
-      >
-        <span>{connectedCount} graph{connectedCount !== 1 ? "s" : ""}</span>
-        <span style="font-size:9px; color:#2a2a4a;">▾</span>
-      </div>
-      {open && (
-        <div
-          style="position:absolute; top:100%; right:0; min-width:280px; background:#0d0d1e; border:1px solid #252538; z-index:200; display:flex; flex-direction:column; box-shadow:0 4px 12px rgba(0,0,0,0.5);"
-          onClick={(e: MouseEvent) => e.stopPropagation()}
-        >
-          {ws.connectedGraphs.map((graph) => (
-            <div
-              key={graph.id}
-              style={`display:flex; align-items:center; gap:8px; padding:6px 10px; font-size:11px;${
-                graph.required ? "" : " cursor:pointer;"
-              }`}
-              onClick={graph.required ? undefined : () => toggleGraph(graph.id)}
-            >
-              <div
-                style={[
-                  "width:12px; height:12px; border:1px solid #2a2a4a; border-radius:2px;",
-                  "display:flex; align-items:center; justify-content:center; flex-shrink:0;",
-                  graph.connected ? "background:#1e2a4a;" : "background:#0f0f22;",
-                  graph.required ? "cursor:not-allowed; opacity:0.5;" : "cursor:pointer;",
-                ].join("")}
-              >
-                {graph.connected && <span style="font-size:9px; color:#7090d0;">✓</span>}
-              </div>
-              <span style={graph.connected ? "color:#888;" : "color:#3a3a5a;"}>
-                {graph.label}
-              </span>
-              {graph.required && (
-                <span style="font-size:10px; color:#2a2a4a; margin-left:auto;">required</span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

@@ -322,6 +322,8 @@ export async function deleteApplication(id: string): Promise<void> {
 
 /** The portion of WorkspaceState stored in the _ui database (global, not per-database). */
 export interface UiState {
+  profiles: WorkspaceState["profiles"];
+  activeProfileId: string;
   tabs: WorkspaceState["tabs"];
   activeTabId: string;
   personas: string[];
@@ -346,7 +348,7 @@ export async function loadWorkspaceUi(): Promise<UiState | null> {
   const db = getDb();
   await useUiDb();
   const result = await db.query<[UiState[]]>(
-    "SELECT tabs, activeTabId, personas, activePersona, workflows, activeWorkflow, connectedGraphs FROM workspace:main",
+    "SELECT profiles, activeProfileId, tabs, activeTabId, personas, activePersona, workflows, activeWorkflow, connectedGraphs FROM workspace:main",
   );
   const rows = extractQueryResult<UiState>(result);
   return rows.length > 0 ? rows[0] : null;
@@ -402,21 +404,21 @@ export async function listDatabases(): Promise<DbRegistryEntry[]> {
 }
 
 /** Register a new database entry and initialise its schema. Returns the UUID. */
-export async function createDatabase(name: string): Promise<string> {
+export async function createDatabase(name: string, dbId?: string): Promise<string> {
   const db = getDb();
-  const uuid = crypto.randomUUID();
+  const id = dbId ?? crypto.randomUUID();
 
   // Register in the _ui db
   await useUiDb();
   await db.query(
     `CREATE db_registry SET name = $name, uuid = $uuid`,
-    { name, uuid },
+    { name, uuid: id },
   );
 
   // Initialise graph schema in the new database
-  await initGraphSchema(uuid);
+  await initGraphSchema(id);
 
-  return uuid;
+  return id;
 }
 
 /** Rename a database (update display name only). */

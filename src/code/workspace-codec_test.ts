@@ -12,6 +12,7 @@
 import { assertEquals } from "@std/assert";
 import { emitWorkspace, parseWorkspace } from "./workspace-codec.ts";
 import {
+  DEFAULT_PROFILE,
   defaultTreeNodes,
   makeNode,
   makeRootNode,
@@ -25,17 +26,30 @@ import {
 
 const ROOT_ID = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
 
+/** Build a workspace with a backend composite containing auth-service + frontend. */
+function testTreeNodes(rootId: string): TreeNode[] {
+  return [makeRootNode(rootId, [
+    makeNode("spike://acme/backend", "acme/backend", "composite", [
+      makeNode("spike://acme/backend/auth-service", "auth-service", "leaf", []),
+      makeNode("spike://acme/backend/frontend", "frontend", "leaf", []),
+    ]),
+  ])];
+}
+
 function wsWithFocus(focusId: string | null): WorkspaceState {
   return {
+    profiles: [DEFAULT_PROFILE],
+    activeProfileId: DEFAULT_PROFILE.id,
+    databaseId: "db-uuid",
+    profileRootId: "profile-root",
     tabs: [{
       id: "t1",
       name: "Test",
-      databaseId: "db-uuid",
       rootNodeId: ROOT_ID,
       panels: [],
     }],
     activeTabId: "t1",
-    treeNodes: defaultTreeNodes(ROOT_ID),
+    treeNodes: testTreeNodes(ROOT_ID),
     edges: [],
     constraints: [],
     constraintApplications: [],
@@ -50,7 +64,6 @@ function wsWithFocus(focusId: string | null): WorkspaceState {
     canvasSelected: null,
     canvasAlgorithm: "SDF",
     entityDrafts: {},
-    _snapshotCache: {},
   };
 }
 
@@ -175,10 +188,13 @@ Deno.test("parseWorkspace: custom root label (non-'Workspace') still unwraps", (
 /** Build a WorkspaceState with an explicit tree and focus. */
 function wsWith(treeNodes: TreeNode[], focusId: string | null): WorkspaceState {
   return {
+    profiles: [DEFAULT_PROFILE],
+    activeProfileId: DEFAULT_PROFILE.id,
+    databaseId: "db-uuid",
+    profileRootId: "profile-root",
     tabs: [{
       id: "t1",
       name: "Test",
-      databaseId: "db-uuid",
       rootNodeId: ROOT_ID,
       panels: [],
     }],
@@ -198,7 +214,6 @@ function wsWith(treeNodes: TreeNode[], focusId: string | null): WorkspaceState {
     canvasSelected: null,
     canvasAlgorithm: "SDF",
     entityDrafts: {},
-    _snapshotCache: {},
   };
 }
 

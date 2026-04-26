@@ -1,6 +1,7 @@
 import { assertEquals } from "@std/assert";
 import {
   type ConstraintApplication,
+  DEFAULT_PROFILE,
   defaultTreeNodes,
   ensureWorkspaceConstraint,
   ensureWorkspaceRoot,
@@ -11,7 +12,7 @@ import {
   makeRootNode,
   type WorkspaceState,
 } from "./workspace.ts";
-import { WORKSPACE_CONNECTIONS_CONSTRAINT } from "../graph/builtin_constraints.ts";
+import { CONNECTIONS_CONSTRAINT, WORKSPACE_CONSTRAINT } from "../graph/builtin_constraints.ts";
 
 // ---------------------------------------------------------------------------
 // Helper to build a minimal WorkspaceState for testing
@@ -21,11 +22,15 @@ function minimalWs(
   overrides: Partial<WorkspaceState> = {},
 ): WorkspaceState {
   const rootNodeId = "test-root-id";
+  const profileRootId = "test-profile-root";
   return {
+    profiles: [DEFAULT_PROFILE],
+    activeProfileId: DEFAULT_PROFILE.id,
+    databaseId: "test-db-id",
+    profileRootId,
     tabs: [{
       id: "t1",
       name: "Test",
-      databaseId: "test-db-id",
       rootNodeId,
       panels: [],
     }],
@@ -45,7 +50,6 @@ function minimalWs(
     canvasSelected: null,
     canvasAlgorithm: "SDF",
     entityDrafts: {},
-    _snapshotCache: {},
     ...overrides,
   };
 }
@@ -156,8 +160,7 @@ Deno.test("defaultTreeNodes: returns tree wrapped in workspace root with given I
   const nodes = defaultTreeNodes("my-root");
   assertEquals(nodes.length, 1);
   assertEquals(nodes[0].id, "my-root");
-  assertEquals(nodes[0].children.length, 1);
-  assertEquals(nodes[0].children[0].id, "spike://acme/backend");
+  assertEquals(nodes[0].children.length, 0);
 });
 
 // ---------------------------------------------------------------------------
@@ -165,12 +168,15 @@ Deno.test("defaultTreeNodes: returns tree wrapped in workspace root with given I
 // ---------------------------------------------------------------------------
 
 Deno.test("getFocusedRootNodes: focused on workspace root returns its children", () => {
-  const ws = minimalWs(); // focusId = rootNodeId by default
+  const child = makeNode("child-1", "Child", "leaf", []);
+  const ws = minimalWs({
+    treeNodes: [makeRootNode("test-root-id", [child])],
+  });
   const focused = getFocusedRootNodes(ws);
   // Should return the children of the workspace root, not the root node
   assertEquals(focused.every((n) => n.id !== "test-root-id"), true);
   assertEquals(focused.length, 1);
-  assertEquals(focused[0].id, "spike://acme/backend");
+  assertEquals(focused[0].id, "child-1");
 });
 
 Deno.test("getFocusedRootNodes: virtual root (focusId=null) returns treeNodes including workspace root", () => {
@@ -182,9 +188,16 @@ Deno.test("getFocusedRootNodes: virtual root (focusId=null) returns treeNodes in
 });
 
 Deno.test("getFocusedRootNodes: focused on a composite returns its children", () => {
-  const ws = minimalWs({ focusId: "spike://acme/backend" });
+  const composite = makeNode("composite-1", "Composite", "composite", [
+    makeNode("leaf-a", "A", "leaf", []),
+    makeNode("leaf-b", "B", "leaf", []),
+  ]);
+  const ws = minimalWs({
+    treeNodes: [makeRootNode("test-root-id", [composite])],
+    focusId: "composite-1",
+  });
   const focused = getFocusedRootNodes(ws);
-  assertEquals(focused.length, 2); // auth-service + frontend
+  assertEquals(focused.length, 2);
 });
 
 // ---------------------------------------------------------------------------
@@ -194,9 +207,9 @@ Deno.test("getFocusedRootNodes: focused on a composite returns its children", ()
 Deno.test("ensureWorkspaceConstraint: adds constraint and application when missing", () => {
   const result = ensureWorkspaceConstraint([], [], "root-1");
   assertEquals(result.constraints.length, 1);
-  assertEquals(result.constraints[0].id, WORKSPACE_CONNECTIONS_CONSTRAINT.id);
+  assertEquals(result.constraints[0].id, WORKSPACE_CONSTRAINT.id);
   assertEquals(result.constraintApplications.length, 1);
-  assertEquals(result.constraintApplications[0].constraintId, WORKSPACE_CONNECTIONS_CONSTRAINT.id);
+  assertEquals(result.constraintApplications[0].constraintId, WORKSPACE_CONSTRAINT.id);
   assertEquals(result.constraintApplications[0].entityId, "root-1");
 });
 
@@ -212,10 +225,10 @@ Deno.test("getConnectionConfig: returns null when no constraint applied", () => 
 Deno.test("getConnectionConfig: returns null when URL is empty", () => {
   const rootId = "test-root-id";
   const ws = minimalWs({
-    constraints: [WORKSPACE_CONNECTIONS_CONSTRAINT],
+    constraints: [CONNECTIONS_CONSTRAINT],
     constraintApplications: [{
       id: "app-1",
-      constraintId: WORKSPACE_CONNECTIONS_CONSTRAINT.id,
+      constraintId: CONNECTIONS_CONSTRAINT.id,
       entityId: rootId,
       version: 1,
     }],
@@ -240,10 +253,10 @@ Deno.test("getConnectionConfig: returns config when URL is set", () => {
   };
   const ws = minimalWs({
     treeNodes: [rootNode],
-    constraints: [WORKSPACE_CONNECTIONS_CONSTRAINT],
+    constraints: [CONNECTIONS_CONSTRAINT],
     constraintApplications: [{
       id: "app-1",
-      constraintId: WORKSPACE_CONNECTIONS_CONSTRAINT.id,
+      constraintId: CONNECTIONS_CONSTRAINT.id,
       entityId: rootId,
       version: 1,
     }],
@@ -265,12 +278,12 @@ Deno.test("getConnectionConfig: returns config when URL is set", () => {
 Deno.test("ensureWorkspaceConstraint: idempotent when already present", () => {
   const app: ConstraintApplication = {
     id: "existing-app",
-    constraintId: WORKSPACE_CONNECTIONS_CONSTRAINT.id,
+    constraintId: WORKSPACE_CONSTRAINT.id,
     entityId: "root-1",
     version: 1,
   };
   const result = ensureWorkspaceConstraint(
-    [WORKSPACE_CONNECTIONS_CONSTRAINT],
+    [WORKSPACE_CONSTRAINT],
     [app],
     "root-1",
   );

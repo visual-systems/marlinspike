@@ -148,7 +148,7 @@ const registry: Record<string, ConstraintTypeDefinition> = {
     },
   },
 
-  "workspace.connections": {
+  "connections": {
     dataSchema: { properties: {} },
     entityDataSchema: {
       properties: {

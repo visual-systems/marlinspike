@@ -2,7 +2,13 @@
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useState } from "@hono/hono/jsx/dom";
 import { FocusDropdown } from "../components/focus-dropdown.tsx";
-import { defaultState, makeNode, type Updater, type WorkspaceState } from "../workspace.ts";
+import {
+  defaultState,
+  makeNode,
+  makeRootNode,
+  type Updater,
+  type WorkspaceState,
+} from "../workspace.ts";
 
 export const meta = { title: "Focus Dropdown" };
 
@@ -13,10 +19,6 @@ function Bar({ initial }: { initial: WorkspaceState }) {
 
   return (
     <div style="display:flex; align-items:stretch; height:32px; width:640px; background:#0a0a1e; border:1px solid #1a1a2e; font-family:system-ui,sans-serif;">
-      {/* Workflow stub */}
-      <div style="padding:0 10px; font-size:11px; color:#444; display:flex; align-items:center; border-right:1px solid #1a1a2e;">
-        Workflow ▾
-      </div>
       {/* View controls stub */}
       <div style="padding:0 10px; font-size:11px; color:#444; display:flex; align-items:center; gap:8px;">
         + Tree View
@@ -24,74 +26,69 @@ function Bar({ initial }: { initial: WorkspaceState }) {
       {/* Right side */}
       <div style="display:flex; align-items:stretch; margin-left:auto;">
         <FocusDropdown ws={ws} update={update} />
-        {/* Connected graphs stub */}
-        <div style="padding:0 10px; font-size:11px; color:#3a3a5a; display:flex; align-items:center; border-left:1px solid #1a1a2e;">
-          1 graph ▾
-        </div>
       </div>
     </div>
   );
 }
 
-/** No focus — shows "(root)" as the label. */
-export function AtRoot() {
+/** Default state — focused on the workspace root (shows its label). */
+export function AtWorkspaceRoot() {
   const ws = defaultState();
   return <Bar initial={ws} />;
 }
 
+/** Focused on the profile root — shows the profile node label (e.g. "Local"). */
+export function AtProfileRoot() {
+  const ws = defaultState();
+  ws.focusId = ws.profileRootId;
+  return <Bar initial={ws} />;
+}
+
+/** Virtual root (focusId=null) — shows "(root)" above the profile level. */
+export function AtVirtualRoot() {
+  const ws = defaultState();
+  ws.focusId = null;
+  return <Bar initial={ws} />;
+}
+
 /**
- * Focus = auth-service.
- * Dropdown shows: (root) + acme/backend above the divider,
- * ▶ auth-service as current, nothing below (no selected node).
+ * Deeper tree — focus on a composite node inside the workspace.
+ * Dropdown shows ancestors (profile root, workspace root) above the divider.
  */
-export function FocusedOnAuthService() {
-  const ws = defaultState();
-  ws.focusId = "spike://acme/backend/auth-service";
-  return <Bar initial={ws} />;
+export function FocusedOnComposite() {
+  const ds = defaultState();
+  const rootId = ds.tabs[0].rootNodeId;
+  const composite = makeNode("composite-1", "auth-service", "composite", [
+    makeNode("leaf-1", "token-validator", "leaf", []),
+  ]);
+  ds.treeNodes = [
+    makeRootNode(ds.profileRootId, [
+      makeRootNode(rootId, [composite]),
+    ]),
+  ];
+  ds.focusId = "composite-1";
+  return <Bar initial={ds} />;
 }
 
 /**
- * Story from the plan — focus = auth-service, selected = token-validator.
- * token-validator is a leaf so no path-to-selection row appears below.
- */
-export function FocusedWithLeafSelected() {
-  const ws = defaultState();
-  ws.focusId = "spike://acme/backend/auth-service";
-  ws.canvasSelected = { type: "node", id: "spike://acme/backend/auth-service/token-validator" };
-  return <Bar initial={ws} />;
-}
-
-/**
- * Deeper tree — focus = auth-service, selected = a leaf inside a nested
- * composite. The intermediate composite appears in the path-to-selection group.
- *
- * Tree:
- *   acme/backend
- *     auth-service  ← focus
- *       session-mgmt  ← composite (appears below divider)
- *         token-validator  ← selected leaf
+ * Focus on a composite with a selected leaf inside a nested composite.
+ * The intermediate composite appears in the path-to-selection group below the divider.
  */
 export function FocusedWithPathToSelection() {
-  const ws = defaultState();
-  // Replace default tree with a deeper structure
-  ws.treeNodes = [
-    makeNode("spike://acme/backend", "acme/backend", "composite", [
-      makeNode("spike://acme/backend/auth-service", "auth-service", "composite", [
-        makeNode("spike://acme/backend/auth-service/session-mgmt", "session-mgmt", "composite", [
-          makeNode(
-            "spike://acme/backend/auth-service/session-mgmt/token-validator",
-            "token-validator",
-            "leaf",
-            [],
-          ),
+  const ds = defaultState();
+  const rootId = ds.tabs[0].rootNodeId;
+  ds.treeNodes = [
+    makeRootNode(ds.profileRootId, [
+      makeRootNode(rootId, [
+        makeNode("auth-service", "auth-service", "composite", [
+          makeNode("session-mgmt", "session-mgmt", "composite", [
+            makeNode("token-validator", "token-validator", "leaf", []),
+          ]),
         ]),
       ]),
-    ], "spike://acme/backend"),
+    ]),
   ];
-  ws.focusId = "spike://acme/backend/auth-service";
-  ws.canvasSelected = {
-    type: "node",
-    id: "spike://acme/backend/auth-service/session-mgmt/token-validator",
-  };
-  return <Bar initial={ws} />;
+  ds.focusId = "auth-service";
+  ds.canvasSelected = { type: "node", id: "token-validator" };
+  return <Bar initial={ds} />;
 }
