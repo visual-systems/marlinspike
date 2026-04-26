@@ -37,13 +37,23 @@ export const JS_SCRIPT_CONSTRAINT: Constraint = {
   version: 1,
 };
 
+export const WORKSPACE_CONSTRAINT: Constraint = {
+  id: "builtin/workspace",
+  label: "Workspace",
+  uri: "spike://builtin/constraints/workspace",
+  type: "workspace",
+  targets: [{ type: "entity", class: "node" }],
+  data: { rendering: { shape: "rect" } },
+  version: 1,
+};
+
 export const WORKSPACE_CONNECTIONS_CONSTRAINT: Constraint = {
   id: "builtin/workspace-connections",
   label: "Remote Connection",
   uri: "spike://builtin/constraints/workspace-connections",
   type: "workspace.connections",
   targets: [{ type: "entity", class: "node" }],
-  data: { rendering: { shape: "rect" } },
+  data: {},
   version: 1,
 };
 

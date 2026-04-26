@@ -232,7 +232,7 @@ export function ensureWorkspaceRoot(
 }
 
 /**
- * Ensure the workspace.connections constraint exists and is applied to the workspace root.
+ * Ensure the workspace constraint exists and is applied to the workspace root.
  * Idempotent — returns inputs unchanged if already present.
  */
 export function ensureWorkspaceConstraint(
@@ -240,13 +240,13 @@ export function ensureWorkspaceConstraint(
   constraintApplications: ConstraintApplication[],
   rootNodeId: string,
 ): { constraints: Constraint[]; constraintApplications: ConstraintApplication[] } {
-  const cId = WORKSPACE_CONNECTIONS_CONSTRAINT.id;
+  const cId = WORKSPACE_CONSTRAINT.id;
   const hasConstraint = constraints.some((c) => c.id === cId);
   const hasApplication = constraintApplications.some(
     (a) => a.constraintId === cId && a.entityId === rootNodeId,
   );
   return {
-    constraints: hasConstraint ? constraints : [...constraints, WORKSPACE_CONNECTIONS_CONSTRAINT],
+    constraints: hasConstraint ? constraints : [...constraints, WORKSPACE_CONSTRAINT],
     constraintApplications: hasApplication ? constraintApplications : [...constraintApplications, {
       id: crypto.randomUUID(),
       constraintId: cId,
@@ -549,7 +549,7 @@ export function freshProfileState(
     activeTabId: tabId,
     treeNodes: [profileRoot],
     edges: [],
-    constraints: [PROFILE_CONSTRAINT, WORKSPACE_CONNECTIONS_CONSTRAINT],
+    constraints: [PROFILE_CONSTRAINT, WORKSPACE_CONSTRAINT],
     constraintApplications: [
       {
         id: crypto.randomUUID(),
@@ -559,7 +559,7 @@ export function freshProfileState(
       },
       {
         id: crypto.randomUUID(),
-        constraintId: WORKSPACE_CONNECTIONS_CONSTRAINT.id,
+        constraintId: WORKSPACE_CONSTRAINT.id,
         entityId: rootNodeId,
         version: 1,
       },
@@ -782,6 +782,7 @@ export function loadState(): WorkspaceState {
 import {
   PROFILE_CONSTRAINT,
   WORKSPACE_CONNECTIONS_CONSTRAINT,
+  WORKSPACE_CONSTRAINT,
 } from "../graph/builtin_constraints.ts";
 import { exportDb, getDb, importDb, initSurreal, useDatabase, useUiDb } from "./db/surreal.ts";
 import {

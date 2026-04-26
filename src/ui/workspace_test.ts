@@ -12,7 +12,10 @@ import {
   makeRootNode,
   type WorkspaceState,
 } from "./workspace.ts";
-import { WORKSPACE_CONNECTIONS_CONSTRAINT } from "../graph/builtin_constraints.ts";
+import {
+  WORKSPACE_CONNECTIONS_CONSTRAINT,
+  WORKSPACE_CONSTRAINT,
+} from "../graph/builtin_constraints.ts";
 
 // ---------------------------------------------------------------------------
 // Helper to build a minimal WorkspaceState for testing
@@ -207,9 +210,9 @@ Deno.test("getFocusedRootNodes: focused on a composite returns its children", ()
 Deno.test("ensureWorkspaceConstraint: adds constraint and application when missing", () => {
   const result = ensureWorkspaceConstraint([], [], "root-1");
   assertEquals(result.constraints.length, 1);
-  assertEquals(result.constraints[0].id, WORKSPACE_CONNECTIONS_CONSTRAINT.id);
+  assertEquals(result.constraints[0].id, WORKSPACE_CONSTRAINT.id);
   assertEquals(result.constraintApplications.length, 1);
-  assertEquals(result.constraintApplications[0].constraintId, WORKSPACE_CONNECTIONS_CONSTRAINT.id);
+  assertEquals(result.constraintApplications[0].constraintId, WORKSPACE_CONSTRAINT.id);
   assertEquals(result.constraintApplications[0].entityId, "root-1");
 });
 
@@ -278,12 +281,12 @@ Deno.test("getConnectionConfig: returns config when URL is set", () => {
 Deno.test("ensureWorkspaceConstraint: idempotent when already present", () => {
   const app: ConstraintApplication = {
     id: "existing-app",
-    constraintId: WORKSPACE_CONNECTIONS_CONSTRAINT.id,
+    constraintId: WORKSPACE_CONSTRAINT.id,
     entityId: "root-1",
     version: 1,
   };
   const result = ensureWorkspaceConstraint(
-    [WORKSPACE_CONNECTIONS_CONSTRAINT],
+    [WORKSPACE_CONSTRAINT],
     [app],
     "root-1",
   );
