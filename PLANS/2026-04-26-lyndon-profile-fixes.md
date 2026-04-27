@@ -16,6 +16,7 @@ and tree restructuring doesn't update tabs.
 
 1. Fix profile switching to correctly load saved state from the target profile's database.
 2. Simplify the tab model: derive tabs from the profile root's children instead of storing them.
+3. Put navigation state (profile, workspace, focus, selection) in the URL.
 
 ## Approach
 
@@ -25,7 +26,7 @@ and tree restructuring doesn't update tabs.
 - [x] Update `selectProfile()` in `client.tsx` to call `loadProfileState()`
 - [x] CI passes
 
-### Phase 2: Derive tabs from tree (in progress)
+### Phase 2: Derive tabs from tree (done)
 
 - [x] Remove `tabs`/`activeTabId` from `WorkspaceState`, add `activeWorkspaceId`/`panels`
 - [x] Update helpers: `getActiveTab` (computed), `withPanel` (drop tabId), `getWorkspaceRootId`
@@ -36,26 +37,41 @@ and tree restructuring doesn't update tabs.
 - [x] Canvas: replace fake-tab with fake-panel pattern
 - [x] Persistence: update `UiState`, `syncUiState`, `loadWorkspaceUi` (+ migration)
 - [x] Tests and stories updated
-- [x] `NO_COLOR=1 deno task ci` passes (358 tests)
+- [x] Fix reload bugs: `validateFocusForWorkspace()`, derive `activeDatabaseId` from profile
+
+### Phase 3: URL-based navigation state (done)
+
+- [x] New `url-state.ts` module: `parseHash`, `serializeHash`, `readUrlState`, `writeUrlState`
+- [x] Apply URL state on load in `client.tsx` (override profile/workspace from hash)
+- [x] Push URL on state changes: `pushState` for profile/workspace, `replaceState` for focus/selection
+- [x] Handle `hashchange` for back/forward button navigation
+- [x] Remove `activeProfileId`/`activeWorkspaceId` from `UiState` persistence
+- [x] 17 new tests for URL parsing/serialization
+- [x] `NO_COLOR=1 deno task ci` passes (375 tests)
 
 ### Design decisions
 
-- **Panels reset on workspace switch** — simplest model, avoids sync complexity. Per-workspace
-  panel persistence can be added later if needed.
+- **Hash-based URL routing** — `#/{profileId}/{workspaceId}/{focusId?}/{selectionType:selectionId?}`
+- **Panels reset on workspace switch** — simplest model, avoids sync complexity.
 - **Tab names derive from workspace node labels** — no separate `tab.name` field.
-- **Migration**: old `tabs`/`activeTabId` in `_ui` database → derive `activeWorkspaceId` from
-  active tab's `rootNodeId`, use that tab's `panels`.
+- **Full UUIDs in URL** — simplest approach, no prefix-matching needed.
+- **`pushState` for profile/workspace, `replaceState` for focus/selection** — back button navigates
+  between workspaces but doesn't replay every click.
+- **No navigation state in `_ui`** — URL is sole source of truth; no-hash loads pick first profile.
 
 ## Open Questions
 
 - ~~Should we save/restore per-profile UI state separately?~~ Resolved: tabs are derived from
-  the tree, which is per-profile. The `_ui` database only stores `activeWorkspaceId` and `panels`.
+  the tree, which is per-profile. Navigation state is in the URL.
 
 ## Verification
 
-- [ ] `NO_COLOR=1 deno task ci` passes
-- [ ] Manual: create workspace with nodes, switch workspaces, switch back — graph data preserved
-- [ ] Manual: fresh profile gets empty workspace on first switch
-- [ ] Manual: profile switching loads correct graph data
+- [x] `NO_COLOR=1 deno task ci` passes (375 tests)
+- [ ] Manual: URL updates when switching profiles
+- [ ] Manual: URL updates when switching workspaces
+- [ ] Manual: URL updates when changing focus / selection
+- [ ] Manual: back button navigates between workspaces
+- [ ] Manual: page refresh preserves profile + workspace + focus from URL
+- [ ] Manual: loading with no hash picks first profile + first workspace
 - [ ] Manual: tab bar shows workspace node labels
 - [ ] Manual: rename workspace via tab bar → node label updates
