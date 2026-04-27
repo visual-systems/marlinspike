@@ -1007,30 +1007,22 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     });
   }
 
-  // 4. Load UI state to find active profile / database
+  // 4. Load UI state (profiles, panels, personas, etc.)
+  // Navigation state (activeProfileId, activeWorkspaceId) comes from the URL,
+  // not from the _ui database.
   const uiState = await loadWorkspaceUi();
-  let activeDatabaseId = dbs[0]?.uuid ?? crypto.randomUUID();
+  // Default to the first profile's database
+  const firstProfile = uiState?.profiles?.[0];
+  let activeDatabaseId = firstProfile?.localDatabaseId ?? dbs[0]?.uuid ??
+    crypto.randomUUID();
   if (uiState) {
-    // Derive activeDatabaseId from the active profile's localDatabaseId
-    const activeProfile = uiState.profiles?.find(
-      (p: Profile) => p.id === uiState.activeProfileId,
-    );
-    if (activeProfile?.localDatabaseId) {
-      activeDatabaseId = activeProfile.localDatabaseId;
-    }
-    console.log("[init] UI state loaded:", {
-      activeWorkspaceId: uiState.activeWorkspaceId,
-      activeProfileId: uiState.activeProfileId,
-      activeDatabaseId,
-    });
-    // Migration: old _ui records may have tabs/activeTabId instead of activeWorkspaceId
+    console.log("[init] UI state loaded:", { activeDatabaseId });
+    // Migration: old _ui records may have tabs/activeTabId — derive panels
     // deno-lint-ignore no-explicit-any
     const raw = uiState as any;
-    if (!uiState.activeWorkspaceId && raw.tabs?.length > 0) {
+    if (raw.tabs?.length > 0) {
       const activeTab = raw.tabs.find((t: Tab) => t.id === raw.activeTabId) ?? raw.tabs[0];
       if (activeTab?.databaseId) activeDatabaseId = activeTab.databaseId;
-      // Migrate fields onto uiState
-      uiState.activeWorkspaceId = activeTab?.rootNodeId ?? "";
       uiState.panels = activeTab?.panels ?? [defaultPanel()];
     }
   } else {
@@ -1069,8 +1061,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
   });
 
   // Ensure workspace root
-  const existingRootId = uiState?.activeWorkspaceId || undefined;
-  const wrapped = ensureWorkspaceRoot(buildTree(flatNodes), existingRootId);
+  const wrapped = ensureWorkspaceRoot(buildTree(flatNodes));
   const treeNodes = wrapped.treeNodes;
   const canvasState = await loadCanvasState();
   console.log("[init] Canvas state:", canvasState ? "found" : "not found");
@@ -1088,25 +1079,27 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     const ds = defaultState();
     // Ensure workspace constraint is present and applied to the root
     const wsConstraint = ensureWorkspaceConstraint(constraints, applications, wrapped.rootNodeId);
-    // Ensure profile root wraps workspace nodes
-    const activeProfile = (uiState.profiles ?? ds.profiles).find(
-      (p: Profile) => p.id === (uiState.activeProfileId ?? ds.activeProfileId),
-    );
+    // Ensure profile root wraps workspace nodes — use first profile as default
+    // (the client applies URL-based profile/workspace overrides after this returns)
+    const profiles = uiState.profiles ?? ds.profiles;
+    const firstProf = profiles[0];
     const profile = ensureProfileRoot(
       treeNodes,
       wsConstraint.constraints,
       wsConstraint.constraintApplications,
       undefined,
-      activeProfile?.name ?? "Local",
+      firstProf?.name ?? "Local",
     );
+    // Default activeWorkspaceId to first workspace node (child of profile root)
+    const defaultWsId = findNode(profile.treeNodes, profile.profileRootId)
+      ?.children[0]?.id ?? wrapped.rootNodeId;
     return backfillProfileDatabaseIds({
       ...ds,
-      // UI-only fields from SurrealDB (tabs, personas, workflows, etc.)
+      // UI-only fields from SurrealDB (panels, personas, workflows, etc.)
       // Spread first so explicit graph/canvas fields below take precedence.
       ...uiState,
-      // Backfill profiles for databases that predate the profiles feature
-      profiles: uiState.profiles ?? ds.profiles,
-      activeProfileId: uiState.activeProfileId ?? ds.activeProfileId,
+      profiles,
+      activeProfileId: firstProf?.id ?? ds.activeProfileId,
       databaseId: activeDatabaseId,
       profileRootId: profile.profileRootId,
       // Graph data loaded from SurrealDB — must override any stale fields in uiState
@@ -1114,16 +1107,12 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       edges: normaliseEdges(edges),
       constraints: profile.constraints,
       constraintApplications: profile.constraintApplications,
-      // Overrides — derive activeWorkspaceId from tree
-      activeWorkspaceId: uiState.activeWorkspaceId || wrapped.rootNodeId,
+      activeWorkspaceId: defaultWsId,
       panels: uiState.panels ?? [defaultPanel()],
       connectedGraphs,
-      // Validate focusId belongs to the active workspace's subtree.
-      // focusId is stored in the per-database canvas state; activeWorkspaceId in the _ui
-      // database — they can get out of sync if the debounced writes race.
       focusId: validateFocusForWorkspace(
         canvasState?.focusId ?? null,
-        uiState.activeWorkspaceId || wrapped.rootNodeId,
+        defaultWsId,
         profile.treeNodes,
       ),
       canvasExpandedNodes: canvasState?.canvasExpandedNodes ?? ds.canvasExpandedNodes,
@@ -1232,11 +1221,9 @@ async function migrateToSurreal(state: WorkspaceState, databaseId: string): Prom
     entityDrafts: state.entityDrafts,
   });
 
-  // Write global UI state
+  // Write global UI state (navigation state lives in URL, not here)
   const uiState: UiState = {
     profiles: state.profiles,
-    activeProfileId: state.activeProfileId,
-    activeWorkspaceId: state.activeWorkspaceId,
     panels: state.panels,
     personas: state.personas,
     activePersona: state.activePersona,

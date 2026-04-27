@@ -42,6 +42,7 @@ import {
   useUiDb,
 } from "./db/surreal.ts";
 import { saveDump } from "./db/bridge.ts";
+import { readUrlState, serializeHash, urlStateFromWs, writeUrlState } from "./url-state.ts";
 // ---------------------------------------------------------------------------
 // App root
 // ---------------------------------------------------------------------------
@@ -75,10 +76,50 @@ function App() {
   const wsRef = useRef<WorkspaceState | null>(null);
   wsRef.current = ws;
 
-  // Async initialisation — load from SurrealDB (with localStorage migration)
+  // Guard against re-entrant URL ↔ state sync
+  const suppressHashSync = useRef(false);
+  // When true, next URL sync uses pushState instead of replaceState
+  const pushNextUrl = useRef(false);
+
+  // Async initialisation — load from SurrealDB (with localStorage migration),
+  // then apply URL hash overrides (or set hash from loaded state).
   useEffect(() => {
     loadStateAsync()
-      .then((state) => {
+      .then(async (state) => {
+        const urlState = readUrlState();
+        if (urlState) {
+          // URL has navigation state — apply overrides
+          const urlProfile = state.profiles.find(
+            (p) => p.id === urlState.profileId,
+          );
+          if (urlProfile?.localDatabaseId) {
+            // Switch to the URL-specified profile's database if different
+            if (urlProfile.localDatabaseId !== state.databaseId) {
+              await useDatabase(urlProfile.localDatabaseId);
+              const loaded = await loadProfileState(
+                urlProfile.localDatabaseId,
+                urlProfile.name,
+              );
+              Object.assign(state, {
+                activeProfileId: urlState.profileId,
+                ...loaded,
+              });
+            } else {
+              state.activeProfileId = urlState.profileId;
+            }
+          }
+          // Apply workspace/focus/selection from URL
+          if (urlState.workspaceId) {
+            state.activeWorkspaceId = urlState.workspaceId;
+          }
+          if (urlState.focusId) {
+            state.focusId = urlState.focusId;
+          }
+          state.canvasSelected = urlState.selection;
+        } else {
+          // No hash — set it from loaded state
+          writeUrlState(urlStateFromWs(state), false);
+        }
         setWs(state);
         setSyncBaseline(state);
       })
@@ -87,6 +128,7 @@ function App() {
         setDbError(String(err));
         const state = loadState();
         setWs(state);
+        writeUrlState(urlStateFromWs(state), false);
       });
   }, []);
 
@@ -215,6 +257,91 @@ function App() {
     if (ws) globalThis.dispatchEvent(new CustomEvent("ws-updated", { detail: ws }));
   }, [ws]);
 
+  // Sync URL hash from state — pushState for workspace/profile changes, replaceState otherwise
+  useEffect(() => {
+    if (!ws || suppressHashSync.current) return;
+    const current = readUrlState();
+    const desired = urlStateFromWs(ws);
+    if (!current || serializeHash(desired) !== serializeHash(current)) {
+      const push = pushNextUrl.current ?? false;
+      pushNextUrl.current = false;
+      writeUrlState(desired, push);
+    }
+  }, [ws]);
+
+  // Handle back/forward button via hashchange
+  useEffect(() => {
+    const handler = () => {
+      if (suppressHashSync.current) return;
+      const urlState = readUrlState();
+      if (!urlState) return;
+      const current = wsRef.current;
+      if (!current) return;
+
+      suppressHashSync.current = true;
+      try {
+        // Profile changed — need async database switch
+        if (urlState.profileId !== current.activeProfileId) {
+          const profile = current.profiles.find(
+            (p) => p.id === urlState.profileId,
+          );
+          if (profile?.localDatabaseId) {
+            // Fire async profile switch
+            (async () => {
+              try {
+                await flushSync(current);
+                await useDatabase(profile.localDatabaseId!);
+                const loaded = await loadProfileState(
+                  profile.localDatabaseId!,
+                  profile.name,
+                );
+                setWs((prev) => {
+                  if (!prev) return prev;
+                  return {
+                    ...prev,
+                    activeProfileId: urlState.profileId,
+                    ...loaded,
+                    activeWorkspaceId: urlState.workspaceId ||
+                      loaded.activeWorkspaceId,
+                    focusId: urlState.focusId ?? loaded.focusId,
+                    canvasSelected: urlState.selection,
+                  };
+                });
+                setSyncBaseline(wsRef.current!);
+              } finally {
+                suppressHashSync.current = false;
+              }
+            })();
+            return; // async — don't unsuppress yet
+          }
+        }
+
+        // Same profile — workspace/focus/selection change only
+        setWs((prev) => {
+          if (!prev) return prev;
+          const next = { ...prev };
+          if (urlState.workspaceId !== prev.activeWorkspaceId) {
+            next.activeWorkspaceId = urlState.workspaceId;
+            next.panels = [defaultPanel()];
+          }
+          next.focusId = urlState.focusId ?? urlState.workspaceId;
+          next.canvasSelected = urlState.selection;
+          return next;
+        });
+      } finally {
+        // Only unsuppress if we didn't start an async operation
+        if (suppressHashSync.current) {
+          queueMicrotask(() => {
+            suppressHashSync.current = false;
+          });
+        }
+      }
+    };
+
+    globalThis.addEventListener("hashchange", handler);
+    return () => globalThis.removeEventListener("hashchange", handler);
+  }, []);
+
   // Loading state while SurrealDB initialises
   if (!ws) {
     return (
@@ -226,7 +353,14 @@ function App() {
 
   return (
     <>
-      <WorkspaceBar ws={ws} wsRef={wsRef} update={update} />
+      <WorkspaceBar
+        ws={ws}
+        wsRef={wsRef}
+        update={update}
+        pushUrl={() => {
+          pushNextUrl.current = true;
+        }}
+      />
       <WorkspaceControls ws={ws} update={update} />
       <WorkspaceArea ws={ws} update={update} />
     </>
@@ -238,14 +372,16 @@ function App() {
 // ---------------------------------------------------------------------------
 
 function WorkspaceBar(
-  { ws, wsRef, update }: {
+  { ws, wsRef, update, pushUrl }: {
     ws: WorkspaceState;
     wsRef: { current: WorkspaceState | null };
     update: Updater;
+    pushUrl: () => void;
   },
 ) {
   function addTab() {
     const rootNodeId = crypto.randomUUID();
+    pushUrl();
     update((s) => {
       const newRoot = makeRootNode(rootNodeId, []);
       const wsConstraint = ensureWorkspaceConstraint(
@@ -295,6 +431,7 @@ function WorkspaceBar(
         focusId: loaded.focusId?.slice(0, 8) ?? null,
         activeWorkspaceId: loaded.activeWorkspaceId.slice(0, 8),
       });
+      pushUrl();
       update((s) => ({
         ...s,
         activeProfileId: id,
@@ -326,6 +463,7 @@ function WorkspaceBar(
       const graphDump = await exportDb();
       await saveDump(`db:${dbId}`, graphDump);
 
+      pushUrl();
       update((s) => ({
         ...s,
         profiles: [...s.profiles, p],
@@ -377,6 +515,7 @@ function WorkspaceBar(
               isActive={wsNode.id === ws.activeWorkspaceId}
               canClose={workspaces.length > 1}
               update={update}
+              pushUrl={pushUrl}
             />
           ));
         })()}
@@ -733,12 +872,13 @@ function ProfileSegment(
 // ---------------------------------------------------------------------------
 
 function TabItem(
-  { workspaceId, label, isActive, canClose, update }: {
+  { workspaceId, label, isActive, canClose, update, pushUrl }: {
     workspaceId: string;
     label: string | null;
     isActive: boolean;
     canClose: boolean;
     update: Updater;
+    pushUrl: () => void;
   },
 ) {
   const [renaming, setRenaming] = useState(false);
@@ -752,6 +892,7 @@ function TabItem(
   }, [renaming]);
 
   function activateTab() {
+    pushUrl();
     update((s) => {
       if (workspaceId === s.activeWorkspaceId) return s;
       return {
@@ -765,6 +906,7 @@ function TabItem(
 
   function closeTab(e: MouseEvent) {
     e.stopPropagation();
+    pushUrl();
     update((s) => {
       const profileRoot = findNode(s.treeNodes, s.profileRootId);
       const siblings = profileRoot?.children ?? [];
