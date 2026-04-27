@@ -308,8 +308,8 @@ The set of active schemas on any entity forms a **commutative monoid**:
 **Compatibility** is a separate concern from composition. Two schemas are _compatible_ if their
 combined effect is consistent — no entity can simultaneously satisfy and violate the same
 constraint. Incompatible schemas can still both be active; the constraint system surfaces the
-tension as diagnostics (see Topology Schemas for examples). The author decides whether to
-resolve the tension or leave it open.
+tension as diagnostics (see Topology Schemas for examples). The author decides whether to resolve
+the tension or leave it open.
 
 Schemas are applied to any entity in the graph:
 
@@ -412,8 +412,8 @@ IDE  ◀─graph/compileResponse────────────  Constraint
 ```
 
 Diagnostics carry a severity (error, warning, info), a location (node id, edge id, port node id, or
-graph-level), a message, and a `suggestion` field (required for AI workflow compatibility — see
-Code Interface). The UI renders them inline on the canvas and in the tree view.
+graph-level), a message, and a `suggestion` field (required for AI workflow compatibility — see Code
+Interface). The UI renders them inline on the canvas and in the tree view.
 
 ### Constraint Evaluation Stages
 
@@ -423,8 +423,8 @@ Code Interface). The UI renders them inline on the canvas and in the tree view.
 | **Server-side**  | On demand / on save    | Constraint plugin protocol                                  | Cross-node invariants, impl interface compatibility, remote ref validation |
 | **Compile-time** | On targeting a runtime | Plugin compile hook                                         | K8s resource limits, audio buffer sizes, mock coverage                     |
 
-All three stages use the same constraint plugin protocol (see Protocol). The "live" stage simply has lower
-latency requirements and tighter plugin subscription granularity.
+All three stages use the same constraint plugin protocol (see Protocol). The "live" stage simply has
+lower latency requirements and tighter plugin subscription granularity.
 
 ### Constraint Authoring
 
@@ -551,8 +551,8 @@ URI can be shared with a persona: `spike://acme/backend/auth-service?persona=ops
 ### Text View
 
 The canvas and tree view are complemented by a **text view** — a code editor pane showing the
-currently focused subgraph as Spike-Lisp (see Language Representations). Edits in the text view write to the same CRDT
-graph store as canvas edits; both views update in real time.
+currently focused subgraph as Spike-Lisp (see Language Representations). Edits in the text view
+write to the same CRDT graph store as canvas edits; both views update in real time.
 
 The text view is backed by the same constraint plugin host that drives canvas validation — there is
 no separate validation path. The LSP server _is_ the constraint plugin host: completions,
@@ -560,9 +560,9 @@ diagnostics, and hover information in the text editor come from the same plugin 
 annotates nodes and edges on the canvas. This ensures the two views are genuinely isomorphic: any
 graph state reachable by canvas editing is reachable by text editing, and vice versa.
 
-The lossless round-trip guarantee of Spike-Lisp (see Language Representations) is therefore a **first-class architectural
-requirement**, not an optimisation. Without it, the text and canvas views can diverge, and the
-isomorphism breaks.
+The lossless round-trip guarantee of Spike-Lisp (see Language Representations) is therefore a
+**first-class architectural requirement**, not an optimisation. Without it, the text and canvas
+views can diverge, and the isomorphism breaks.
 
 ### Subgraph Navigation
 
@@ -618,7 +618,8 @@ deployment. No GitHub Action or `deployctl` CLI needed.
 #### How it works
 
 1. Deno Deploy watches the `main` branch and deploys on push
-2. Build command runs automatically: `deno run --allow-read --allow-write --allow-net --allow-env build.ts`
+2. Build command runs automatically:
+   `deno run --allow-read --allow-write --allow-net --allow-env build.ts`
 3. Entrypoint is `mod.tsx` (configured in `deno.json` under `deploy`)
 4. `mod.tsx` reads pre-built bundles from `dist/client.js` and `dist/stories.js` at startup
 5. In dev mode (`--dev` flag), bundles are generated on-demand via `@deno/emit` instead
@@ -956,11 +957,11 @@ and produces an artifact or side effect.
 
 ### Phase 3 — Extensibility (Schema Plugin Foundation)
 
-This phase lays the groundwork for the modular type system described in Constraint System. The goal is a working
-plugin protocol and a first real schema — not a full ecosystem.
+This phase lays the groundwork for the modular type system described in Constraint System. The goal
+is a working plugin protocol and a first real schema — not a full ecosystem.
 
-- [x] Constraint plugin protocol (in-process registry with `ConstraintTypeDefinition.evaluate`,
-      not stdio JSON-RPC — see `validate_workspace.ts`)
+- [x] Constraint plugin protocol (in-process registry with `ConstraintTypeDefinition.evaluate`, not
+      stdio JSON-RPC — see `validate_workspace.ts`)
 - [x] Schema activation: `activeSchemas` list on graph and per-entity, runtime-editable
 - [ ] Monoid composition enforced: schemas are order-independent; adding/removing schemas is always
       valid (never crashes the IDE)
@@ -979,7 +980,8 @@ plugin protocol and a first real schema — not a full ecosystem.
 
 ### Phase 5 — Layout and Personas
 
-- [x] Bottom-up force layout (sibling-scoped forces; multiple algorithms: SDF, FIELD, JANK, TOPOGRID)
+- [x] Bottom-up force layout (sibling-scoped forces; multiple algorithms: SDF, FIELD, JANK,
+      TOPOGRID)
 - [x] Persona definition and storage
 - [ ] Persona filter application in canvas and tree view
 - [ ] URI sharing with persona query parameter
@@ -989,9 +991,11 @@ plugin protocol and a first real schema — not a full ecosystem.
 - [x] Profile storage (IndexedDB, persisted via SurrealDB `_ui` database and dump/load bridge)
 - [x] Profile CRUD UI (dropdown with browser, add/edit form, delete, default protection)
 - [x] `indxdb://` URL scheme — local database IDs derived from URL path (human-readable dump keys)
-- [x] Split constraints: `workspace` (tab-eligible, rect shape) + `connections` (remote connection config)
+- [x] Split constraints: `workspace` (tab-eligible, rect shape) + `connections` (remote connection
+      config)
 - [x] Profile root node (`PROFILE_CONSTRAINT`) wraps all workspace nodes in a single tree
-- [x] Workspace-as-tabs unification (single graph per profile, tabs are focus pointers)
+- [x] Workspace-as-tabs unification (single graph per profile, tabs derived from tree)
+- [x] URL-based navigation state (profile, workspace, focus, selection in hash)
 - [x] Connection inheritance: profile → workspace → children via outside-in principle
 - [ ] `storage-location` constraint — opts a node's children into a different database
 
@@ -1005,13 +1009,15 @@ plugin protocol and a first real schema — not a full ecosystem.
 
 - [ ] Runtime target protocol
 - [ ] First runtime target (simulation or code-gen)
-- [ ] Compile-time constraint evaluation (enforced validation mode — see Modal Validation — first used here)
+- [ ] Compile-time constraint evaluation (enforced validation mode — see Modal Validation — first
+      used here)
 - [ ] Implementation resolution at compile time
 
 ### Phase 8 — Schema Ecosystem
 
-This phase builds out the full modular type system vision from Constraint System. Phase 3 establishes the plugin
-protocol; Phase 8 makes it networked, composable, and externally distributable.
+This phase builds out the full modular type system vision from Constraint System. Phase 3
+establishes the plugin protocol; Phase 8 makes it networked, composable, and externally
+distributable.
 
 - [ ] Enforced validation mode: checkpoint declarations, hard stops at save/compile/publish
 - [ ] Entity-level schema application (node, edge, port, not just graph-level)
@@ -1037,18 +1043,18 @@ protocol; Phase 8 makes it networked, composable, and externally distributable.
 
 ## Technology Candidates
 
-| Layer              | Candidate                        | Notes                                         |
-| ------------------ | -------------------------------- | --------------------------------------------- |
-| Graph store        | SurrealDB (WASM, `mem://`)       | Per-tab databases; IndexedDB bridge (see Persistence Layer) |
-| UI                 | TypeScript + Hono JSX DOM        | Server: Hono; client: Hono JSX DOM (not React) |
-| Canvas rendering   | Custom SVG                       | Full control; custom force layout algorithms  |
-| Tree view          | Custom Hono JSX component        | Tight sync with canvas                        |
-| Force layout       | Custom (SDF, FIELD, JANK, TOPOGRID) | Scoped per subgraph level; composable      |
-| Constraint plugins | In-process TypeScript registry   | `ConstraintTypeDefinition.evaluate` functions |
-| Base schema        | JSON Schema Draft 2020-12        | Widest tooling support                        |
-| Serialisation      | JSON (base) + SurrealQL (persistence) | SurrealQL dumps for IndexedDB bridge    |
-| URI resolution     | Custom resolver                  | Local file, remote HTTP, version registry     |
-| Code interface     | MCP server + Spike-Clojure       | Parser/serialiser done; MCP server planned (see Code Interface) |
+| Layer              | Candidate                             | Notes                                                           |
+| ------------------ | ------------------------------------- | --------------------------------------------------------------- |
+| Graph store        | SurrealDB (WASM, `mem://`)            | Per-tab databases; IndexedDB bridge (see Persistence Layer)     |
+| UI                 | TypeScript + Hono JSX DOM             | Server: Hono; client: Hono JSX DOM (not React)                  |
+| Canvas rendering   | Custom SVG                            | Full control; custom force layout algorithms                    |
+| Tree view          | Custom Hono JSX component             | Tight sync with canvas                                          |
+| Force layout       | Custom (SDF, FIELD, JANK, TOPOGRID)   | Scoped per subgraph level; composable                           |
+| Constraint plugins | In-process TypeScript registry        | `ConstraintTypeDefinition.evaluate` functions                   |
+| Base schema        | JSON Schema Draft 2020-12             | Widest tooling support                                          |
+| Serialisation      | JSON (base) + SurrealQL (persistence) | SurrealQL dumps for IndexedDB bridge                            |
+| URI resolution     | Custom resolver                       | Local file, remote HTTP, version registry                       |
+| Code interface     | MCP server + Spike-Clojure            | Parser/serialiser done; MCP server planned (see Code Interface) |
 
 ---
 
@@ -1084,8 +1090,8 @@ This isomorphism is a design goal, not an implementation detail. It means:
 - The graph notation is learnable by anyone who knows the host language.
 - AI agents can read and write graphs using familiar programming patterns.
 - The constraint system validates both the code semantics and the graph semantics in one pass.
-- The text view (see Text View) is a full peer of the canvas — editing code and editing the graph are the
-  same operation.
+- The text view (see Text View) is a full peer of the canvas — editing code and editing the graph
+  are the same operation.
 
 #### Two layers
 
@@ -1212,8 +1218,8 @@ Spike-Lisp is designed to be token-efficient for LLMs:
 
 ### File-Based Workflows
 
-The Code Interface described above assumes an in-browser text view or an MCP-connected AI agent.
-But Spike-Clojure source files on disk — such as those in [`examples/`](examples/) — are a natural
+The Code Interface described above assumes an in-browser text view or an MCP-connected AI agent. But
+Spike-Clojure source files on disk — such as those in [`examples/`](examples/) — are a natural
 authoring surface too. Three approaches to synchronising files with a live graph, in increasing
 order of ambition:
 
@@ -1230,19 +1236,20 @@ marlinspike push examples/solar-calculator/
 **B. File watcher ↔ graph sync (bidirectional)**
 
 A local Marlinspike instance watches a directory. File edits parse and update the graph; graph edits
-emit and update the files. This is the text view (see Text View) backed by the filesystem instead of an
-in-browser editor. Harder than A — needs conflict resolution, file-to-subgraph mapping conventions
-(one file per namespace? per subgraph?), and a decision about which side wins on concurrent edits.
+emit and update the files. This is the text view (see Text View) backed by the filesystem instead of
+an in-browser editor. Harder than A — needs conflict resolution, file-to-subgraph mapping
+conventions (one file per namespace? per subgraph?), and a decision about which side wins on
+concurrent edits.
 
 **C. Headless instance as sync node**
 
 A headless `marlinspike serve` process holds graph state and syncs with other instances (browser
 UIs, CLI tools, or remote peers). Files are one peer among many. This is the collaboration story
-(see Collaboration) with the filesystem as a participant. The CLI reads/writes files; the serve process mediates
-between file state, local graph, and remote connections.
+(see Collaboration) with the filesystem as a participant. The CLI reads/writes files; the serve
+process mediates between file state, local graph, and remote connections.
 
-These are not mutually exclusive — A is a stepping stone to B, and B is a subset of C. The choice
-of starting point depends on which workflow is most immediately useful: one-shot import for
+These are not mutually exclusive — A is a stepping stone to B, and B is a subset of C. The choice of
+starting point depends on which workflow is most immediately useful: one-shot import for
 bootstrapping graphs from existing code, bidirectional sync for a "files as source of truth"
 workflow, or headless serve for multi-peer collaboration.
 
@@ -1275,11 +1282,12 @@ WorkspaceState ←→ SurrealDB (mem://) ←→ export/import ←→ IndexedDB
 
 #### Database layout
 
-- **`_ui` database** — global UI state: profiles, active profile, tabs, personas, and a
-  `db_registry` table listing all known graph databases.
+- **`_ui` database** — global UI state: profiles, panels, personas, and a `db_registry` table
+  listing all known graph databases. Navigation state (active profile, active workspace, focus,
+  selection) is stored in the URL hash, not in the `_ui` database.
 - **Per-profile databases** — one SurrealDB database per profile (not per tab). Contains
-  `tree_node`, `edge`, `constraint`, `constraint_application`, and `canvas_state` tables.
-  All workspace nodes live in a single tree under the profile root node.
+  `tree_node`, `edge`, `constraint`, `constraint_application`, and `canvas_state` tables. All
+  workspace nodes live in a single tree under the profile root node.
 
 #### Sync strategy
 
@@ -1299,8 +1307,9 @@ IndexedDB object store (`marlinspike_snapshots` → `dumps`). Keys are `db:{uuid
 and `ui` for the UI database. Values are SurrealQL dump strings produced by `db.export()`.
 
 On startup, [`loadStateAsync()`](src/ui/workspace.ts) restores the `_ui` dump first, reads the
-`db_registry` to find the active tab's database, then restores that database's dump before querying
-for graph data.
+`db_registry` to find the first profile's database, then restores that database's dump before
+querying for graph data. The client then applies URL hash overrides (profile, workspace, focus,
+selection) to select the correct profile and workspace.
 
 ### SurrealDB RecordId Normalisation
 
@@ -1389,13 +1398,13 @@ The bootstrap layering above implements a general principle worth stating explic
 > the connection it describes.
 
 This is the "outside-in" pattern: configuration flows inward (from parent to children) but the
-parent remains outside the boundary it creates. The workspace root node lives in the local
-database and carries `data.connection` describing where its children live. The root is never
-remote; only its children are.
+parent remains outside the boundary it creates. The workspace root node lives in the local database
+and carries `data.connection` describing where its children live. The root is never remote; only its
+children are.
 
 The principle generalises beyond the root level. Any composite node that carries a
-`storage-location` constraint acts as a boundary: it is resolved in its parent's connection
-context, while its children are resolved in the connection it declares.
+`storage-location` constraint acts as a boundary: it is resolved in its parent's connection context,
+while its children are resolved in the connection it declares.
 
 ```
 Profile (indxdb://marlinspike)
@@ -1418,15 +1427,15 @@ A dedicated IndexedDB object store (`marlinspike_profiles`) holds profile entrie
 
 ```typescript
 interface Profile {
-  id: string           // UUID
-  name: string         // Display name (e.g. "Local", "Work", "Staging")
+  id: string; // UUID
+  name: string; // Display name (e.g. "Local", "Work", "Staging")
   connection: {
-    url: string        // SurrealDB connection URL
-    namespace?: string
-    database?: string
-    username?: string
-    password?: string
-  }
+    url: string; // SurrealDB connection URL
+    namespace?: string;
+    database?: string;
+    username?: string;
+    password?: string;
+  };
 }
 ```
 
@@ -1434,11 +1443,11 @@ interface Profile {
 
 All profiles have URLs. The scheme determines the storage backend:
 
-| Scheme | Backend | Example |
-|---|---|---|
-| `indxdb://` | Local IndexedDB (via mem:// + bridge) | `indxdb://marlinspike` |
-| `wss://` | Remote SurrealDB (WebSocket) | `wss://db.example.com` |
-| `https://` | Remote SurrealDB (HTTP) | `https://db.example.com` |
+| Scheme      | Backend                               | Example                  |
+| ----------- | ------------------------------------- | ------------------------ |
+| `indxdb://` | Local IndexedDB (via mem:// + bridge) | `indxdb://marlinspike`   |
+| `wss://`    | Remote SurrealDB (WebSocket)          | `wss://db.example.com`   |
+| `https://`  | Remote SurrealDB (HTTP)               | `https://db.example.com` |
 
 Local profiles use `indxdb://` — the SurrealDB IndexedDB scheme. The connection manager interprets
 this as "create a mem:// instance and wire up the IndexedDB bridge with this key as the
@@ -1459,8 +1468,8 @@ explicit and uniform with remote profiles.
 
 #### Connection inheritance
 
-The top-level nodes visible under a profile are workspace nodes. Connection context flows inward
-via the outside-in principle:
+The top-level nodes visible under a profile are workspace nodes. Connection context flows inward via
+the outside-in principle:
 
 1. **Profile** provides the base connection. Workspace nodes are stored in the profile's target.
 2. **Workspace node** may override with a `storage-location` constraint. If it does, its children
@@ -1491,14 +1500,14 @@ popover — not a full modal. Profiles should feel lightweight.
 
 **Add/Edit form fields:**
 
-| Field | Required | Notes |
-|---|---|---|
-| Name | Yes | Display name |
-| URL | Yes | `indxdb://name` for local, `wss://host` for remote |
-| Namespace | No | Collapsible "Advanced" section |
-| Database | No | Collapsible "Advanced" section |
-| Username | No | Collapsible "Advanced" section |
-| Password | No | Collapsible "Advanced" section |
+| Field     | Required | Notes                                              |
+| --------- | -------- | -------------------------------------------------- |
+| Name      | Yes      | Display name                                       |
+| URL       | Yes      | `indxdb://name` for local, `wss://host` for remote |
+| Namespace | No       | Collapsible "Advanced" section                     |
+| Database  | No       | Collapsible "Advanced" section                     |
+| Username  | No       | Collapsible "Advanced" section                     |
+| Password  | No       | Collapsible "Advanced" section                     |
 
 For local profiles, only Name and URL are needed. The advanced fields are for remote SurrealDB
 connections that require authentication or specific namespace/database targeting.
@@ -1507,41 +1516,49 @@ connections that require authentication or specific namespace/database targeting
 It is the bootstrap anchor — if a user corrupts their only local profile, they would be locked out.
 A future refinement could allow renaming but not changing the URL.
 
-**Switching behaviour:** Switching profiles clears the tab bar, caches the previous profile's
-workspace state (similar to the existing tab snapshot cache), connects to the new profile's target,
-and loads its workspace nodes. A brief loading indicator is acceptable during the connection phase.
+**Switching behaviour:** Switching profiles flushes the current state to its database, loads the
+target profile's database and workspace nodes, and updates the URL hash. The tab bar re-derives from
+the new profile root's children. A brief loading indicator is acceptable during the connection
+phase.
 
 ### Workspace Nodes as Tabs
 
 Workspace nodes and tabs are unified. There is one graph per profile — all workspace nodes are
-children of the profile root node in a single `treeNodes` array.
+children of the profile root node in a single `treeNodes` array. There is no stored `Tab` type —
+tabs are derived from the profile root's children at render time.
 
-- **Tabs are focus pointers.** Each `Tab` has a `rootNodeId` referencing a workspace node in the
-  shared tree. Tab switching sets `focusId` — no database swap.
-- **Tab labels derive from workspace node labels.** `tab.name` is `null`; the display name comes
-  from the workspace node's `label` field (single source of truth).
+- **Tabs are derived, not stored.** The tab bar renders from
+  `findNode(treeNodes, profileRootId).children`. Each child is a workspace node; clicking it sets
+  `activeWorkspaceId`. There is no `Tab[]` array in state.
+- **Tab labels derive from workspace node labels.** The display name comes from the workspace node's
+  `label` field (single source of truth).
+- **Navigation state lives in the URL.** The hash encodes active profile, workspace, focus node, and
+  selection: `#/{profileId}/{workspaceId}/{focusId?}/{selectionType:selectionId?}`.
+  Profile/workspace changes use `pushState` (back button navigates); focus/selection changes use
+  `replaceState`.
 - **New tab** creates a composite workspace node (with `workspace` constraint) as a child of the
-  profile root, and opens a tab focused on it.
-- **Close tab** deletes the workspace node and its subtree from the graph.
-- **Profile root view** (`focusId === profileRootId`): all workspace nodes are visible on the
-  canvas as rectangular nodes. The focus breadcrumb shows the profile node label (e.g. "Local").
+  profile root and sets `activeWorkspaceId`.
+- **Close tab** deletes the workspace node and its subtree from the graph, selects an adjacent
+  sibling.
+- **Profile root view** (`focusId === profileRootId`): all workspace nodes are visible on the canvas
+  as rectangular nodes. The focus breadcrumb shows the profile node label (e.g. "Local").
 - **Virtual root** (`focusId === null`): shows the profile root node itself — rarely used.
-- **One database per profile**, not one per tab. `databaseId` lives on `WorkspaceState`, not `Tab`.
+- **One database per profile**, not one per tab. `databaseId` lives on `WorkspaceState`.
 
 ### Workspace, Connections, and Storage-Location Constraints
 
 Three orthogonal constraints govern workspace identity, connection config, and storage boundaries:
 
-| Constraint | Type | Purpose | Data |
-|---|---|---|---|
-| `workspace` | `workspace` | Makes a node tab-eligible, renders as rect | `{ rendering: { shape: "rect" } }` |
-| `connections` | `connections` | Remote connection config (URL, namespace, etc.) | `{}` (entity data schema on `entity.data.connection`) |
-| `storage-location` | — | Specifies where children are stored | Not yet implemented |
+| Constraint         | Type          | Purpose                                         | Data                                                  |
+| ------------------ | ------------- | ----------------------------------------------- | ----------------------------------------------------- |
+| `workspace`        | `workspace`   | Makes a node tab-eligible, renders as rect      | `{ rendering: { shape: "rect" } }`                    |
+| `connections`      | `connections` | Remote connection config (URL, namespace, etc.) | `{}` (entity data schema on `entity.data.connection`) |
+| `storage-location` | —             | Specifies where children are stored             | Not yet implemented                                   |
 
-**`workspace` constraint** (`WORKSPACE_CONSTRAINT`): Any node carrying this constraint can appear
-as a tab in the session UI. It also drives rectangular rendering on the canvas via
-`data.rendering.shape`. This is not limited to root-level nodes — a deeply nested composite with
-the workspace constraint could be opened as a focused tab.
+**`workspace` constraint** (`WORKSPACE_CONSTRAINT`): Any node carrying this constraint can appear as
+a tab in the session UI. It also drives rectangular rendering on the canvas via
+`data.rendering.shape`. This is not limited to root-level nodes — a deeply nested composite with the
+workspace constraint could be opened as a focused tab.
 
 **`connections` constraint** (`CONNECTIONS_CONSTRAINT`): Provides schema-driven connection fields
 (`url`, `namespace`, `database`, `username`, `password`) on the entity inspector. Applied
@@ -1553,9 +1570,10 @@ node's children (the outside-in principle), replacing the direct use of `connect
 routing.
 
 The constraints are orthogonal:
+
 - A workspace tab with no `connections` inherits its parent's connection.
-- A node with `connections` but no `workspace` constraint provides connection config without
-  being tab-eligible.
+- A node with `connections` but no `workspace` constraint provides connection config without being
+  tab-eligible.
 
 ### Future Direction
 
@@ -1571,8 +1589,7 @@ The current persistence model is a single-user, single-browser solution. The pat
    single workspace view, though this is not yet implemented.
 4. **Cross-device sync** — profiles are the natural unit for cross-device synchronisation. A future
    account system syncs the profile list and its associated workspace nodes to the user's account.
-   The profile-as-local-pointer pattern is unchanged; the account is just another sync
-   destination.
+   The profile-as-local-pointer pattern is unchanged; the account is just another sync destination.
 
 ---
 
@@ -1580,12 +1597,12 @@ The current persistence model is a single-user, single-browser solution. The pat
 
 ### Architecture
 
-1. **Schema composition semantics** — Schema Composition declares schemas as a commutative monoid, but the exact
-   mechanism for detecting _incompatibility_ (vs mere _tension_) is unresolved. Is incompatibility
-   declared statically in schema metadata ("this schema excludes that one"), detected dynamically by
-   the constraint plugin at validation time, or both? Static declaration is cheaper and enables the
-   IDE to warn before a plugin is even loaded; dynamic detection is more expressive but adds
-   latency.
+1. **Schema composition semantics** — Schema Composition declares schemas as a commutative monoid,
+   but the exact mechanism for detecting _incompatibility_ (vs mere _tension_) is unresolved. Is
+   incompatibility declared statically in schema metadata ("this schema excludes that one"),
+   detected dynamically by the constraint plugin at validation time, or both? Static declaration is
+   cheaper and enables the IDE to warn before a plugin is even loaded; dynamic detection is more
+   expressive but adds latency.
 
 2. **Port interface versioning** — if a subgraph's port interface changes, how are existing edges to
    that subgraph's URI invalidated or migrated? Semver-style breaking change detection?
@@ -1613,8 +1630,8 @@ The current persistence model is a single-user, single-browser solution. The pat
 ### Notions Not Yet Explored
 
 - **Graph database / API** — a dedicated store and query API for graphs, beyond simple URI-addressed
-  document retrieval. (Partially addressed by Persistence Layer — SurrealDB provides the store and query layer;
-  the bridge provides browser persistence. Remote API and multi-user access are not yet
+  document retrieval. (Partially addressed by Persistence Layer — SurrealDB provides the store and
+  query layer; the bridge provides browser persistence. Remote API and multi-user access are not yet
   implemented.)
 - **Overlay and modification of referenced graphs** — applying patches or extensions to a referenced
   subgraph URI without forking it; composing compatible graphs by overlay.
