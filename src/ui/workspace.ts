@@ -401,6 +401,24 @@ export function collectSubtreeIds(node: TreeNode): Set<string> {
   return ids;
 }
 
+/**
+ * Validate that focusId is within the active workspace's subtree.
+ * Returns focusId if valid, otherwise falls back to workspaceId.
+ */
+function validateFocusForWorkspace(
+  focusId: string | null,
+  workspaceId: string,
+  treeNodes: TreeNode[],
+): string {
+  if (!focusId) return workspaceId;
+  if (focusId === workspaceId) return focusId;
+  const wsNode = findNode(treeNodes, workspaceId);
+  if (!wsNode) return workspaceId;
+  // Check if focusId is a descendant of the workspace node
+  if (collectSubtreeIds(wsNode).has(focusId)) return focusId;
+  return workspaceId;
+}
+
 export function subgraphJson(
   node: TreeNode,
   edges: Edge[],
@@ -989,13 +1007,21 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     });
   }
 
-  // 4. Load UI state to find active database
+  // 4. Load UI state to find active profile / database
   const uiState = await loadWorkspaceUi();
-  // Fall back to the first registered database if no active workspace specifies one
   let activeDatabaseId = dbs[0]?.uuid ?? crypto.randomUUID();
   if (uiState) {
+    // Derive activeDatabaseId from the active profile's localDatabaseId
+    const activeProfile = uiState.profiles?.find(
+      (p: Profile) => p.id === uiState.activeProfileId,
+    );
+    if (activeProfile?.localDatabaseId) {
+      activeDatabaseId = activeProfile.localDatabaseId;
+    }
     console.log("[init] UI state loaded:", {
       activeWorkspaceId: uiState.activeWorkspaceId,
+      activeProfileId: uiState.activeProfileId,
+      activeDatabaseId,
     });
     // Migration: old _ui records may have tabs/activeTabId instead of activeWorkspaceId
     // deno-lint-ignore no-explicit-any
@@ -1092,8 +1118,14 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       activeWorkspaceId: uiState.activeWorkspaceId || wrapped.rootNodeId,
       panels: uiState.panels ?? [defaultPanel()],
       connectedGraphs,
-      // Default to workspace root so users see graph contents; null = "virtual root" level
-      focusId: canvasState?.focusId ?? wrapped.rootNodeId,
+      // Validate focusId belongs to the active workspace's subtree.
+      // focusId is stored in the per-database canvas state; activeWorkspaceId in the _ui
+      // database — they can get out of sync if the debounced writes race.
+      focusId: validateFocusForWorkspace(
+        canvasState?.focusId ?? null,
+        uiState.activeWorkspaceId || wrapped.rootNodeId,
+        profile.treeNodes,
+      ),
       canvasExpandedNodes: canvasState?.canvasExpandedNodes ?? ds.canvasExpandedNodes,
       canvasNodePositions: canvasState?.canvasNodePositions ?? {},
       canvasSelected: canvasState?.canvasSelected ?? null,
