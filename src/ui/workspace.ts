@@ -671,8 +671,19 @@ export async function loadProfileState(
   // Load canvas state
   const canvasState = await loadCanvasState();
 
-  // Active workspace = first workspace child of the profile root
-  const activeWorkspaceId = workspaceRootId;
+  // Derive active workspace from the stored focusId if it belongs to a workspace
+  // in this profile, otherwise fall back to the first workspace.
+  let activeWorkspaceId = workspaceRootId;
+  const storedFocusId = canvasState?.focusId ?? null;
+  if (storedFocusId && profileRoot.children.length > 0) {
+    // Check if focusId is (or is within) one of the workspace children
+    for (const ws of profileRoot.children) {
+      if (ws.id === storedFocusId || collectSubtreeIds(ws).has(storedFocusId)) {
+        activeWorkspaceId = ws.id;
+        break;
+      }
+    }
+  }
 
   return {
     databaseId: dbId,
@@ -683,7 +694,11 @@ export async function loadProfileState(
     edges: normaliseEdges(edges),
     constraints: wsConstraint.constraints,
     constraintApplications: wsConstraint.constraintApplications,
-    focusId: canvasState?.focusId ?? workspaceRootId,
+    focusId: validateFocusForWorkspace(
+      storedFocusId,
+      activeWorkspaceId,
+      profile.treeNodes,
+    ),
     canvasExpandedNodes: canvasState?.canvasExpandedNodes ?? [],
     canvasNodePositions: canvasState?.canvasNodePositions ?? {},
     canvasSelected: canvasState?.canvasSelected ?? null,
