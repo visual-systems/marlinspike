@@ -67,11 +67,11 @@ and tree restructuring doesn't update tabs.
 ## Verification
 
 - [x] `NO_COLOR=1 deno task ci` passes (375 tests)
-- [ ] Manual: URL updates when switching profiles
-- [ ] Manual: URL updates when switching workspaces
-- [ ] Manual: URL updates when changing focus / selection
-- [ ] Manual: back button navigates between workspaces
-- [ ] Manual: page refresh preserves profile + workspace + focus from URL
-- [ ] Manual: loading with no hash picks first profile + first workspace
-- [ ] Manual: tab bar shows workspace node labels
-- [ ] Manual: rename workspace via tab bar → node label updates
+- [x] Manual: URL updates when switching profiles
+- [x] Manual: URL updates when switching workspaces
+- [x] Manual: URL updates when changing focus / selection
+- [x] Manual: back button navigates between workspaces
+- [x] Manual: page refresh preserves profile + workspace + focus from URL
+- [x] Manual: loading with no hash picks first profile + first workspace
+- [x] Manual: tab bar shows workspace node labels
+- [x] Manual: rename workspace via tab bar → node label updates
