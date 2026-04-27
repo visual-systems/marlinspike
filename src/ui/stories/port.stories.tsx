@@ -212,9 +212,8 @@ export function InspectorWithPorts() {
     { id: "e1", fromId: "c1", toId: "c2", label: "calls", data: {}, version: 1 },
     { id: "e2", fromId: "c2", toId: "c3", label: "calls", data: {}, version: 1 },
   ];
-  ws0.tabs[0].panels[0].selected = { type: "node", id: node.id };
+  ws0.panels[0].selected = { type: "node", id: node.id };
 
-  const tab = ws0.tabs[0];
   const [ws, setWs] = useState<WorkspaceState>(ws0);
   const update: Updater = (fn) => setWs((prev) => fn(prev));
 
@@ -224,8 +223,7 @@ export function InspectorWithPorts() {
     <div style="width:280px; height:600px; border:1px solid #2a2a4a; overflow:hidden;">
       <NodeInspector
         node={currentNode}
-        panel={ws.tabs[0].panels[0]}
-        tab={tab}
+        panel={ws.panels[0]}
         ws={ws}
         update={update}
       />
@@ -248,9 +246,8 @@ export function InspectorAddPorts() {
     { id: "e2", fromId: "c2", toId: "c3", label: "", data: {}, version: 1 },
     { id: "e3", fromId: "c2", toId: "c4", label: "", data: {}, version: 1 },
   ];
-  ws0.tabs[0].panels[0].selected = { type: "node", id: node.id };
+  ws0.panels[0].selected = { type: "node", id: node.id };
 
-  const tab = ws0.tabs[0];
   const [ws, setWs] = useState<WorkspaceState>(ws0);
   const update: Updater = (fn) => setWs((prev) => fn(prev));
 
@@ -264,8 +261,7 @@ export function InspectorAddPorts() {
       <div style="width:280px; height:600px; border:1px solid #2a2a4a; overflow:hidden;">
         <NodeInspector
           node={currentNode}
-          panel={ws.tabs[0].panels[0]}
-          tab={tab}
+          panel={ws.panels[0]}
           ws={ws}
           update={update}
         />

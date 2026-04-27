@@ -20,15 +20,13 @@ export const meta = { title: "Constraints Panel" };
 function StoryWrapper({ initial }: { initial: WorkspaceState }) {
   const [ws, setWs] = useState<WorkspaceState>(initial);
   const update: Updater = (fn) => setWs((prev) => fn(prev));
-  const tab = ws.tabs[0];
-  const panel = ws.tabs[0].panels[0];
+  const panel = ws.panels[0];
   const diagnostics = validateWorkspace(ws, ws.constraintApplications);
 
   return (
     <div style="display:inline-flex; background:#14142a; border:1px solid #2a2a4a; height:600px;">
       <ConstraintsPanel
         panel={panel}
-        tab={tab}
         ws={ws}
         update={update}
         diagnostics={diagnostics}
@@ -44,14 +42,14 @@ function StoryWrapper({ initial }: { initial: WorkspaceState }) {
 /** Empty panel — no constraints defined yet. */
 export function Default() {
   const ws = defaultState();
-  ws.tabs[0].panels[0] = defaultConstraintsPanel();
+  ws.panels[0] = defaultConstraintsPanel();
   return <StoryWrapper initial={ws} />;
 }
 
 /** One label-required constraint applied to a node that has no label → error. */
 export function LabelRequiredViolation() {
   const ws = defaultState();
-  ws.tabs[0].panels[0] = defaultConstraintsPanel();
+  ws.panels[0] = defaultConstraintsPanel();
   ws.treeNodes = [makeNode("empty-label-node", "", "leaf", [])];
   ws.constraints = [{ ...LABEL_REQUIRED_CONSTRAINT }];
   ws.constraintApplications = [
@@ -62,7 +60,7 @@ export function LabelRequiredViolation() {
       version: 1,
     },
   ];
-  ws.tabs[0].panels[0].selected = {
+  ws.panels[0].selected = {
     type: "constraint",
     id: LABEL_REQUIRED_CONSTRAINT.id,
   };
@@ -72,7 +70,7 @@ export function LabelRequiredViolation() {
 /** max-children constraint with limit=3 applied to a group that has 5 children → warning. */
 export function MaxChildrenViolation() {
   const ws = defaultState();
-  ws.tabs[0].panels[0] = defaultConstraintsPanel();
+  ws.panels[0] = defaultConstraintsPanel();
   ws.treeNodes = [
     makeNode("big-group", "services", "composite", [
       makeNode("c1", "auth", "leaf", []),
@@ -87,14 +85,14 @@ export function MaxChildrenViolation() {
   ws.constraintApplications = [
     { id: "app-1", constraintId: constraint.id, entityId: "big-group", version: 1 },
   ];
-  ws.tabs[0].panels[0].selected = { type: "constraint", id: constraint.id };
+  ws.panels[0].selected = { type: "constraint", id: constraint.id };
   return <StoryWrapper initial={ws} />;
 }
 
 /** Multiple constraints — one passing, one failing — shows mixed state in the list. */
 export function MultipleConstraints() {
   const ws = defaultState();
-  ws.tabs[0].panels[0] = defaultConstraintsPanel();
+  ws.panels[0] = defaultConstraintsPanel();
   ws.treeNodes = [
     makeNode("named-node", "auth-service", "leaf", []),
     makeNode("unnamed-node", "", "leaf", []),

@@ -15,8 +15,8 @@ import {
   ensureWorkspaceConstraint,
   findNode,
   freshProfileState,
-  getActiveTab,
   getConnectionConfig,
+  loadProfileState,
   loadState,
   loadStateAsync,
   localDbIdFromUrl,
@@ -25,7 +25,6 @@ import {
   PANEL_MIN_WIDTH,
   type Profile,
   removeNodeFromTree,
-  type Tab,
   updateNodeInTree,
   type Updater,
   withPanel,
@@ -246,7 +245,6 @@ function WorkspaceBar(
   },
 ) {
   function addTab() {
-    const tabId = crypto.randomUUID();
     const rootNodeId = crypto.randomUUID();
     update((s) => {
       const newRoot = makeRootNode(rootNodeId, []);
@@ -263,13 +261,8 @@ function WorkspaceBar(
       );
       return {
         ...s,
-        tabs: [...s.tabs, {
-          id: tabId,
-          name: null,
-          rootNodeId,
-          panels: [defaultPanel()],
-        }],
-        activeTabId: tabId,
+        activeWorkspaceId: rootNodeId,
+        panels: [defaultPanel()],
         treeNodes,
         ...wsConstraint,
         focusId: rootNodeId,
@@ -294,12 +287,18 @@ function WorkspaceBar(
       const dbId = targetProfile.localDatabaseId;
       await useDatabase(dbId);
 
-      // Load the target profile's graph state
-      const fresh = freshProfileState(targetProfile.name, dbId);
+      // Load the target profile's saved state (or fresh state if empty)
+      const loaded = await loadProfileState(dbId, targetProfile.name);
+      console.log("[profile] loaded state for", targetProfile.name, {
+        dbId: dbId.slice(0, 8),
+        profileRootId: loaded.profileRootId.slice(0, 8),
+        focusId: loaded.focusId?.slice(0, 8) ?? null,
+        activeWorkspaceId: loaded.activeWorkspaceId.slice(0, 8),
+      });
       update((s) => ({
         ...s,
         activeProfileId: id,
-        ...fresh,
+        ...loaded,
       }));
       setSyncBaseline(wsRef.current!);
     } catch (err) {
@@ -365,22 +364,22 @@ function WorkspaceBar(
         }}
       />
 
-      {/* Tabs */}
+      {/* Tabs — derived from profile root's children */}
       <div style="display:flex; align-items:center; gap:4px; flex:1; overflow:hidden; padding:0 8px;">
-        {ws.tabs.map((tab) => {
-          const wsNode = findNode(ws.treeNodes, tab.rootNodeId);
-          const nodeLabel = wsNode?.label === "Untitled" ? undefined : wsNode?.label;
-          return (
+        {(() => {
+          const profileRoot = findNode(ws.treeNodes, ws.profileRootId);
+          const workspaces = profileRoot?.children ?? [];
+          return workspaces.map((wsNode) => (
             <TabItem
-              key={tab.id}
-              tab={tab}
-              isActive={tab.id === ws.activeTabId}
-              canClose={ws.tabs.length > 1}
+              key={wsNode.id}
+              workspaceId={wsNode.id}
+              label={wsNode.label === "Untitled" ? null : wsNode.label}
+              isActive={wsNode.id === ws.activeWorkspaceId}
+              canClose={workspaces.length > 1}
               update={update}
-              nodeLabel={nodeLabel}
             />
-          );
-        })}
+          ));
+        })()}
         <button
           type="button"
           style="background:none; border:none; color:#555; font-size:18px; cursor:pointer; padding:0 6px; line-height:1;"
@@ -734,13 +733,12 @@ function ProfileSegment(
 // ---------------------------------------------------------------------------
 
 function TabItem(
-  { tab, isActive, canClose, update, nodeLabel }: {
-    tab: Tab;
+  { workspaceId, label, isActive, canClose, update }: {
+    workspaceId: string;
+    label: string | null;
     isActive: boolean;
     canClose: boolean;
     update: Updater;
-    /** Label from the workspace node — source of truth for display. */
-    nodeLabel?: string;
   },
 ) {
   const [renaming, setRenaming] = useState(false);
@@ -755,27 +753,31 @@ function TabItem(
 
   function activateTab() {
     update((s) => {
-      if (tab.id === s.activeTabId) return s;
-      return { ...s, activeTabId: tab.id, focusId: tab.rootNodeId };
+      if (workspaceId === s.activeWorkspaceId) return s;
+      return {
+        ...s,
+        activeWorkspaceId: workspaceId,
+        panels: [defaultPanel()],
+        focusId: workspaceId,
+      };
     });
   }
 
   function closeTab(e: MouseEvent) {
     e.stopPropagation();
     update((s) => {
-      const idx = s.tabs.findIndex((t) => t.id === tab.id);
-      const newTabs = s.tabs.filter((t) => t.id !== tab.id);
-      const newActiveId = s.activeTabId === tab.id
-        ? (newTabs[Math.max(0, idx - 1)]?.id ?? newTabs[0]?.id)
-        : s.activeTabId;
+      const profileRoot = findNode(s.treeNodes, s.profileRootId);
+      const siblings = profileRoot?.children ?? [];
+      const idx = siblings.findIndex((c) => c.id === workspaceId);
+      const nextActiveId = s.activeWorkspaceId === workspaceId
+        ? (siblings[Math.max(0, idx - 1)]?.id ?? siblings[idx + 1]?.id ?? s.activeWorkspaceId)
+        : s.activeWorkspaceId;
 
       // Delete workspace node and its entire subtree from the graph
-      const rootNode = findNode(s.treeNodes, tab.rootNodeId);
-      if (!rootNode) {
-        return { ...s, tabs: newTabs, activeTabId: newActiveId };
-      }
+      const rootNode = findNode(s.treeNodes, workspaceId);
+      if (!rootNode) return s;
       const subtreeIds = collectSubtreeIds(rootNode);
-      const newTreeNodes = removeNodeFromTree(s.treeNodes, tab.rootNodeId);
+      const newTreeNodes = removeNodeFromTree(s.treeNodes, workspaceId);
       const newEdges = s.edges.filter(
         (edge) => !subtreeIds.has(edge.fromId) && !subtreeIds.has(edge.toId),
       );
@@ -783,40 +785,28 @@ function TabItem(
         (a) => !subtreeIds.has(a.entityId),
       );
 
-      // Focus the new active tab's workspace root
-      const newActiveTab = newTabs.find((t) => t.id === newActiveId);
-      const newFocusId = newActiveTab?.rootNodeId ?? s.focusId;
-
       return {
         ...s,
-        tabs: newTabs,
-        activeTabId: newActiveId,
+        activeWorkspaceId: nextActiveId,
+        panels: nextActiveId !== s.activeWorkspaceId ? [defaultPanel()] : s.panels,
         treeNodes: newTreeNodes,
         edges: newEdges,
         constraintApplications: newApps,
-        focusId: newFocusId,
+        focusId: nextActiveId,
       };
     });
   }
 
   function finishRename() {
     const val = inputRef.current?.value.trim() ?? "";
-    update((s) => {
-      const rootId = tab.rootNodeId;
-      const rootLabel = val || "Untitled";
-      return {
-        ...s,
-        tabs: s.tabs.map((t) => t.id === tab.id ? { ...t, name: val || null } : t),
-        // Keep workspace root label in sync with tab name
-        treeNodes: isActive
-          ? updateNodeInTree(
-            s.treeNodes,
-            rootId,
-            (n) => ({ ...n, label: rootLabel, version: n.version + 1 }),
-          )
-          : s.treeNodes,
-      };
-    });
+    update((s) => ({
+      ...s,
+      treeNodes: updateNodeInTree(
+        s.treeNodes,
+        workspaceId,
+        (n) => ({ ...n, label: val || "Untitled", version: n.version + 1 }),
+      ),
+    }));
     setRenaming(false);
   }
 
@@ -841,7 +831,7 @@ function TabItem(
         ? (
           <input
             ref={inputRef}
-            value={nodeLabel ?? tab.name ?? ""}
+            value={label ?? ""}
             placeholder="Untitled"
             style="background:#0f0f22; border:1px solid #4a4a7a; color:#e0e0e0; font-size:13px; padding:0 4px; width:100px; border-radius:2px;"
             onBlur={finishRename}
@@ -853,10 +843,10 @@ function TabItem(
         )
         : (
           <span
-            style={isActive ? "cursor:text;" : (nodeLabel || tab.name ? "" : "color:#555;")}
+            style={isActive ? "cursor:text;" : (label ? "" : "color:#555;")}
             onClick={handleLabelClick}
           >
-            {nodeLabel || tab.name || "Untitled"}
+            {label || "Untitled"}
           </span>
         )}
       {canClose && (
@@ -883,33 +873,15 @@ function WorkspaceControls(
   },
 ) {
   function addPanel() {
-    const tab = getActiveTab(ws);
-    update((s) => ({
-      ...s,
-      tabs: s.tabs.map((t) =>
-        t.id === tab.id ? { ...t, panels: [...t.panels, defaultPanel()] } : t
-      ),
-    }));
+    update((s) => ({ ...s, panels: [...s.panels, defaultPanel()] }));
   }
 
   function addConstraintsPanel() {
-    const tab = getActiveTab(ws);
-    update((s) => ({
-      ...s,
-      tabs: s.tabs.map((t) =>
-        t.id === tab.id ? { ...t, panels: [...t.panels, defaultConstraintsPanel()] } : t
-      ),
-    }));
+    update((s) => ({ ...s, panels: [...s.panels, defaultConstraintsPanel()] }));
   }
 
   function addCodePanel() {
-    const tab = getActiveTab(ws);
-    update((s) => ({
-      ...s,
-      tabs: s.tabs.map((t) =>
-        t.id === tab.id ? { ...t, panels: [...t.panels, defaultCodePanel()] } : t
-      ),
-    }));
+    update((s) => ({ ...s, panels: [...s.panels, defaultCodePanel()] }));
   }
 
   return (
@@ -955,8 +927,6 @@ function WorkspaceControls(
 // ---------------------------------------------------------------------------
 
 function WorkspaceArea({ ws, update }: { ws: WorkspaceState; update: Updater }) {
-  const tab = getActiveTab(ws);
-
   const diagnostics = useMemo(
     () => validateWorkspace(ws, ws.constraintApplications),
     [ws.constraints, ws.constraintApplications, ws.treeNodes, ws.edges],
@@ -983,15 +953,14 @@ function WorkspaceArea({ ws, update }: { ws: WorkspaceState; update: Updater }) 
       />
 
       {/* Panels — overlaid on top of the canvas, left-aligned */}
-      {tab.panels.length > 0 && (
+      {ws.panels.length > 0 && (
         <div style="position:absolute; top:0; left:0; bottom:0; display:flex; z-index:1; pointer-events:none;">
-          {tab.panels.map((panel) => (
+          {ws.panels.map((panel) => (
             <div key={panel.id} style="pointer-events:auto; height:100%; display:flex;">
               {panel.type === "constraints"
                 ? (
                   <ConstraintsPanel
                     panel={panel}
-                    tab={tab}
                     ws={ws}
                     update={update}
                     diagnostics={diagnostics}
@@ -1001,7 +970,6 @@ function WorkspaceArea({ ws, update }: { ws: WorkspaceState; update: Updater }) 
                 ? (
                   <CodePanel
                     panel={panel}
-                    tab={tab}
                     ws={ws}
                     update={update}
                   />
@@ -1009,7 +977,6 @@ function WorkspaceArea({ ws, update }: { ws: WorkspaceState; update: Updater }) 
                 : (
                   <TreePanel
                     panel={panel}
-                    tab={tab}
                     ws={ws}
                     update={update}
                   />
@@ -1035,7 +1002,7 @@ function WorkspaceArea({ ws, update }: { ws: WorkspaceState; update: Updater }) 
                     document.body.style.cursor = prevCursor;
                     const w = Math.max(minW, startW + ev.clientX - startX);
                     update((s) =>
-                      withPanel(s, tab.id, panel.id, (p) => ({ ...p, width: w }))
+                      withPanel(s, panel.id, (p) => ({ ...p, width: w }))
                     );
                   }
                   document.addEventListener("mousemove", onMove);

@@ -52,7 +52,7 @@ export function WithEdgesAndSelection() {
   const toId = "spike://acme/backend/frontend";
   ws.edges = [{ id: "edge-1", fromId, toId, label: "depends on", data: {}, version: 1 }];
   ws.canvasExpandedNodes = ["spike://acme/backend"];
-  ws.tabs[0].panels[0].selected = { type: "node", id: fromId };
+  ws.panels[0].selected = { type: "node", id: fromId };
   return <StoryWrapper initial={ws} />;
 }
 
@@ -167,7 +167,7 @@ export function ConstraintInspection() {
   // Pre-select node-a so the entity inspector is already open
   ws.canvasSelected = { type: "node", id: "node-a" };
   // Add a constraints panel so navigating to the constraint inspector has somewhere to land
-  ws.tabs[0].panels.push(defaultConstraintsPanel());
+  ws.panels.push(defaultConstraintsPanel());
 
   const [state, setState] = useState<WorkspaceState>(ws);
   const update: Updater = (fn) => setState((prev) => fn(prev));

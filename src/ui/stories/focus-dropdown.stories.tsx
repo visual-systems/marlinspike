@@ -57,7 +57,7 @@ export function AtVirtualRoot() {
  */
 export function FocusedOnComposite() {
   const ds = defaultState();
-  const rootId = ds.tabs[0].rootNodeId;
+  const rootId = ds.activeWorkspaceId;
   const composite = makeNode("composite-1", "auth-service", "composite", [
     makeNode("leaf-1", "token-validator", "leaf", []),
   ]);
@@ -76,7 +76,7 @@ export function FocusedOnComposite() {
  */
 export function FocusedWithPathToSelection() {
   const ds = defaultState();
-  const rootId = ds.tabs[0].rootNodeId;
+  const rootId = ds.activeWorkspaceId;
   ds.treeNodes = [
     makeRootNode(ds.profileRootId, [
       makeRootNode(rootId, [

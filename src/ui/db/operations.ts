@@ -324,8 +324,8 @@ export async function deleteApplication(id: string): Promise<void> {
 export interface UiState {
   profiles: WorkspaceState["profiles"];
   activeProfileId: string;
-  tabs: WorkspaceState["tabs"];
-  activeTabId: string;
+  activeWorkspaceId: string;
+  panels: WorkspaceState["panels"];
   personas: string[];
   activePersona: string | null;
   workflows: string[];
@@ -348,7 +348,7 @@ export async function loadWorkspaceUi(): Promise<UiState | null> {
   const db = getDb();
   await useUiDb();
   const result = await db.query<[UiState[]]>(
-    "SELECT profiles, activeProfileId, tabs, activeTabId, personas, activePersona, workflows, activeWorkflow, connectedGraphs FROM workspace:main",
+    "SELECT profiles, activeProfileId, activeWorkspaceId, panels, personas, activePersona, workflows, activeWorkflow, connectedGraphs FROM workspace:main",
   );
   const rows = extractQueryResult<UiState>(result);
   return rows.length > 0 ? rows[0] : null;

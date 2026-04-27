@@ -89,8 +89,10 @@ export interface WorkspaceState {
   databaseId: string;
   /** ID of the profile root node in treeNodes. */
   profileRootId: string;
-  tabs: Tab[];
-  activeTabId: string;
+  /** ID of the active workspace node (child of profile root). Tabs are derived from the tree. */
+  activeWorkspaceId: string;
+  /** Panel layout for the currently active workspace. Resets on workspace switch. */
+  panels: Panel[];
   treeNodes: TreeNode[];
   edges: Edge[];
   constraints: Constraint[];
@@ -444,17 +446,23 @@ export function getFocusedRootNodes(ws: WorkspaceState): TreeNode[] {
   return findNode(ws.treeNodes, ws.focusId)?.children ?? [];
 }
 
-/** Get the active tab's workspace root node ID.
- *  Falls back to treeNodes[0].id if rootNodeId isn't set (pre-migration data). */
+/** Get the active workspace's root node ID. */
 export function getWorkspaceRootId(ws: WorkspaceState): string {
-  const tabRootId = getActiveTab(ws).rootNodeId;
-  if (tabRootId) return tabRootId;
-  // Fallback: assume first top-level node is the root
-  return ws.treeNodes[0]?.id ?? "";
+  return ws.activeWorkspaceId;
 }
 
+/** Computed tab view — derived from the active workspace node + panels.
+ *  NOT persisted. Components receive this instead of a stored Tab. */
 export function getActiveTab(ws: WorkspaceState): Tab {
-  return ws.tabs.find((t) => t.id === ws.activeTabId) ?? ws.tabs[0];
+  const profileRoot = findNode(ws.treeNodes, ws.profileRootId);
+  const wsNode = profileRoot?.children.find((c) => c.id === ws.activeWorkspaceId) ??
+    profileRoot?.children[0];
+  return {
+    id: wsNode?.id ?? ws.activeWorkspaceId,
+    name: wsNode?.label === "Untitled" ? null : (wsNode?.label ?? null),
+    rootNodeId: wsNode?.id ?? ws.activeWorkspaceId,
+    panels: ws.panels,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -513,25 +521,7 @@ export function defaultCodePanel(): Panel {
 export function freshProfileState(
   profileLabel: string,
   databaseId: string,
-): Pick<
-  WorkspaceState,
-  | "databaseId"
-  | "profileRootId"
-  | "tabs"
-  | "activeTabId"
-  | "treeNodes"
-  | "edges"
-  | "constraints"
-  | "constraintApplications"
-  | "focusId"
-  | "canvasExpandedNodes"
-  | "canvasNodePositions"
-  | "canvasSelected"
-  | "canvasAlgorithm"
-  | "entityDrafts"
-  | "connectedGraphs"
-> {
-  const tabId = crypto.randomUUID();
+): ProfileStateFields {
   const rootNodeId = crypto.randomUUID();
   const profileRootId = crypto.randomUUID();
   const workspaceNodes = defaultTreeNodes(rootNodeId);
@@ -539,14 +529,8 @@ export function freshProfileState(
   return {
     databaseId,
     profileRootId,
-    tabs: [{
-      id: tabId,
-      name: null,
-      rootNodeId,
-      homeWorkspaceId: rootNodeId,
-      panels: [defaultPanel()],
-    }],
-    activeTabId: tabId,
+    activeWorkspaceId: rootNodeId,
+    panels: [defaultPanel()],
     treeNodes: [profileRoot],
     edges: [],
     constraints: [PROFILE_CONSTRAINT, WORKSPACE_CONSTRAINT],
@@ -573,6 +557,123 @@ export function freshProfileState(
     connectedGraphs: [{
       id: databaseId,
       label: `localStorage/${profileLabel} (${databaseId})`,
+      connected: true,
+      required: true,
+    }],
+  };
+}
+
+type ProfileStateFields = Pick<
+  WorkspaceState,
+  | "databaseId"
+  | "profileRootId"
+  | "activeWorkspaceId"
+  | "panels"
+  | "treeNodes"
+  | "edges"
+  | "constraints"
+  | "constraintApplications"
+  | "focusId"
+  | "canvasExpandedNodes"
+  | "canvasNodePositions"
+  | "canvasSelected"
+  | "canvasAlgorithm"
+  | "entityDrafts"
+  | "connectedGraphs"
+>;
+
+/**
+ * Load a profile's graph state from its SurrealDB database (via IndexedDB dump).
+ * Falls back to freshProfileState() if the database has no saved data.
+ */
+export async function loadProfileState(
+  dbId: string,
+  profileName: string,
+): Promise<ProfileStateFields> {
+  // Restore graph database from IndexedDB dump
+  const graphDump = await loadDump(`db:${dbId}`);
+  if (graphDump) {
+    console.log(`[profile] Found dump for ${dbId} (${graphDump.length} bytes), importing...`);
+    await useDatabase(dbId);
+    await importDb(graphDump);
+  } else {
+    console.log(`[profile] No dump for db:${dbId}, initialising fresh schema`);
+    await initGraphSchema(dbId);
+  }
+
+  // Load graph data from SurrealDB
+  await useDatabase(dbId);
+  const [flatNodes, edges, constraints, applications] = await Promise.all([
+    loadAllNodes(),
+    loadAllEdges(),
+    loadAllConstraints(),
+    loadAllApplications(),
+  ]);
+
+  console.log("[profile] Loaded from SurrealDB:", {
+    nodes: flatNodes.length,
+    edges: edges.length,
+    constraints: constraints.length,
+    applications: applications.length,
+  });
+
+  // If database is empty, return fresh state for a new profile
+  if (flatNodes.length === 0 && edges.length === 0) {
+    console.log("[profile] Empty database — returning fresh state");
+    return freshProfileState(profileName, dbId);
+  }
+
+  // Reconstruct tree — ensure profile root wraps workspace nodes
+  const tree = buildTree(flatNodes);
+  const profile = ensureProfileRoot(
+    tree,
+    constraints,
+    applications,
+    undefined,
+    profileName,
+  );
+
+  // Find the first workspace root inside the profile root (child with workspace constraint)
+  const profileRoot = profile.treeNodes[0];
+  const wsConstraintId = WORKSPACE_CONSTRAINT.id;
+  const workspaceRoot = profileRoot.children.find((child) =>
+    profile.constraintApplications.some(
+      (a) => a.constraintId === wsConstraintId && a.entityId === child.id,
+    )
+  ) ?? profileRoot.children[0];
+  const workspaceRootId = workspaceRoot?.id ?? profileRoot.id;
+
+  // Ensure workspace constraint exists on the workspace root (not the profile root)
+  const wsConstraint = ensureWorkspaceConstraint(
+    profile.constraints,
+    profile.constraintApplications,
+    workspaceRootId,
+  );
+
+  // Load canvas state
+  const canvasState = await loadCanvasState();
+
+  // Active workspace = first workspace child of the profile root
+  const activeWorkspaceId = workspaceRootId;
+
+  return {
+    databaseId: dbId,
+    profileRootId: profile.profileRootId,
+    activeWorkspaceId,
+    panels: [defaultPanel()],
+    treeNodes: profile.treeNodes,
+    edges: normaliseEdges(edges),
+    constraints: wsConstraint.constraints,
+    constraintApplications: wsConstraint.constraintApplications,
+    focusId: canvasState?.focusId ?? workspaceRootId,
+    canvasExpandedNodes: canvasState?.canvasExpandedNodes ?? [],
+    canvasNodePositions: canvasState?.canvasNodePositions ?? {},
+    canvasSelected: canvasState?.canvasSelected ?? null,
+    canvasAlgorithm: canvasState?.canvasAlgorithm ?? "SDF",
+    entityDrafts: canvasState?.entityDrafts ?? {},
+    connectedGraphs: [{
+      id: dbId,
+      label: `localStorage/${profileName} (${dbId})`,
       connected: true,
       required: true,
     }],
@@ -742,13 +843,18 @@ export function loadState(): WorkspaceState {
         undefined,
         activeProfile?.name ?? "Local",
       );
+      // Migrate: derive activeWorkspaceId from the active tab's rootNodeId
+      const activeTabId = (parsed.activeTabId as string | undefined) ?? tabs[0].id;
+      const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+      const activeWorkspaceId = activeTab.rootNodeId || wrapped.rootNodeId;
+      const migratedPanels = activeTab.panels ?? [defaultPanel()];
       return backfillProfileDatabaseIds({
         profiles: (parsed.profiles as Profile[] | undefined) ?? ds.profiles,
         activeProfileId: (parsed.activeProfileId as string | undefined) ?? ds.activeProfileId,
         databaseId: tabs[0]?.databaseId ?? ds.databaseId,
         profileRootId: profile.profileRootId,
-        tabs,
-        activeTabId: (parsed.activeTabId as string | undefined) ?? tabs[0].id,
+        activeWorkspaceId,
+        panels: migratedPanels,
         treeNodes: profile.treeNodes,
         edges: (parsed.edges as Edge[] | undefined) ?? [],
         constraints: profile.constraints,
@@ -883,24 +989,23 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     });
   }
 
-  // 4. Load UI state to find active tab / database
+  // 4. Load UI state to find active database
   const uiState = await loadWorkspaceUi();
-  // Fall back to the first registered database if no active tab specifies one
+  // Fall back to the first registered database if no active workspace specifies one
   let activeDatabaseId = dbs[0]?.uuid ?? crypto.randomUUID();
   if (uiState) {
     console.log("[init] UI state loaded:", {
-      activeTabId: uiState.activeTabId,
-      tabCount: uiState.tabs.length,
-      tabs: uiState.tabs.map((t: Tab) => ({
-        id: t.id.slice(0, 8),
-        name: t.name,
-        databaseId: t.databaseId?.slice(0, 8),
-      })),
+      activeWorkspaceId: uiState.activeWorkspaceId,
     });
-    const activeTab = uiState.tabs.find((t: Tab) => t.id === uiState.activeTabId) ??
-      uiState.tabs[0];
-    if (activeTab?.databaseId) {
-      activeDatabaseId = activeTab.databaseId;
+    // Migration: old _ui records may have tabs/activeTabId instead of activeWorkspaceId
+    // deno-lint-ignore no-explicit-any
+    const raw = uiState as any;
+    if (!uiState.activeWorkspaceId && raw.tabs?.length > 0) {
+      const activeTab = raw.tabs.find((t: Tab) => t.id === raw.activeTabId) ?? raw.tabs[0];
+      if (activeTab?.databaseId) activeDatabaseId = activeTab.databaseId;
+      // Migrate fields onto uiState
+      uiState.activeWorkspaceId = activeTab?.rootNodeId ?? "";
+      uiState.panels = activeTab?.panels ?? [defaultPanel()];
     }
   } else {
     console.log("[init] No UI state found in _ui database");
@@ -937,22 +1042,14 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
     applications: applications.length,
   });
 
-  // Ensure workspace root — backfill rootNodeId on tabs if missing
-  const existingRootId =
-    uiState?.tabs?.find((t: Tab) => t.id === uiState.activeTabId)?.rootNodeId ||
-    undefined;
+  // Ensure workspace root
+  const existingRootId = uiState?.activeWorkspaceId || undefined;
   const wrapped = ensureWorkspaceRoot(buildTree(flatNodes), existingRootId);
   const treeNodes = wrapped.treeNodes;
   const canvasState = await loadCanvasState();
   console.log("[init] Canvas state:", canvasState ? "found" : "not found");
 
   if (uiState) {
-    // Backfill rootNodeId on tabs that predate this field.
-    const activeTabId = uiState.activeTabId;
-    const tabs = uiState.tabs.map((t: Tab) => ({
-      ...t,
-      rootNodeId: t.rootNodeId || (t.id === activeTabId ? wrapped.rootNodeId : ""),
-    }));
     // Update connectedGraphs to show current database
     const dbEntry = dbs.find((d) => d.uuid === activeDatabaseId);
     const connectedGraphs = [{
@@ -991,8 +1088,9 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       edges: normaliseEdges(edges),
       constraints: profile.constraints,
       constraintApplications: profile.constraintApplications,
-      // Overrides
-      tabs,
+      // Overrides — derive activeWorkspaceId from tree
+      activeWorkspaceId: uiState.activeWorkspaceId || wrapped.rootNodeId,
+      panels: uiState.panels ?? [defaultPanel()],
       connectedGraphs,
       // Default to workspace root so users see graph contents; null = "virtual root" level
       focusId: canvasState?.focusId ?? wrapped.rootNodeId,
@@ -1106,8 +1204,8 @@ async function migrateToSurreal(state: WorkspaceState, databaseId: string): Prom
   const uiState: UiState = {
     profiles: state.profiles,
     activeProfileId: state.activeProfileId,
-    tabs: state.tabs,
-    activeTabId: state.activeTabId,
+    activeWorkspaceId: state.activeWorkspaceId,
+    panels: state.panels,
     personas: state.personas,
     activePersona: state.activePersona,
     workflows: state.workflows,
@@ -1123,15 +1221,12 @@ async function migrateToSurreal(state: WorkspaceState, databaseId: string): Prom
 
 export function withPanel(
   ws: WorkspaceState,
-  tabId: string,
   panelId: string,
   fn: (p: Panel) => Panel,
 ): WorkspaceState {
   return {
     ...ws,
-    tabs: ws.tabs.map((t) =>
-      t.id === tabId ? { ...t, panels: t.panels.map((p) => p.id === panelId ? fn(p) : p) } : t
-    ),
+    panels: ws.panels.map((p) => p.id === panelId ? fn(p) : p),
   };
 }
 

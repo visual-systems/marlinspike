@@ -8,7 +8,6 @@ import {
   PANEL_MIN_WIDTH,
   removeNodeFromTree,
   type Selection,
-  type Tab,
   type TreeNode,
   updateNodeInTree,
   type Updater,
@@ -24,7 +23,7 @@ import { Inspector } from "./inspector.tsx";
 // ---------------------------------------------------------------------------
 
 export function TreePanel(
-  { panel, tab, ws, update }: { panel: Panel; tab: Tab; ws: WorkspaceState; update: Updater },
+  { panel, ws, update }: { panel: Panel; ws: WorkspaceState; update: Updater },
 ) {
   const [localSplit, setLocalSplit] = useState(panel.inspectorSplit);
   const treeContentRef = useRef<HTMLDivElement | null>(null);
@@ -44,9 +43,7 @@ export function TreePanel(
   function closePanel() {
     update((s) => ({
       ...s,
-      tabs: s.tabs.map((t) =>
-        t.id === tab.id ? { ...t, panels: t.panels.filter((p) => p.id !== panel.id) } : t
-      ),
+      panels: s.panels.filter((p) => p.id !== panel.id),
     }));
   }
 
@@ -62,11 +59,11 @@ export function TreePanel(
       return ids;
     };
     const ids = collect(getFocusedRootNodes(ws));
-    update((s) => withPanel(s, tab.id, panel.id, (p) => ({ ...p, expandedNodes: ids })));
+    update((s) => withPanel(s, panel.id, (p) => ({ ...p, expandedNodes: ids })));
   }
 
   function collapseAll() {
-    update((s) => withPanel(s, tab.id, panel.id, (p) => ({ ...p, expandedNodes: [] })));
+    update((s) => withPanel(s, panel.id, (p) => ({ ...p, expandedNodes: [] })));
   }
 
   function handleDividerMouseDown(e: MouseEvent) {
@@ -88,7 +85,7 @@ export function TreePanel(
       const delta = startY - ev.clientY;
       const newSplit = Math.max(0.15, Math.min(0.85, startSplit + delta / bodyH));
       setLocalSplit(newSplit);
-      update((s) => withPanel(s, tab.id, panel.id, (p) => ({ ...p, inspectorSplit: newSplit })));
+      update((s) => withPanel(s, panel.id, (p) => ({ ...p, inspectorSplit: newSplit })));
     }
 
     document.addEventListener("mousemove", onMove as EventListener);
@@ -132,7 +129,6 @@ export function TreePanel(
               node={node}
               expanded={expanded}
               panelId={panel.id}
-              tabId={tab.id}
               selected={panel.selected}
               highlightedNodeIds={highlightedNodeIds}
               depth={0}
@@ -152,7 +148,7 @@ export function TreePanel(
               ref={inspectorElRef}
               style={`flex:${localSplit}; display:flex; flex-direction:column; overflow:hidden; min-height:0;`}
             >
-              <Inspector panel={panel} tab={tab} ws={ws} update={update} />
+              <Inspector panel={panel} ws={ws} update={update} />
             </div>
           </>
         )}
@@ -166,11 +162,10 @@ export function TreePanel(
 // ---------------------------------------------------------------------------
 
 export function TreeNodeRow(
-  { node, expanded, panelId, tabId, selected, highlightedNodeIds, depth, ws, update }: {
+  { node, expanded, panelId, selected, highlightedNodeIds, depth, ws, update }: {
     node: TreeNode;
     expanded: Set<string>;
     panelId: string;
-    tabId: string;
     selected: Selection | null;
     highlightedNodeIds: Set<string>;
     depth: number;
@@ -197,7 +192,7 @@ export function TreeNodeRow(
   function toggleNode(e: MouseEvent) {
     e.stopPropagation();
     update((s) =>
-      withPanel(s, tabId, panelId, (p) => ({
+      withPanel(s, panelId, (p) => ({
         ...p,
         expandedNodes: p.expandedNodes.includes(node.id)
           ? p.expandedNodes.filter((id) => id !== node.id)
@@ -208,7 +203,7 @@ export function TreeNodeRow(
 
   function selectNode() {
     update((s) =>
-      withPanel(s, tabId, panelId, (p) => ({
+      withPanel(s, panelId, (p) => ({
         ...p,
         selected: p.selected?.id === node.id ? null : { type: "node" as const, id: node.id },
       }))
@@ -253,17 +248,10 @@ export function TreeNodeRow(
           }],
           version: n.version + 1,
         }))),
-      tabs: s.tabs.map((t) =>
-        t.id === tabId
-          ? {
-            ...t,
-            panels: t.panels.map((p) =>
-              p.id === panelId && !p.expandedNodes.includes(node.id)
-                ? { ...p, expandedNodes: [...p.expandedNodes, node.id] }
-                : p
-            ),
-          }
-          : t
+      panels: s.panels.map((p) =>
+        p.id === panelId && !p.expandedNodes.includes(node.id)
+          ? { ...p, expandedNodes: [...p.expandedNodes, node.id] }
+          : p
       ),
     }));
   }
@@ -282,17 +270,14 @@ export function TreeNodeRow(
         ...s,
         treeNodes: newNodes,
         edges: newEdges,
-        tabs: s.tabs.map((t) => ({
-          ...t,
-          panels: t.panels.map((p) => {
-            const sel = p.selected;
-            // IDs are globally unique — safe to compare without checking type
-            if (!sel) return p;
-            if (sel.id === node.id) return { ...p, selected: null };
-            if (!newEdges.some((e) => e.id === sel.id)) return { ...p, selected: null };
-            return p;
-          }),
-        })),
+        panels: s.panels.map((p) => {
+          const sel = p.selected;
+          // IDs are globally unique — safe to compare without checking type
+          if (!sel) return p;
+          if (sel.id === node.id) return { ...p, selected: null };
+          if (!newEdges.some((e) => e.id === sel.id)) return { ...p, selected: null };
+          return p;
+        }),
       };
     });
   }
@@ -366,7 +351,6 @@ export function TreeNodeRow(
           node={child}
           expanded={expanded}
           panelId={panelId}
-          tabId={tabId}
           selected={selected}
           highlightedNodeIds={highlightedNodeIds}
           depth={depth + 1}
