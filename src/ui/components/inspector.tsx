@@ -13,7 +13,6 @@ import {
   type Port,
   removeNodeFromTree,
   subgraphJson,
-  type Tab,
   type TreeNode,
   updateNodeInTree,
   type Updater,
@@ -31,21 +30,19 @@ import { getEntityDataSchema } from "../../graph/validate_workspace.ts";
 // ---------------------------------------------------------------------------
 
 export function Inspector(
-  { panel, tab, ws, update }: { panel: Panel; tab: Tab; ws: WorkspaceState; update: Updater },
+  { panel, ws, update }: { panel: Panel; ws: WorkspaceState; update: Updater },
 ) {
   if (panel.selected?.type === "edge") {
     const sel = panel.selected;
     const edge = ws.edges.find((e) => e.id === sel.id);
     if (edge) {
-      return (
-        <EdgeInspector key={edge.id} edge={edge} panel={panel} tab={tab} ws={ws} update={update} />
-      );
+      return <EdgeInspector key={edge.id} edge={edge} panel={panel} ws={ws} update={update} />;
     }
   }
   if (panel.selected?.type === "node") {
     const sel = panel.selected;
     const node = findNode(ws.treeNodes, sel.id);
-    if (node) return <NodeInspector node={node} panel={panel} tab={tab} ws={ws} update={update} />;
+    if (node) return <NodeInspector node={node} panel={panel} ws={ws} update={update} />;
   }
   return <div />;
 }
@@ -97,10 +94,9 @@ function CopyField({ title, value }: { title: string; value: string }) {
 // ---------------------------------------------------------------------------
 
 export function NodeInspector(
-  { node, panel, tab, ws, update, extraActions, onInspectConstraint }: {
+  { node, panel, ws, update, extraActions, onInspectConstraint }: {
     node: TreeNode;
     panel: Panel;
-    tab: Tab;
     ws: WorkspaceState;
     update: Updater;
     extraActions?: unknown;
@@ -127,7 +123,7 @@ export function NodeInspector(
   }, [editingLabel]);
 
   function closeInspector() {
-    update((s) => withPanel(s, tab.id, panel.id, (p) => ({ ...p, selected: null })));
+    update((s) => withPanel(s, panel.id, (p) => ({ ...p, selected: null })));
   }
 
   function finishLabelEdit() {
@@ -162,17 +158,10 @@ export function NodeInspector(
           }],
           version: n.version + 1,
         }))),
-      tabs: s.tabs.map((t) =>
-        t.id === tab.id
-          ? {
-            ...t,
-            panels: t.panels.map((p) =>
-              p.id === panel.id && !p.expandedNodes.includes(node.id)
-                ? { ...p, expandedNodes: [...p.expandedNodes, node.id] }
-                : p
-            ),
-          }
-          : t
+      panels: s.panels.map((p) =>
+        p.id === panel.id && !p.expandedNodes.includes(node.id)
+          ? { ...p, expandedNodes: [...p.expandedNodes, node.id] }
+          : p
       ),
     }));
   }
@@ -198,7 +187,6 @@ export function NodeInspector(
     update((s) =>
       withPanel(
         s,
-        tab.id,
         panel.id,
         (p) => ({ ...p, selected: { type: "node" as const, id: nodeId } }),
       )
@@ -213,17 +201,14 @@ export function NodeInspector(
         ...s,
         treeNodes: newNodes,
         edges: newEdges,
-        tabs: s.tabs.map((t) => ({
-          ...t,
-          panels: t.panels.map((p) => {
-            const sel = p.selected;
-            // IDs are globally unique — safe to compare without checking type
-            if (!sel) return p;
-            if (sel.id === node.id) return { ...p, selected: null };
-            if (!newEdges.some((e) => e.id === sel.id)) return { ...p, selected: null };
-            return p;
-          }),
-        })),
+        panels: s.panels.map((p) => {
+          const sel = p.selected;
+          // IDs are globally unique — safe to compare without checking type
+          if (!sel) return p;
+          if (sel.id === node.id) return { ...p, selected: null };
+          if (!newEdges.some((e) => e.id === sel.id)) return { ...p, selected: null };
+          return p;
+        }),
       };
     });
   }
@@ -232,7 +217,6 @@ export function NodeInspector(
     update((s) =>
       withPanel(
         s,
-        tab.id,
         panel.id,
         (p) => ({ ...p, selected: { type: "edge" as const, id: edgeId } }),
       )
@@ -257,11 +241,8 @@ export function NodeInspector(
     update((s) => ({
       ...s,
       edges: s.edges.filter((e) => e.id !== edgeId),
-      tabs: s.tabs.map((t) => ({
-        ...t,
-        // IDs are globally unique — safe to compare without checking type
-        panels: t.panels.map((p) => p.selected?.id === edgeId ? { ...p, selected: null } : p),
-      })),
+      // IDs are globally unique — safe to compare without checking type
+      panels: s.panels.map((p) => p.selected?.id === edgeId ? { ...p, selected: null } : p),
     }));
   }
 
@@ -403,23 +384,16 @@ export function NodeInspector(
             onClick={() =>
               update((s) => ({
                 ...s,
-                tabs: s.tabs.map((t) =>
-                  t.id === tab.id
-                    ? {
-                      ...t,
-                      panels: [...t.panels, {
-                        id: crypto.randomUUID(),
-                        type: "code" as const,
-                        expandedNodes: [],
-                        selected: null,
-                        inspectorSplit: 0.5,
-                        codeLanguage: "json",
-                        codeEntityId: node.id,
-                        codeEntityKind: "node" as const,
-                      }],
-                    }
-                    : t
-                ),
+                panels: [...s.panels, {
+                  id: crypto.randomUUID(),
+                  type: "code" as const,
+                  expandedNodes: [],
+                  selected: null,
+                  inspectorSplit: 0.5,
+                  codeLanguage: "json",
+                  codeEntityId: node.id,
+                  codeEntityKind: "node" as const,
+                }],
               }))}
           />
         </div>
@@ -732,10 +706,9 @@ export function EdgeRow(
 // ---------------------------------------------------------------------------
 
 export function EdgeInspector(
-  { edge, panel, tab, ws, update, onInspectConstraint }: {
+  { edge, panel, ws, update, onInspectConstraint }: {
     edge: Edge;
     panel: Panel;
-    tab: Tab;
     ws: WorkspaceState;
     update: Updater;
     onInspectConstraint?: (constraintId: string) => void;
@@ -764,14 +737,13 @@ export function EdgeInspector(
   const toNode = findNode(ws.treeNodes, edge.toId);
 
   function closeEdgeView() {
-    update((s) => withPanel(s, tab.id, panel.id, (p) => ({ ...p, selected: null })));
+    update((s) => withPanel(s, panel.id, (p) => ({ ...p, selected: null })));
   }
 
   function navigateToNode(nodeId: string) {
     update((s) =>
       withPanel(
         s,
-        tab.id,
         panel.id,
         (p) => ({ ...p, selected: { type: "node" as const, id: nodeId } }),
       )
@@ -782,11 +754,8 @@ export function EdgeInspector(
     update((s) => ({
       ...s,
       edges: s.edges.filter((e) => e.id !== edge.id),
-      tabs: s.tabs.map((t) => ({
-        ...t,
-        // IDs are globally unique — safe to compare without checking type
-        panels: t.panels.map((p) => p.selected?.id === edge.id ? { ...p, selected: null } : p),
-      })),
+      // IDs are globally unique — safe to compare without checking type
+      panels: s.panels.map((p) => p.selected?.id === edge.id ? { ...p, selected: null } : p),
     }));
   }
 
@@ -869,23 +838,16 @@ export function EdgeInspector(
             onClick={() =>
               update((s) => ({
                 ...s,
-                tabs: s.tabs.map((t) =>
-                  t.id === tab.id
-                    ? {
-                      ...t,
-                      panels: [...t.panels, {
-                        id: crypto.randomUUID(),
-                        type: "code" as const,
-                        expandedNodes: [],
-                        selected: null,
-                        inspectorSplit: 0.5,
-                        codeLanguage: "json",
-                        codeEntityId: edge.id,
-                        codeEntityKind: "edge" as const,
-                      }],
-                    }
-                    : t
-                ),
+                panels: [...s.panels, {
+                  id: crypto.randomUUID(),
+                  type: "code" as const,
+                  expandedNodes: [],
+                  selected: null,
+                  inspectorSplit: 0.5,
+                  codeLanguage: "json",
+                  codeEntityId: edge.id,
+                  codeEntityKind: "edge" as const,
+                }],
               }))}
           />
         </div>

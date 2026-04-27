@@ -18,11 +18,10 @@ function PanelWithCode({ code }: { code: string }) {
     ...base,
     treeNodes: [],
     edges: [],
-    tabs: [{ ...base.tabs[0], panels: [panel] }],
+    panels: [panel],
   };
   const [ws, setWs] = useState<WorkspaceState>(initial);
   const update: Updater = (fn) => setWs((prev) => fn(prev));
-  const tab = ws.tabs[0];
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -37,7 +36,7 @@ function PanelWithCode({ code }: { code: string }) {
       ref={wrapRef}
       style="display:flex; height:480px; border:1px solid #2a2a4a; overflow:hidden; width:600px;"
     >
-      <CodePanel panel={panel} tab={tab} ws={ws} update={update} />
+      <CodePanel panel={panel} ws={ws} update={update} />
     </div>
   );
 }
@@ -527,7 +526,7 @@ const INVALID_CODE = `(defn broken [x]
 
 export function ValidityStates() {
   const base = defaultState();
-  const rootNodeId = base.tabs[0].rootNodeId;
+  const rootNodeId = base.activeWorkspaceId;
   const ws: WorkspaceState = { ...base, treeNodes: defaultTreeNodes(rootNodeId), edges: [] };
 
   const vApplied = computeValidity(VALID_APPLIED_CODE, undefined, undefined, ws);

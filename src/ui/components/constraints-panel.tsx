@@ -11,7 +11,6 @@ import {
   type Panel,
   PANEL_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
-  type Tab,
   type Updater,
   withApplicationMutation,
   withConstraintMutation,
@@ -33,9 +32,8 @@ import { InspectorShell } from "./inspector.tsx";
 // ---------------------------------------------------------------------------
 
 export function ConstraintsPanel(
-  { panel, tab, ws, update, diagnostics }: {
+  { panel, ws, update, diagnostics }: {
     panel: Panel;
-    tab: Tab;
     ws: WorkspaceState;
     update: Updater;
     diagnostics: DiagnosticMap;
@@ -56,9 +54,7 @@ export function ConstraintsPanel(
     update((s) => ({
       ...s,
       canvasSelected: s.canvasSelected?.type === "constraint" ? null : s.canvasSelected,
-      tabs: s.tabs.map((t) =>
-        t.id === tab.id ? { ...t, panels: t.panels.filter((p) => p.id !== panel.id) } : t
-      ),
+      panels: s.panels.filter((p) => p.id !== panel.id),
     }));
   }
 
@@ -77,15 +73,8 @@ export function ConstraintsPanel(
     update((s) => ({
       ...withConstraintMutation(s, (cs) => [...cs, newConstraint]),
       canvasSelected: { type: "constraint", id },
-      tabs: s.tabs.map((t) =>
-        t.id === tab.id
-          ? {
-            ...t,
-            panels: t.panels.map((p) =>
-              p.id === panel.id ? { ...p, selected: { type: "constraint" as const, id } } : p
-            ),
-          }
-          : t
+      panels: s.panels.map((p) =>
+        p.id === panel.id ? { ...p, selected: { type: "constraint" as const, id } } : p
       ),
     }));
   }
@@ -94,15 +83,8 @@ export function ConstraintsPanel(
     update((s) => ({
       ...s,
       canvasSelected: { type: "constraint", id },
-      tabs: s.tabs.map((t) =>
-        t.id === tab.id
-          ? {
-            ...t,
-            panels: t.panels.map((p) =>
-              p.id === panel.id ? { ...p, selected: { type: "constraint" as const, id } } : p
-            ),
-          }
-          : t
+      panels: s.panels.map((p) =>
+        p.id === panel.id ? { ...p, selected: { type: "constraint" as const, id } } : p
       ),
     }));
   }
@@ -116,12 +98,9 @@ export function ConstraintsPanel(
       canvasSelected: s.canvasSelected?.type === "constraint" && s.canvasSelected.id === id
         ? null
         : s.canvasSelected,
-      tabs: s.tabs.map((t) => ({
-        ...t,
-        panels: t.panels.map((p) =>
-          p.selected?.type === "constraint" && p.selected.id === id ? { ...p, selected: null } : p
-        ),
-      })),
+      panels: s.panels.map((p) =>
+        p.selected?.type === "constraint" && p.selected.id === id ? { ...p, selected: null } : p
+      ),
     }));
   }
 
@@ -144,7 +123,7 @@ export function ConstraintsPanel(
       const delta = startY - ev.clientY;
       const newSplit = Math.max(0.15, Math.min(0.85, startSplit + delta / bodyH));
       setLocalSplit(newSplit);
-      update((s) => withPanel(s, tab.id, panel.id, (p) => ({ ...p, inspectorSplit: newSplit })));
+      update((s) => withPanel(s, panel.id, (p) => ({ ...p, inspectorSplit: newSplit })));
     }
 
     document.addEventListener("mousemove", onMove as EventListener);
@@ -206,7 +185,6 @@ export function ConstraintsPanel(
               <ConstraintInspector
                 constraint={selectedConstraint}
                 panel={panel}
-                tab={tab}
                 ws={ws}
                 update={update}
                 diagnostics={diagnostics}
@@ -276,10 +254,9 @@ function ConstraintRow(
 // ---------------------------------------------------------------------------
 
 export function ConstraintInspector(
-  { constraint, panel, tab, ws, update, diagnostics, onInspectEntity }: {
+  { constraint, panel, ws, update, diagnostics, onInspectEntity }: {
     constraint: Constraint;
     panel: Panel;
-    tab: Tab;
     ws: WorkspaceState;
     update: Updater;
     diagnostics: DiagnosticMap;
@@ -303,14 +280,7 @@ export function ConstraintInspector(
           s.canvasSelected.id === constraint.id
         ? null
         : s.canvasSelected,
-      tabs: s.tabs.map((t) =>
-        t.id === tab.id
-          ? {
-            ...t,
-            panels: t.panels.map((p) => p.id === panel.id ? { ...p, selected: null } : p),
-          }
-          : t
-      ),
+      panels: s.panels.map((p) => p.id === panel.id ? { ...p, selected: null } : p),
     }));
   }
 
@@ -350,14 +320,11 @@ export function ConstraintInspector(
           s.canvasSelected.id === constraint.id
         ? null
         : s.canvasSelected,
-      tabs: s.tabs.map((t) => ({
-        ...t,
-        panels: t.panels.map((p) =>
-          p.selected?.type === "constraint" && p.selected.id === constraint.id
-            ? { ...p, selected: null }
-            : p
-        ),
-      })),
+      panels: s.panels.map((p) =>
+        p.selected?.type === "constraint" && p.selected.id === constraint.id
+          ? { ...p, selected: null }
+          : p
+      ),
     }));
   }
 
@@ -669,14 +636,11 @@ export function ConstraintsAttachedSection(
     update((s) => ({
       ...s,
       canvasSelected: { type: "constraint", id: constraintId },
-      tabs: s.tabs.map((t) => ({
-        ...t,
-        panels: t.panels.map((p) =>
-          p.type === "constraints"
-            ? { ...p, selected: { type: "constraint" as const, id: constraintId } }
-            : p
-        ),
-      })),
+      panels: s.panels.map((p) =>
+        p.type === "constraints"
+          ? { ...p, selected: { type: "constraint" as const, id: constraintId } }
+          : p
+      ),
     }));
   }
 

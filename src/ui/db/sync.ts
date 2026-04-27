@@ -136,9 +136,10 @@ async function syncToDb(
     }
 
     // Sync global UI state if any UI-related fields changed
+    // (activeProfileId and activeWorkspaceId are URL-driven, not persisted)
     if (
-      prev.tabs !== next.tabs ||
-      prev.activeTabId !== next.activeTabId ||
+      prev.profiles !== next.profiles ||
+      prev.panels !== next.panels ||
       prev.personas !== next.personas ||
       prev.activePersona !== next.activePersona ||
       prev.workflows !== next.workflows ||
@@ -228,9 +229,7 @@ async function syncCanvasState(
 async function syncUiState(state: WorkspaceState): Promise<void> {
   const uiState: UiState = {
     profiles: state.profiles,
-    activeProfileId: state.activeProfileId,
-    tabs: state.tabs,
-    activeTabId: state.activeTabId,
+    panels: state.panels,
     personas: state.personas,
     activePersona: state.activePersona,
     workflows: state.workflows,

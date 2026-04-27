@@ -25,7 +25,7 @@ function wsWithNode(
 ): { ws: WorkspaceState; apps: ConstraintApplication[] } {
   const ds = defaultState();
   const node = { ...makeNode(nodeId, "Test Node", "leaf", []), data: nodeData };
-  const rootId = ds.tabs[0].rootNodeId;
+  const rootId = ds.activeWorkspaceId;
   const ws: WorkspaceState = {
     ...ds,
     treeNodes: [makeRootNode(rootId, [node])],

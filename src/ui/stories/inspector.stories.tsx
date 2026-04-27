@@ -6,7 +6,6 @@ import {
   defaultState,
   makeNode,
   type Panel,
-  type Tab,
   type Updater,
   type WorkspaceState,
 } from "../workspace.ts";
@@ -14,9 +13,8 @@ import {
 export const meta = { title: "Inspector" };
 
 function makeStory(initial: WorkspaceState) {
-  const tab = initial.tabs[0];
-  const panel = initial.tabs[0].panels[0];
-  return { tab, panel, initial };
+  const panel = initial.panels[0];
+  return { panel, initial };
 }
 
 // ---------------------------------------------------------------------------
@@ -25,8 +23,7 @@ function makeStory(initial: WorkspaceState) {
 
 export function NodeLeaf() {
   const ws0 = defaultState();
-  const { tab, initial } = makeStory(ws0);
-  const panel = initial.tabs[0].panels[0];
+  const { panel, initial } = makeStory(ws0);
   const node = makeNode(
     "node-1",
     "token-validator",
@@ -40,7 +37,7 @@ export function NodeLeaf() {
 
   return (
     <div style="width:280px; height:500px; border:1px solid #2a2a4a; overflow:hidden;">
-      <NodeInspector node={node} panel={panel} tab={tab} ws={ws} update={update} />
+      <NodeInspector node={node} panel={panel} ws={ws} update={update} />
     </div>
   );
 }
@@ -52,9 +49,9 @@ export function NodeComposite() {
 
   const ws0 = defaultState();
   ws0.treeNodes = [node];
-  ws0.tabs[0].panels[0].selected = { type: "node", id: node.id };
+  ws0.panels[0].selected = { type: "node", id: node.id };
 
-  const { tab, panel, initial } = makeStory(ws0);
+  const { panel, initial } = makeStory(ws0);
   const [ws, setWs] = useState<WorkspaceState>(initial);
   const update: Updater = (fn) => setWs((prev) => fn(prev));
 
@@ -62,7 +59,7 @@ export function NodeComposite() {
 
   return (
     <div style="width:280px; height:500px; border:1px solid #2a2a4a; overflow:hidden;">
-      <NodeInspector node={currentNode} panel={panel} tab={tab} ws={ws} update={update} />
+      <NodeInspector node={currentNode} panel={panel} ws={ws} update={update} />
     </div>
   );
 }
@@ -77,10 +74,10 @@ export function NodeWithEdges() {
   ws0.edges = [
     { id: "e1", fromId: node.id, toId: sibling.id, label: "calls", data: {}, version: 1 },
   ];
-  ws0.tabs[0].panels[0].selected = { type: "node", id: node.id };
-  ws0.tabs[0].panels[0].expandedNodes = [parent.id];
+  ws0.panels[0].selected = { type: "node", id: node.id };
+  ws0.panels[0].expandedNodes = [parent.id];
 
-  const { tab, initial } = makeStory(ws0);
+  const { initial } = makeStory(ws0);
   const [ws, setWs] = useState<WorkspaceState>(initial);
   const update: Updater = (fn) => setWs((prev) => fn(prev));
 
@@ -92,8 +89,7 @@ export function NodeWithEdges() {
     <div style="width:280px; height:500px; border:1px solid #2a2a4a; overflow:hidden;">
       <NodeInspector
         node={currentNode}
-        panel={ws.tabs[0].panels[0]}
-        tab={tab}
+        panel={ws.panels[0]}
         ws={ws}
         update={update}
       />
@@ -115,15 +111,14 @@ function makeEdgeStory() {
   const ws0 = defaultState();
   ws0.treeNodes = [parent];
   ws0.edges = [edge];
-  ws0.tabs[0].panels[0].selected = { type: "edge", id: edge.id };
+  ws0.panels[0].selected = { type: "edge", id: edge.id };
 
   return { ws0, edge };
 }
 
 export function EdgeBasic() {
   const { ws0, edge } = makeEdgeStory();
-  const tab: Tab = ws0.tabs[0];
-  const panel: Panel = ws0.tabs[0].panels[0];
+  const panel: Panel = ws0.panels[0];
 
   const [ws, setWs] = useState<WorkspaceState>(ws0);
   const update: Updater = (fn) => setWs((prev) => fn(prev));
@@ -132,7 +127,7 @@ export function EdgeBasic() {
 
   return (
     <div style="width:280px; height:400px; border:1px solid #2a2a4a; overflow:hidden;">
-      <EdgeInspector edge={currentEdge} panel={panel} tab={tab} ws={ws} update={update} />
+      <EdgeInspector edge={currentEdge} panel={panel} ws={ws} update={update} />
     </div>
   );
 }
@@ -147,10 +142,9 @@ export function EdgeUnlabelled() {
   const ws0 = defaultState();
   ws0.treeNodes = [parent];
   ws0.edges = [edge];
-  ws0.tabs[0].panels[0].selected = { type: "edge", id: edge.id };
+  ws0.panels[0].selected = { type: "edge", id: edge.id };
 
-  const tab: Tab = ws0.tabs[0];
-  const panel: Panel = ws0.tabs[0].panels[0];
+  const panel: Panel = ws0.panels[0];
 
   const [ws, setWs] = useState<WorkspaceState>(ws0);
   const update: Updater = (fn) => setWs((prev) => fn(prev));
@@ -159,7 +153,7 @@ export function EdgeUnlabelled() {
 
   return (
     <div style="width:280px; height:400px; border:1px solid #2a2a4a; overflow:hidden;">
-      <EdgeInspector edge={currentEdge} panel={panel} tab={tab} ws={ws} update={update} />
+      <EdgeInspector edge={currentEdge} panel={panel} ws={ws} update={update} />
     </div>
   );
 }

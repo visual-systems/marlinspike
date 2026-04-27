@@ -7,7 +7,6 @@ import {
   type Panel,
   PANEL_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
-  type Tab,
   updateNodeInTree,
   type Updater,
   withNodeMutation,
@@ -198,9 +197,8 @@ const VALIDITY_TITLE: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 export function CodePanel(
-  { panel, tab, ws, update }: {
+  { panel, ws, update }: {
     panel: Panel;
-    tab: Tab;
     ws: WorkspaceState;
     update: Updater;
   },
@@ -301,17 +299,8 @@ export function CodePanel(
     update((s) => {
       const nextExpanded = s.canvasExpandedNodes.filter((id) => findNode(treeNodes, id) !== null);
       const focusStillValid = s.focusId ? findNode(treeNodes, s.focusId) !== null : true;
-      // Sync root node label → tab name
-      const rootNode = findNode(treeNodes, tab.rootNodeId);
-      const rootLabel = rootNode?.label;
-      const nextTabs = rootLabel
-        ? s.tabs.map((t) =>
-          t.id === tab.id ? { ...t, name: rootLabel === "Untitled" ? null : rootLabel } : t
-        )
-        : s.tabs;
       const nextState: WorkspaceState = {
         ...s,
-        tabs: nextTabs,
         treeNodes,
         edges,
         canvasExpandedNodes: nextExpanded,
@@ -450,14 +439,12 @@ export function CodePanel(
   function closePanel() {
     update((s) => ({
       ...s,
-      tabs: s.tabs.map((t) =>
-        t.id === tab.id ? { ...t, panels: t.panels.filter((p) => p.id !== panel.id) } : t
-      ),
+      panels: s.panels.filter((p) => p.id !== panel.id),
     }));
   }
 
   function setLanguage(value: string) {
-    update((s) => withPanel(s, tab.id, panel.id, (p) => ({ ...p, codeLanguage: value })));
+    update((s) => withPanel(s, panel.id, (p) => ({ ...p, codeLanguage: value })));
   }
 
   const effectiveLang = panel.codeEntityId ? "json" : lang;

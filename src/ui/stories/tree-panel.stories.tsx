@@ -9,12 +9,11 @@ export const meta = { title: "Tree Panel" };
 function StoryWrapper({ initial }: { initial: WorkspaceState }) {
   const [ws, setWs] = useState<WorkspaceState>(initial);
   const update: Updater = (fn) => setWs((prev) => fn(prev));
-  const tab = ws.tabs[0];
-  const panel = tab.panels[0];
+  const panel = ws.panels[0];
 
   return (
     <div style="display:inline-flex; background:#14142a; border:1px solid #2a2a4a; height:500px;">
-      <TreePanel panel={panel} tab={tab} ws={ws} update={update} />
+      <TreePanel panel={panel} ws={ws} update={update} />
     </div>
   );
 }
@@ -26,8 +25,8 @@ export function Default() {
 export function WithNodeSelected() {
   const ws = defaultState();
   const nodeId = "spike://acme/backend/auth-service";
-  ws.tabs[0].panels[0].selected = { type: "node", id: nodeId };
-  ws.tabs[0].panels[0].expandedNodes = ["spike://acme/backend"];
+  ws.panels[0].selected = { type: "node", id: nodeId };
+  ws.panels[0].expandedNodes = ["spike://acme/backend"];
   return <StoryWrapper initial={ws} />;
 }
 
@@ -37,8 +36,8 @@ export function WithEdgeSelected() {
   const toId = "spike://acme/backend/frontend";
   const edgeId = "edge-1";
   ws.edges = [{ id: edgeId, fromId, toId, label: "depends on", data: {}, version: 1 }];
-  ws.tabs[0].panels[0].selected = { type: "edge", id: edgeId };
-  ws.tabs[0].panels[0].expandedNodes = ["spike://acme/backend"];
+  ws.panels[0].selected = { type: "edge", id: edgeId };
+  ws.panels[0].expandedNodes = ["spike://acme/backend"];
   return <StoryWrapper initial={ws} />;
 }
 
@@ -62,6 +61,6 @@ export function DeepTree() {
       ]),
     ]),
   ];
-  ws.tabs[0].panels[0].expandedNodes = ["root", "a", "a1", "a2", "b"];
+  ws.panels[0].expandedNodes = ["root", "a", "a1", "a2", "b"];
   return <StoryWrapper initial={ws} />;
 }

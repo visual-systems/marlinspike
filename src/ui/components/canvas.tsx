@@ -11,7 +11,6 @@ import {
   getFocusedRootNodes,
   getWorkspaceRootId,
   type Panel,
-  type Tab,
   type TreeNode,
   type Updater,
   type WorkspaceState,
@@ -587,29 +586,15 @@ function CanvasInspector(
     selected: ws.canvasSelected,
     inspectorSplit: 0.5,
   };
-  const fakeTab: Tab = {
-    id: "__canvas_tab__",
-    name: "Canvas",
-    rootNodeId: getWorkspaceRootId(ws),
-    panels: [fakePanel],
-  };
-
   const canvasUpdate: Updater = (fn) => {
     update((s) => {
-      const synth = { ...s, tabs: [...s.tabs, fakeTab] };
+      const synth = { ...s, panels: [...s.panels, fakePanel] };
       const result = fn(synth);
-      const resultFakeTab = result.tabs.find((t) => t.id === "__canvas_tab__");
-      const resultPanel = resultFakeTab?.panels.find((p) => p.id === "__canvas__");
-      const newPanels = resultFakeTab?.panels.filter((p) => p.id !== "__canvas__") ?? [];
-      const realTabs = result.tabs.filter((t) => t.id !== "__canvas_tab__");
-      const tabs = newPanels.length > 0
-        ? realTabs.map((t) =>
-          t.id === result.activeTabId ? { ...t, panels: [...t.panels, ...newPanels] } : t
-        )
-        : realTabs;
+      const resultPanel = result.panels.find((p) => p.id === "__canvas__");
+      const newPanels = result.panels.filter((p) => p.id !== "__canvas__");
       return {
         ...result,
-        tabs,
+        panels: newPanels,
         canvasSelected: resultPanel?.selected ?? null,
       };
     });
@@ -621,14 +606,11 @@ function CanvasInspector(
     update((s) => ({
       ...s,
       canvasSelected: { type: "constraint" as const, id: constraintId },
-      tabs: s.tabs.map((t) => ({
-        ...t,
-        panels: t.panels.map((p) =>
-          p.type === "constraints"
-            ? { ...p, selected: { type: "constraint" as const, id: constraintId } }
-            : p
-        ),
-      })),
+      panels: s.panels.map((p) =>
+        p.type === "constraints"
+          ? { ...p, selected: { type: "constraint" as const, id: constraintId } }
+          : p
+      ),
     }));
   }
 
@@ -647,7 +629,6 @@ function CanvasInspector(
             key={edge.id}
             edge={edge}
             panel={fakePanel}
-            tab={fakeTab}
             ws={ws}
             update={canvasUpdate}
             onInspectConstraint={canvasInspectConstraint}
@@ -671,7 +652,6 @@ function CanvasInspector(
         <NodeInspector
           node={node}
           panel={fakePanel}
-          tab={fakeTab}
           ws={ws}
           update={canvasUpdate}
           extraActions={expandAction}
@@ -690,7 +670,6 @@ function CanvasInspector(
           key={constraint.id}
           constraint={constraint}
           panel={fakePanel}
-          tab={fakeTab}
           ws={ws}
           update={canvasUpdate}
           diagnostics={diagnostics}
@@ -901,6 +880,17 @@ export function Canvas(
   const [view, setView] = useState<View>({ scale: 1, tx: 400, ty: 300 });
   const focusedRootNodes = getFocusedRootNodes(ws);
   const focusNode = ws.focusId ? findNode(ws.treeNodes, ws.focusId) : null;
+  if (focusedRootNodes.length === 0) {
+    console.warn("[canvas] empty focusedRootNodes", {
+      focusId: ws.focusId?.slice(0, 8) ?? null,
+      focusNodeExists: !!focusNode,
+      focusNodeLabel: focusNode?.label,
+      focusNodeChildren: focusNode?.children.length,
+      treeRootCount: ws.treeNodes.length,
+      profileRootId: ws.profileRootId.slice(0, 8),
+      activeTabRootNodeId: getActiveTab(ws).rootNodeId.slice(0, 8),
+    });
+  }
 
   // Compute node shapes driven by constraint data.rendering.shape
   const shapeMap = new Map<string, "circle" | "rect">();
