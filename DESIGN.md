@@ -269,6 +269,51 @@ always a URI — subgraphs are never embedded inline. This means:
 The hash value is an opaque string with an optional algorithm prefix (e.g. `sha256:<hex>`). The IDE
 and resolver treat it as opaque; algorithm selection is a storage/registry concern.
 
+### Entity References
+
+An **entity reference** (ref node) is a node that points to another node rather than defining its own
+structure — a symlink or live-alias in filesystem terms. References enable reuse: a function like
+`square` can be defined once and referenced multiple times without duplicating its internal structure.
+
+A ref node carries two additional fields on `TreeNode`:
+
+- **`type: "ref"`** — a soft discriminator that marks the node as a reference. Standard nodes have
+  no `type` field (or `undefined`). This avoids a full discriminated union refactor while the design
+  is explored.
+- **`ref: string`** — the target identifier. Within the same workspace this is a node label or UUID.
+  For cross-workspace references, a `spike://UUID` URI identifies the remote target.
+
+Ref nodes are structurally simple: they have an `id`, `label`, `type: "ref"`, `ref`, and `version`.
+Their `kind` is `"composite"` (they delegate structure to their target) but `children` is empty —
+the target's subtree is resolved at render/evaluation time, not stored inline.
+
+**Scope rules:**
+
+| Context | `ref` value | Resolution |
+|---------|------------|------------|
+| Same workspace | Node label or UUID | Direct lookup in tree |
+| Cross-workspace | `spike://UUID` | Resolved via connection/registry |
+
+**Broken references:** When the target doesn't exist (label changed, remote disconnected), the node
+renders with a broken-reference visual treatment — analogous to a failing constraint diagnostic.
+
+**Spike-Clojure syntax:**
+
+```clojure
+;; Local reference — bind a name to another name
+(def use-square square)
+
+;; Remote reference — spike://UUID
+(def remote-square spike://a1b2c3d4-...)
+```
+
+The `ref` target is also stored in reader metadata (`:ref`) for round-trip preservation.
+
+**Open question:** Could the `ref` concept subsume `data.function` and `data.script`? A `type: "ref"`
+node could replace `data.function`, and a new `type: "inline"` or `type: "foreign"` node type could
+replace `data.script`. This would unify how nodes delegate to implementations. Flagged for future
+exploration.
+
 ---
 
 ## Constraint System
@@ -954,6 +999,8 @@ and produces an artifact or side effect.
 - [ ] Sibling-only communication enforcement
 - [x] Multiple port nodes per composite node
 - [ ] Port interface compatibility checking
+- [x] Entity references (`type: "ref"` field — symlink/live-alias for node reuse)
+- [ ] Reference resolution and rendering (step-into, broken ref diagnostics)
 
 ### Phase 3 — Extensibility (Schema Plugin Foundation)
 
@@ -1636,7 +1683,9 @@ The current persistence model is a single-user, single-browser solution. The pat
 - **Overlay and modification of referenced graphs** — applying patches or extensions to a referenced
   subgraph URI without forking it; composing compatible graphs by overlay.
 - **Class / template system** — a mechanism for templating new nodes from a prototype, similar to
-  class inheritance, enabling reuse patterns beyond URI reference.
+  class inheritance, enabling reuse patterns beyond URI reference. (Partially addressed by entity
+  references — ref nodes provide symlink-style reuse. Full class/template instantiation with
+  overrides is not yet explored.)
 - **Workflow notion** — alongside the existing persona notion, workflows could allow easily
   bootstrapping projects of a certain type (e.g. "K8s service", "audio DSP graph", "ETL pipeline")
   with pre-configured schemas and constraint plugins.

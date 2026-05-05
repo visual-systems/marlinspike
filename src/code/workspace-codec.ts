@@ -181,6 +181,8 @@ export function mergeTrees(
     const mergedNode: TreeNode = {
       id: mergedId,
       label: p.label,
+      ...(p.type ? { type: p.type } : {}),
+      ...(p.ref ?? match?.ref ? { ref: p.ref ?? match?.ref } : {}),
       kind: p.kind,
       children: childResult.merged,
       data: { ...(match?.data ?? {}), ...p.data },

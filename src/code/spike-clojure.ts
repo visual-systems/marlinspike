@@ -58,6 +58,9 @@ function nameWithIdMeta(node: TreeNode): string {
   if (node.uri) {
     entries.push(`:uri ${JSON.stringify(node.uri)}`);
   }
+  if (node.ref) {
+    entries.push(`:ref ${JSON.stringify(node.ref)}`);
+  }
   // Emit user data fields nested under :data {...}
   const dataEntries: string[] = [];
   for (const [k, v] of Object.entries(node.data)) {
@@ -120,22 +123,26 @@ function extractIdMeta(nameForm: SExp): string | undefined {
  */
 function extractNameMeta(nameForm: SExp): {
   uri: string | undefined;
+  ref: string | undefined;
   data: Record<string, unknown>;
 } {
   const meta = nameForm.meta;
-  if (!meta || meta.type !== "map") return { uri: undefined, data: {} };
+  if (!meta || meta.type !== "map") return { uri: undefined, ref: undefined, data: {} };
   let uri: string | undefined;
+  let ref: string | undefined;
   let data: Record<string, unknown> = {};
   for (const [k, v] of meta.entries) {
     if (k.type !== "keyword") continue;
     if (k.value === "uri" && v.type === "string") {
       uri = v.value;
+    } else if (k.value === "ref" && v.type === "string") {
+      ref = v.value;
     } else if (k.value === "data" && v.type === "map") {
       // Unwrap :data map into node.data
       data = sexpToValue(v) as Record<string, unknown>;
     }
   }
-  return { uri, data };
+  return { uri, ref, data };
 }
 
 /** Convert a SExp value to a plain JS value for storage in node.data. */
@@ -403,8 +410,12 @@ export function graphToSpike(nodes: TreeNode[], edges: Edge[]): string {
     if (emitted.has(node.id)) return;
     emitted.add(node.id);
 
-    if (node.kind === "leaf") {
-      lines.push(`(def ${nameWithIdMeta(node)})`);
+    if (node.kind === "leaf" || (node.type === "ref" && node.children.length === 0)) {
+      if (node.type === "ref" && node.ref) {
+        lines.push(`(def ${nameWithIdMeta(node)} ${node.ref})`);
+      } else {
+        lines.push(`(def ${nameWithIdMeta(node)})`);
+      }
       return;
     }
 
@@ -486,8 +497,11 @@ export function spikeToGraph(
   // Label → explicit UUID pulled from `^{:id "..."}` reader metadata on the
   // def/defn name. When absent, the node falls back to label-as-id.
   const nameId = new Map<string, string>();
-  // Label → { uri, data } extracted from the name's reader metadata.
-  const nameMeta = new Map<string, { uri: string | undefined; data: Record<string, unknown> }>();
+  // Label → { uri, ref, data } extracted from the name's reader metadata.
+  const nameMeta = new Map<
+    string,
+    { uri: string | undefined; ref: string | undefined; data: Record<string, unknown> }
+  >();
 
   for (const form of forms) {
     if (form.type !== "list" || form.items.length < 2) continue;
@@ -497,20 +511,34 @@ export function spikeToGraph(
     const uuid = extractIdMeta(nameForm);
     if (uuid) nameId.set(name, uuid);
     const meta = extractNameMeta(nameForm);
-    if (meta.uri || Object.keys(meta.data).length > 0) {
+    if (meta.uri || meta.ref || Object.keys(meta.data).length > 0) {
       nameMeta.set(name, meta);
     }
 
     if (head.value === "def") {
-      // (def name [child ...]) or bare (def name) for leaf nodes
+      // (def name symbol) → reference node
+      // (def name [child ...]) → composite node
+      // (def name) → leaf node
       const bodyForm = form.items[2]; // undefined for bare (def name)
-      const childNames: string[] = [];
-      if (bodyForm && bodyForm.type === "vector") {
-        for (const item of bodyForm.items) {
-          if (item.type === "symbol") childNames.push(item.value);
+      if (bodyForm && bodyForm.type === "symbol") {
+        // Reference node: (def use-square square)
+        const refTarget = bodyForm.value;
+        const existingMeta = nameMeta.get(name);
+        nameMeta.set(name, {
+          uri: existingMeta?.uri,
+          ref: existingMeta?.ref ?? refTarget,
+          data: existingMeta?.data ?? {},
+        });
+        defs.set(name, []);
+      } else {
+        const childNames: string[] = [];
+        if (bodyForm && bodyForm.type === "vector") {
+          for (const item of bodyForm.items) {
+            if (item.type === "symbol") childNames.push(item.value);
+          }
         }
+        defs.set(name, childNames);
       }
-      defs.set(name, childNames);
     } else if (head.value === "defn") {
       // (defn name [params] (let [...] body))
       // Also handles attr-map position: (defn name {:ports ...} [params] body)
@@ -661,6 +689,7 @@ export function spikeToGraph(
     const node: TreeNode = {
       id: nameId.get(name) ?? name,
       label: name,
+      ...(meta?.ref ? { type: "ref" as const, ref: meta.ref } : {}),
       kind: children.length > 0 ? "composite" : "leaf",
       children,
       data: meta?.data ?? {},

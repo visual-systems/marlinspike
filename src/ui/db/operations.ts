@@ -27,6 +27,8 @@ export interface FlatNode {
   id: string;
   label: string;
   uri?: string;
+  type?: "ref";
+  ref?: string;
   kind: "leaf" | "composite";
   parent: string | null; // record id string or null for roots
   ports?: Port[];
@@ -64,6 +66,8 @@ export function flattenTree(nodes: TreeNode[], parentId: string | null = null): 
       id: node.id,
       label: node.label,
       uri: node.uri,
+      ...(node.type ? { type: node.type } : {}),
+      ...(node.ref ? { ref: node.ref } : {}),
       kind: node.kind,
       parent: parentId,
       ports: node.ports,
@@ -96,6 +100,8 @@ export function buildTree(flat: FlatNode[]): TreeNode[] {
       id: row.id,
       label: row.label,
       uri: row.uri,
+      ...(row.type ? { type: row.type } : {}),
+      ...(row.ref ? { ref: row.ref } : {}),
       kind: row.kind,
       children: build(row.id),
       ports: row.ports,
@@ -166,6 +172,18 @@ export async function saveTreeNode(node: FlatNode): Promise<void> {
     bindings.uri = node.uri;
   } else {
     setClauses.push(`uri = NONE`);
+  }
+  if (node.type !== undefined) {
+    setClauses.push(`type = $type`);
+    bindings.type = node.type;
+  } else {
+    setClauses.push(`type = NONE`);
+  }
+  if (node.ref !== undefined) {
+    setClauses.push(`ref = $ref`);
+    bindings.ref = node.ref;
+  } else {
+    setClauses.push(`ref = NONE`);
   }
   if (node.ports !== undefined) {
     setClauses.push(`ports = $ports`);
