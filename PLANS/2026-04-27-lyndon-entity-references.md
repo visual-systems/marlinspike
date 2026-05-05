@@ -11,13 +11,13 @@ Marlinspike has no way to **reference** an existing entity as a reusable instanc
 adds the `ref` concept to the type system, explores visual treatments via stories, and documents
 the design in DESIGN.md.
 
-**Scope:** Type changes + stories + documentation + codec/schema. Not full resolution/rendering.
+**Scope:** Type changes + stories + documentation + codec/schema + canvas/inspector rendering.
 
 ## Goal
 
 Introduce entity references as a first-class concept: `type?: "ref"` and `ref?: string` on TreeNode,
-with full round-trip support through the DB layer, Spike-Clojure codec, and visual exploration via
-stories.
+with full round-trip support through the DB layer, Spike-Clojure codec, canvas/inspector visual
+distinction, and exploration via stories.
 
 ## Approach
 
@@ -43,22 +43,33 @@ stories.
 - [x] Parse `(def name symbol)` as ref node
 - [x] Preserve `ref` and `type` in `mergeTrees`
 
-### Step 4: Stories (`reference.stories.tsx`)
+### Step 4: Canvas and inspector rendering
 
-- [x] **ReferenceVsRegular** — Canvas with a regular composite, a reference to it, and a leaf
-- [x] **MultipleReferences** — One target node with 3 references
-- [x] **ReferenceInTree** — Tree panel showing reference nodes with visual indicator
-- [x] **VisualTreatments** — Side-by-side canvas options for visual exploration
-- [x] **BrokenReference** — A reference whose target doesn't exist
-- [x] **ReferenceEditing** — Inspector view for a ref node
+- [x] Collapsed ref nodes: dashed stroke (`3,2`), purple tint (`#605080`), `↗ {target}` label
+- [x] Expanded ref groups: dashed border (`6,3`), purple tint
+- [x] Ref label shows resolved target label (not generic "ref")
+- [x] Empty ref nodes cannot be expanded (no children — structure delegation is future work)
+- [x] Inspector: "Reference" section with clickable link to target node
+- [x] Inspector: broken ref shown in red with warning, remote ref shown in grey
 
-### Step 5: DESIGN.md updates
+### Step 5: Stories (`reference.stories.tsx`)
+
+- [x] **ReferenceVsRegular** — regular composite vs reference vs leaf
+- [x] **MultipleReferences** — one target with 3 references
+- [x] **ReferenceInTree** — tree panel with reference indicators
+- [x] **VisualTreatments** — side-by-side visual exploration
+- [x] **BrokenReference** — broken and remote ref visual treatment
+- [x] **ReferenceEditing** — inspector view for editing ref targets
+- [x] **CubicRoots** — real-world example: shared math primitives referenced across
+      four pipeline steps with full internal dataflow edges
+
+### Step 6: DESIGN.md updates
 
 - [x] New "Entity References" section under Data Model
 - [x] Add to Phase 2 roadmap
 - [x] Update "Notions Not Yet Explored" re: class/template system
 
-### Step 6: CI
+### Step 7: CI
 
 - [x] `NO_COLOR=1 deno task ci` passes
 
@@ -71,7 +82,9 @@ stories.
 | `src/ui/db/operations.ts` | `type`/`ref` in FlatNode, flattenTree, buildTree, saveTreeNode |
 | `src/code/spike-clojure.ts` | Emit/parse `:ref` metadata + idiomatic `(def name target)` syntax |
 | `src/code/workspace-codec.ts` | Preserve `ref`/`type` in mergeTrees |
-| `src/ui/stories/reference.stories.tsx` | New — 6 visual exploration stories |
+| `src/ui/components/canvas.tsx` | Dashed stroke/fill for ref nodes, target label, expand guard |
+| `src/ui/components/inspector.tsx` | Reference section with target link / broken indicator |
+| `src/ui/stories/reference.stories.tsx` | 7 visual exploration stories incl. CubicRoots |
 | `src/ui/stories/index.ts` | Register new story group |
 | `DESIGN.md` | Entity References section, Phase 2 roadmap, Notions update |
 
@@ -80,9 +93,12 @@ stories.
 - **Subsume `data.function` / `data.script`?** — Could the `ref` concept subsume these? E.g. a
   `type: "ref"` node replaces `data.function`, and a new `type: "inline"` or `type: "foreign"` node
   type replaces `data.script`. Flagged for future exploration.
+- **Ref expansion / resolution** — When a ref node is expanded, should it show the target's
+  children? Currently prevented (empty ref nodes can't expand). Future work: resolve the target
+  and render its subtree inline, with visual indication that the content is delegated.
 
 ## Verification
 
 - [x] `NO_COLOR=1 deno task ci` passes (375 tests, 0 failures)
-- [ ] Stories render at `/stories` — visual inspection of reference treatments
+- [x] Stories render at `/stories` — visual inspection of reference treatments
 - [ ] Spike-Clojure round-trip preserves `:ref` metadata
