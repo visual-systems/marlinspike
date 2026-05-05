@@ -426,6 +426,57 @@ const CARDANO_SOURCE = `\
     {:x1 x1 :x2 x2 :x3 x3}))
 `;
 
+const CUBIC_ROOTS_WITH_REFS = `\
+; Shared primitives
+(def divide)
+(def multiply)
+(def square)
+(def add)
+(def subtract)
+(def negate)
+(def sqrt)
+(def cbrt)
+
+; Step 1 — normalise coefficients by dividing through by a
+(defn normalise [a b c d]
+  {:b (divide b a)
+   :c (divide c a)
+   :d (divide d a)})
+
+; Step 2 — depress the cubic: eliminate the x² term
+(defn depressed-coefficients [b c d]
+  (let [b-sq (square b)
+        b-cu (multiply b-sq b)
+        p    (subtract c (divide b-sq 3))
+        q    (add (subtract d (divide (multiply b c) 3))
+                  (divide (multiply 2 b-cu) 27))]
+    {:p p :q q}))
+
+; Step 3 — Cardano's u and v terms
+(defn cardano-terms [p q]
+  (let [inner      (add (divide (square q) 4)
+                         (divide (multiply p (square p)) 27))
+        sqrt-inner (sqrt inner)
+        neg-q-half (divide (negate q) 2)]
+    {:u (cbrt (add      neg-q-half sqrt-inner))
+     :v (cbrt (subtract neg-q-half sqrt-inner))}))
+
+; Step 4 — recover x roots, back-substituting x = t - b/3
+(defn back-substitute [u v b-norm]
+  (let [shift    (divide b-norm 3)
+        uv       (add u v)
+        uv-half  (divide uv 2)]
+    {:x1 (subtract uv          shift)
+     :x2 (subtract (negate uv-half) shift)
+     :x3 (subtract (negate uv-half) shift)}))
+
+; Top-level entry point — references to shared functions
+(def use-normalise normalise)
+(def use-depressed depressed-coefficients)
+(def use-cardano cardano-terms)
+(def use-back-sub back-substitute)
+`;
+
 /** Cardano's cubic root formula parsed from Spike-Clojure source.
  *  Demonstrates typed dataflow with complex intermediates. */
 export function CardanoCubicRoots() {
@@ -440,6 +491,28 @@ export function CardanoCubicRoots() {
     return <StoryWrapper initial={ws} />;
   } catch (e) {
     console.error("[CardanoCubicRoots]", e);
+    return <div style="color:red; padding:20px;">Error: {String(e)}</div>;
+  }
+}
+
+/** Cubic roots with entity references — shared math primitives (divide, square, etc.)
+ *  defined once, then the four pipeline steps as defn forms, plus top-level ref nodes
+ *  (def use-normalise normalise) demonstrating Spike-Clojure round-trip of refs. */
+export function CubicRootsWithRefs() {
+  try {
+    const result = spikeToGraph(CUBIC_ROOTS_WITH_REFS);
+    const ws = defaultState();
+    ws.treeNodes = result.treeNodes;
+    ws.edges = result.edges;
+    ws.canvasExpandedNodes = result.treeNodes
+      .filter((n) => n.kind === "composite")
+      .map((n) => n.id);
+    if (result.errors.length > 0) {
+      console.warn("[CubicRootsWithRefs] parse errors:", result.errors);
+    }
+    return <StoryWrapper initial={ws} />;
+  } catch (e) {
+    console.error("[CubicRootsWithRefs]", e);
     return <div style="color:red; padding:20px;">Error: {String(e)}</div>;
   }
 }
