@@ -1856,19 +1856,25 @@ function renderLevel(
                   style="pointer-events:none;"
                 />
               )}
-            {/* Ref indicator — small arrow icon at bottom */}
-            {isRefNode && (
-              <text
-                x={0}
-                y={isRect ? r * 0.7 + 9 : r + 9}
-                text-anchor="middle"
-                fill="#605080"
-                font-size="7"
-                style="user-select:none; pointer-events:none;"
-              >
-                {"↗ ref"}
-              </text>
-            )}
+            {/* Ref indicator — shows target label beneath the node */}
+            {isRefNode && (() => {
+              const refTarget = node.ref;
+              const targetNode = refTarget ? findNode(ws.treeNodes, refTarget) : null;
+              const targetLabel = targetNode?.label ?? refTarget ?? "?";
+              return (
+                <text
+                  x={0}
+                  y={isRect ? r * 0.7 + 9 : r + 9}
+                  text-anchor="middle"
+                  fill="#605080"
+                  font-size="7"
+                  style="user-select:none; pointer-events:none;"
+                >
+                  {"↗ "}
+                  {targetLabel}
+                </text>
+              );
+            })()}
             {node.ports && node.ports.length > 0 && (
               <NodePorts
                 ports={circlePortPositions(node.ports, r)}
