@@ -644,7 +644,9 @@ function CanvasInspector(
     const node = findNode(ws.treeNodes, sel.id);
     if (node) {
       const isExpanded = ws.canvasExpandedNodes.includes(node.id);
-      const expandAction = node.kind === "composite"
+      const canExpand = node.kind === "composite" &&
+        !(isRef(node) && node.children.length === 0);
+      const expandAction = canExpand
         ? isExpanded
           ? <SmallBtn label="Collapse" onClick={() => onCollapse(node.id)} />
           : <SmallBtn label="Expand" onClick={() => onExpand(node.id)} />
@@ -1389,6 +1391,10 @@ export function Canvas(
   }
 
   function expandNode(nodeId: string) {
+    // Ref nodes with no children can't be expanded — their structure
+    // is delegated to the target (resolution is future work).
+    const node = findNode(ws.treeNodes, nodeId);
+    if (node && isRef(node) && node.children.length === 0) return;
     update((s) => ({
       ...s,
       canvasExpandedNodes: s.canvasExpandedNodes.includes(nodeId)
@@ -1605,6 +1611,8 @@ function renderLevel(
               groupIsHighlighted
             ? 2
             : 1;
+          const groupIsRef = isRef(node);
+          const groupStrokeDash = groupIsRef ? "6,3" : undefined;
 
           return (
             <g key={node.id} transform={`translate(${pos.x}, ${pos.y})`}>
@@ -1613,9 +1621,10 @@ function renderLevel(
                 y={ry}
                 width={rw}
                 height={rh}
-                fill={groupHasError ? "#1a0f0f" : "#0f0f28"}
-                stroke={groupStroke}
+                fill={groupHasError ? "#1a0f0f" : groupIsRef ? "#0f0f24" : "#0f0f28"}
+                stroke={groupIsRef && !isSelected ? "#605080" : groupStroke}
                 stroke-width={groupStrokeWidth}
+                stroke-dasharray={groupStrokeDash}
                 rx={8}
                 ry={8}
                 style="cursor:pointer;"

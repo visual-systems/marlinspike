@@ -213,6 +213,15 @@ export function CubicRoots() {
   const ws = defaultState();
   ws.focusId = null;
 
+  const e = (id: string, from: string, to: string, label = "") => ({
+    id,
+    fromId: from,
+    toId: to,
+    label,
+    data: {},
+    version: 1,
+  });
+
   // Shared math primitives — defined once
   const primitives = group("math", "math", [
     leaf("divide"),
@@ -225,50 +234,64 @@ export function CubicRoots() {
     leaf("cbrt"),
   ]);
 
-  // Step 1 — normalise: uses divide (3x)
+  // Step 1 — normalise: {:b (divide b a), :c (divide c a), :d (divide d a)}
   const normalise = group("normalise", "normalise", [
     leaf("norm-a", "a"),
     leaf("norm-b", "b"),
     leaf("norm-c", "c"),
     leaf("norm-d", "d"),
-    ref("norm-div-1", "divide", "divide"),
-    ref("norm-div-2", "divide", "divide"),
-    ref("norm-div-3", "divide", "divide"),
+    ref("norm-div-b", "b/a", "divide"),
+    ref("norm-div-c", "c/a", "divide"),
+    ref("norm-div-d", "d/a", "divide"),
   ]);
 
-  // Step 2 — depressed-coefficients: uses square, multiply, subtract, divide, add
+  // Step 2 — depressed-coefficients: p = c - b²/3, q = d - bc/3 + 2b³/27
   const depressed = group("depressed", "depressed-coefficients", [
-    ref("dep-square", "square", "square"),
-    ref("dep-mul-1", "multiply", "multiply"),
-    ref("dep-mul-2", "multiply", "multiply"),
-    ref("dep-sub", "subtract", "subtract"),
-    ref("dep-div-1", "divide", "divide"),
-    ref("dep-div-2", "divide", "divide"),
-    ref("dep-add", "add", "add"),
+    leaf("dep-b", "b"),
+    leaf("dep-c", "c"),
+    leaf("dep-d", "d"),
+    ref("dep-bsq", "b²", "square"),
+    ref("dep-bc", "b*c", "multiply"),
+    ref("dep-bcu", "b³", "multiply"),
+    ref("dep-p-div", "b²/3", "divide"),
+    ref("dep-p", "p", "subtract"),
+    ref("dep-q-div1", "bc/3", "divide"),
+    ref("dep-q-div2", "2b³/27", "divide"),
+    ref("dep-q-sub", "d-bc/3", "subtract"),
+    ref("dep-q", "q", "add"),
   ]);
 
-  // Step 3 — cardano-terms: uses square, multiply, divide, add, subtract, negate, sqrt, cbrt
+  // Step 3 — cardano-terms: u = ∛(-q/2 + √D), v = ∛(-q/2 - √D), D = q²/4 + p³/27
   const cardano = group("cardano", "cardano-terms", [
-    ref("card-sq", "square", "square"),
-    ref("card-mul", "multiply", "multiply"),
-    ref("card-div-1", "divide", "divide"),
-    ref("card-div-2", "divide", "divide"),
-    ref("card-add", "add", "add"),
-    ref("card-sub", "subtract", "subtract"),
-    ref("card-neg", "negate", "negate"),
-    ref("card-sqrt", "sqrt", "sqrt"),
-    ref("card-cbrt-1", "cbrt", "cbrt"),
-    ref("card-cbrt-2", "cbrt", "cbrt"),
+    leaf("card-p", "p"),
+    leaf("card-q", "q"),
+    ref("card-qsq", "q²", "square"),
+    ref("card-psq", "p²", "square"),
+    ref("card-pcu", "p³", "multiply"),
+    ref("card-d1", "q²/4", "divide"),
+    ref("card-d2", "p³/27", "divide"),
+    ref("card-D", "D", "add"),
+    ref("card-sqrtD", "√D", "sqrt"),
+    ref("card-negq", "-q", "negate"),
+    ref("card-nqh", "-q/2", "divide"),
+    ref("card-u-sum", "u-inner", "add"),
+    ref("card-v-sum", "v-inner", "subtract"),
+    ref("card-u", "u", "cbrt"),
+    ref("card-v", "v", "cbrt"),
   ]);
 
-  // Step 4 — back-substitute: uses divide, add, subtract, negate
+  // Step 4 — back-substitute: x = t - b/3
   const backSub = group("back-sub", "back-substitute", [
-    ref("bs-div", "divide", "divide"),
-    ref("bs-add", "add", "add"),
-    ref("bs-sub-1", "subtract", "subtract"),
-    ref("bs-sub-2", "subtract", "subtract"),
-    ref("bs-sub-3", "subtract", "subtract"),
-    ref("bs-neg", "negate", "negate"),
+    leaf("bs-u", "u"),
+    leaf("bs-v", "v"),
+    leaf("bs-b", "b-norm"),
+    ref("bs-shift", "b/3", "divide"),
+    ref("bs-uv", "u+v", "add"),
+    ref("bs-uvh", "uv/2", "divide"),
+    ref("bs-nuvh", "-uv/2", "negate"),
+    ref("bs-x1", "x1", "subtract"),
+    ref("bs-x2", "x2", "subtract"),
+    ref("bs-x3", "x3", "subtract"),
   ]);
 
   // Top-level pipeline
@@ -281,12 +304,63 @@ export function CubicRoots() {
 
   ws.treeNodes = [primitives, normalise, depressed, cardano, backSub, cubicRoots];
 
-  // Pipeline edges within cubic-roots
   ws.edges = [
-    { id: "e-cr-1", fromId: "cr-norm", toId: "cr-dep", label: "", data: {}, version: 1 },
-    { id: "e-cr-2", fromId: "cr-dep", toId: "cr-card", label: "", data: {}, version: 1 },
-    { id: "e-cr-3", fromId: "cr-card", toId: "cr-back", label: "", data: {}, version: 1 },
-    { id: "e-cr-4", fromId: "cr-norm", toId: "cr-back", label: "b-norm", data: {}, version: 1 },
+    // Pipeline edges within cubic-roots
+    e("e-cr-1", "cr-norm", "cr-dep"),
+    e("e-cr-2", "cr-dep", "cr-card"),
+    e("e-cr-3", "cr-card", "cr-back"),
+    e("e-cr-4", "cr-norm", "cr-back", "b-norm"),
+    // normalise: a,b,c,d → divide
+    e("e-n1", "norm-b", "norm-div-b"),
+    e("e-n2", "norm-a", "norm-div-b"),
+    e("e-n3", "norm-c", "norm-div-c"),
+    e("e-n4", "norm-a", "norm-div-c"),
+    e("e-n5", "norm-d", "norm-div-d"),
+    e("e-n6", "norm-a", "norm-div-d"),
+    // depressed-coefficients
+    e("e-d1", "dep-b", "dep-bsq"),
+    e("e-d2", "dep-bsq", "dep-bc"),
+    e("e-d3", "dep-b", "dep-bc"),
+    e("e-d4", "dep-bsq", "dep-bcu"),
+    e("e-d5", "dep-bsq", "dep-p-div"),
+    e("e-d6", "dep-c", "dep-p"),
+    e("e-d7", "dep-p-div", "dep-p"),
+    e("e-d8", "dep-bc", "dep-q-div1"),
+    e("e-d9", "dep-bcu", "dep-q-div2"),
+    e("e-d10", "dep-d", "dep-q-sub"),
+    e("e-d11", "dep-q-div1", "dep-q-sub"),
+    e("e-d12", "dep-q-sub", "dep-q"),
+    e("e-d13", "dep-q-div2", "dep-q"),
+    // cardano-terms
+    e("e-c1", "card-q", "card-qsq"),
+    e("e-c2", "card-p", "card-psq"),
+    e("e-c3", "card-psq", "card-pcu"),
+    e("e-c4", "card-p", "card-pcu"),
+    e("e-c5", "card-qsq", "card-d1"),
+    e("e-c6", "card-pcu", "card-d2"),
+    e("e-c7", "card-d1", "card-D"),
+    e("e-c8", "card-d2", "card-D"),
+    e("e-c9", "card-D", "card-sqrtD"),
+    e("e-c10", "card-q", "card-negq"),
+    e("e-c11", "card-negq", "card-nqh"),
+    e("e-c12", "card-nqh", "card-u-sum"),
+    e("e-c13", "card-sqrtD", "card-u-sum"),
+    e("e-c14", "card-nqh", "card-v-sum"),
+    e("e-c15", "card-sqrtD", "card-v-sum"),
+    e("e-c16", "card-u-sum", "card-u"),
+    e("e-c17", "card-v-sum", "card-v"),
+    // back-substitute
+    e("e-b1", "bs-b", "bs-shift"),
+    e("e-b2", "bs-u", "bs-uv"),
+    e("e-b3", "bs-v", "bs-uv"),
+    e("e-b4", "bs-uv", "bs-uvh"),
+    e("e-b5", "bs-uvh", "bs-nuvh"),
+    e("e-b6", "bs-uv", "bs-x1"),
+    e("e-b7", "bs-shift", "bs-x1"),
+    e("e-b8", "bs-nuvh", "bs-x2"),
+    e("e-b9", "bs-shift", "bs-x2"),
+    e("e-b10", "bs-nuvh", "bs-x3"),
+    e("e-b11", "bs-shift", "bs-x3"),
   ];
 
   ws.canvasExpandedNodes = ["cubic-roots"];
