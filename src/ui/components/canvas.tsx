@@ -10,6 +10,7 @@ import {
   getActiveTab,
   getFocusedRootNodes,
   getWorkspaceRootId,
+  isRef,
   type Panel,
   type TreeNode,
   type Updater,
@@ -1697,6 +1698,7 @@ function renderLevel(
 
         // Collapsed node — rendered as a circle by default, or rect if constraint specifies
         const isComposite = node.kind === "composite";
+        const isRefNode = isRef(node);
         const isRect = pos?.shape === "rect";
         const r = LEAF_R;
         const hasChildren = isComposite && node.children.length > 0;
@@ -1726,6 +1728,8 @@ function renderLevel(
           ? "#2a1a1a"
           : isSelected
           ? "#1e2a4a"
+          : isRefNode
+          ? "#141428"
           : isComposite
           ? "#141430"
           : "#111125";
@@ -1743,9 +1747,12 @@ function renderLevel(
           ? "#3050a0"
           : isHighlighted
           ? "#50c070"
+          : isRefNode
+          ? "#605080"
           : isComposite
           ? "#303060"
           : "#252545";
+        const strokeDash = isRefNode ? "3,2" : undefined;
         const strokeWidth = isEdgeSource || isSelected || isHovered
           ? 2
           : isCandidate
@@ -1809,6 +1816,7 @@ function renderLevel(
                   fill={fill}
                   stroke={stroke}
                   stroke-width={strokeWidth}
+                  stroke-dasharray={strokeDash}
                 />
               )
               : (
@@ -1819,6 +1827,7 @@ function renderLevel(
                   fill={fill}
                   stroke={stroke}
                   stroke-width={strokeWidth}
+                  stroke-dasharray={strokeDash}
                 />
               )}
             {(hasError || hasWarning) && (
@@ -1847,6 +1856,19 @@ function renderLevel(
                   style="pointer-events:none;"
                 />
               )}
+            {/* Ref indicator — small arrow icon at bottom */}
+            {isRefNode && (
+              <text
+                x={0}
+                y={isRect ? r * 0.7 + 9 : r + 9}
+                text-anchor="middle"
+                fill="#605080"
+                font-size="7"
+                style="user-select:none; pointer-events:none;"
+              >
+                {"↗ ref"}
+              </text>
+            )}
             {node.ports && node.ports.length > 0 && (
               <NodePorts
                 ports={circlePortPositions(node.ports, r)}
@@ -1857,7 +1879,7 @@ function renderLevel(
               x={0}
               y={hasChildren ? -3 : 3}
               text-anchor="middle"
-              fill={isSelected ? "#a0b4e0" : "#777799"}
+              fill={isSelected ? "#a0b4e0" : isRefNode ? "#9080b0" : "#777799"}
               font-size="9"
               style="user-select:none; pointer-events:none;"
             >
