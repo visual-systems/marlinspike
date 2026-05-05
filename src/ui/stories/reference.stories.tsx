@@ -13,6 +13,12 @@ import {
 
 export const meta = { title: "References" };
 
+// Shorthand for leaf and composite nodes
+const leaf = (id: string, label?: string) => makeNode(id, label ?? id, "leaf", []);
+const group = (id: string, label: string, children: ReturnType<typeof makeNode>[]) =>
+  makeNode(id, label, "composite", children);
+const ref = (id: string, label: string, target: string) => makeRefNode(id, label, target);
+
 function StoryWrapper({ initial }: { initial: WorkspaceState }) {
   const [ws, setWs] = useState<WorkspaceState>(initial);
   const update: Updater = (fn) => setWs((prev) => fn(prev));
@@ -196,6 +202,103 @@ export function ReferenceEditing() {
             {String(isRef(ws.treeNodes[0].children[2]))})
           </li>
         </ul>
+      </div>
+      <StoryWrapper initial={ws} />
+    </div>
+  );
+}
+
+/** Cubic roots solver — shared math primitives referenced across pipeline steps. */
+export function CubicRoots() {
+  const ws = defaultState();
+  ws.focusId = null;
+
+  // Shared math primitives — defined once
+  const primitives = group("math", "math", [
+    leaf("divide"),
+    leaf("multiply"),
+    leaf("square"),
+    leaf("add"),
+    leaf("subtract"),
+    leaf("negate"),
+    leaf("sqrt"),
+    leaf("cbrt"),
+  ]);
+
+  // Step 1 — normalise: uses divide (3x)
+  const normalise = group("normalise", "normalise", [
+    leaf("norm-a", "a"),
+    leaf("norm-b", "b"),
+    leaf("norm-c", "c"),
+    leaf("norm-d", "d"),
+    ref("norm-div-1", "divide", "divide"),
+    ref("norm-div-2", "divide", "divide"),
+    ref("norm-div-3", "divide", "divide"),
+  ]);
+
+  // Step 2 — depressed-coefficients: uses square, multiply, subtract, divide, add
+  const depressed = group("depressed", "depressed-coefficients", [
+    ref("dep-square", "square", "square"),
+    ref("dep-mul-1", "multiply", "multiply"),
+    ref("dep-mul-2", "multiply", "multiply"),
+    ref("dep-sub", "subtract", "subtract"),
+    ref("dep-div-1", "divide", "divide"),
+    ref("dep-div-2", "divide", "divide"),
+    ref("dep-add", "add", "add"),
+  ]);
+
+  // Step 3 — cardano-terms: uses square, multiply, divide, add, subtract, negate, sqrt, cbrt
+  const cardano = group("cardano", "cardano-terms", [
+    ref("card-sq", "square", "square"),
+    ref("card-mul", "multiply", "multiply"),
+    ref("card-div-1", "divide", "divide"),
+    ref("card-div-2", "divide", "divide"),
+    ref("card-add", "add", "add"),
+    ref("card-sub", "subtract", "subtract"),
+    ref("card-neg", "negate", "negate"),
+    ref("card-sqrt", "sqrt", "sqrt"),
+    ref("card-cbrt-1", "cbrt", "cbrt"),
+    ref("card-cbrt-2", "cbrt", "cbrt"),
+  ]);
+
+  // Step 4 — back-substitute: uses divide, add, subtract, negate
+  const backSub = group("back-sub", "back-substitute", [
+    ref("bs-div", "divide", "divide"),
+    ref("bs-add", "add", "add"),
+    ref("bs-sub-1", "subtract", "subtract"),
+    ref("bs-sub-2", "subtract", "subtract"),
+    ref("bs-sub-3", "subtract", "subtract"),
+    ref("bs-neg", "negate", "negate"),
+  ]);
+
+  // Top-level pipeline
+  const cubicRoots = group("cubic-roots", "cubic-roots", [
+    ref("cr-norm", "normalise", "normalise"),
+    ref("cr-dep", "depressed-coefficients", "depressed"),
+    ref("cr-card", "cardano-terms", "cardano"),
+    ref("cr-back", "back-substitute", "back-sub"),
+  ]);
+
+  ws.treeNodes = [primitives, normalise, depressed, cardano, backSub, cubicRoots];
+
+  // Pipeline edges within cubic-roots
+  ws.edges = [
+    { id: "e-cr-1", fromId: "cr-norm", toId: "cr-dep", label: "", data: {}, version: 1 },
+    { id: "e-cr-2", fromId: "cr-dep", toId: "cr-card", label: "", data: {}, version: 1 },
+    { id: "e-cr-3", fromId: "cr-card", toId: "cr-back", label: "", data: {}, version: 1 },
+    { id: "e-cr-4", fromId: "cr-norm", toId: "cr-back", label: "b-norm", data: {}, version: 1 },
+  ];
+
+  ws.canvasExpandedNodes = ["cubic-roots"];
+
+  return (
+    <div>
+      <div style="font-size:11px; color:#555; margin-bottom:8px; line-height:1.5; max-width:900px;">
+        <strong style="color:#666;">Cubic roots solver:</strong>{" "}
+        Math primitives (divide, square, multiply, etc.) are defined once in <em>math</em>{" "}
+        and referenced throughout the pipeline steps. Expand <em>cubic-roots</em>{" "}
+        to see the pipeline flow; expand any step to see its ref nodes. Each dashed node is a
+        reference to a shared primitive.
       </div>
       <StoryWrapper initial={ws} />
     </div>
