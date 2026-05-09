@@ -36,7 +36,13 @@ import { parse } from "../graph/base_lisp.ts";
 // ---------------------------------------------------------------------------
 
 /** Data keys that are internal to the codec or the reactivity system and should not be emitted. */
-const INTERNAL_DATA_KEYS = new Set(["fn", "argOrder", "destructuredKeys"]);
+const INTERNAL_DATA_KEYS = new Set([
+  "fn",
+  "argOrder",
+  "destructuredKeys",
+  "outputPort",
+  "passthrough",
+]);
 
 /**
  * Return the def/defn name form, optionally prefixed with `^{...}` reader
@@ -341,15 +347,24 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
     ? `\n  {:ports {${outputPorts.map((p) => `:${p.name} ${p.type ?? "any"}`).join(" ")}}}`
     : "";
 
-  // When all terminal nodes are named by output ports (map-key identity from
-  // the parser), inline each terminal call directly in the map return rather
-  // than binding it in a let. This produces {:x1 (divide ...) :x2 (divide ...)}
-  // instead of {:x1 x1 :x2 x2} and preserves distinct output slots.
+  // When all terminal nodes map to output ports, inline each terminal call
+  // directly in the map return: {:x1 (divide ...) :x2 (divide ...)}.
+  // A terminal maps to a port either by label match or via data.outputPort
+  // (used when the map key collided with a param name during parsing).
   const portNameSet = new Set(outputPorts.map((p) => p.name));
-  const terminalLabels = terminalIds.map((id) => nodeById.get(id)!.label);
+  const portNameToId = new Map<string, string>();
+  for (const id of terminalIds) {
+    const node = nodeById.get(id)!;
+    const outputPort = node.data.outputPort as string | undefined;
+    if (outputPort && portNameSet.has(outputPort)) {
+      portNameToId.set(outputPort, id);
+    } else if (portNameSet.has(node.label)) {
+      portNameToId.set(node.label, id);
+    }
+  }
   const portsMatchTerminals = outputPorts.length > 0 &&
-    terminalLabels.length > 0 &&
-    terminalLabels.every((label) => portNameSet.has(label));
+    terminalIds.length > 0 &&
+    portNameToId.size === outputPorts.length;
   // Set of terminal IDs whose labels match output port names
   const terminalPortIds = portsMatchTerminals ? new Set(terminalIds) : new Set<string>();
 
@@ -369,14 +384,21 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   const returnRef = (id: string) => letIdSet.has(id) ? binding(id) : callExpr(id);
 
   // Return expression — map keys get their own lines for readability.
-  // Base indent depends on whether there is a let block (4 spaces) or not (2 spaces).
-  // Map port names to their node IDs for callExpr lookup.
-  const portNameToId = new Map(
-    outputPorts.map((p) => [p.name, nodes.find((n) => n.label === p.name)?.id ?? p.name]),
-  );
+  // Passthrough terminals (no data.fn, one incoming edge) emit as binding refs,
+  // not function calls: {:x1 x1} instead of {:x1 (x1 back-substitute)}.
+  function portExpr(id: string): string {
+    const node = nodeById.get(id)!;
+    // Passthrough terminals: created from `{:x1 x1}` map values where the
+    // symbol references a let-bound destructuring. Marked by outputPort == label.
+    const outputPort = node.data.outputPort as string | undefined;
+    if (outputPort === node.label && !node.data.fn) {
+      return binding(id);
+    }
+    return callExpr(id);
+  }
   const mapEntries: [string, string][] | null = portsMatchTerminals
     ? outputPorts.map((p) =>
-      [`:${p.name}`, callExpr(portNameToId.get(p.name)!)] as [string, string]
+      [`:${p.name}`, portExpr(portNameToId.get(p.name)!)] as [string, string]
     )
     : terminalIds.length === 1
     ? null
@@ -549,6 +571,7 @@ export function spikeToGraph(
       nodeArgOrders: Map<string, string[]>;
       nodeRefs: Map<string, string>;
       nodeDestructuredKeys: Map<string, string[]>;
+      nodeOutputPorts: Map<string, string>;
     }
   >();
   // Label → explicit UUID pulled from `^{:id "..."}` reader metadata on the
@@ -721,6 +744,7 @@ export function spikeToGraph(
         nodeArgOrders,
         nodeRefs,
         nodeDestructuredKeys,
+        nodeOutputPorts,
       },
     ] of defns
   ) {
@@ -745,6 +769,9 @@ export function spikeToGraph(
         ...(nodeDestructuredKeys.has(label)
           ? { destructuredKeys: nodeDestructuredKeys.get(label)! }
           : {}),
+        // outputPort: when a map-key terminal collides with a param name, the
+        // node gets a conjunctive label but must map back to the output port name.
+        ...(nodeOutputPorts.has(label) ? { outputPort: nodeOutputPorts.get(label)! } : {}),
       },
       // Scope-inferred ref: call-position function was defined by a prior def/defn
       ...(nodeRefs.has(label) ? { type: "ref" as const, ref: nodeRefs.get(label)! } : {}),
@@ -867,6 +894,7 @@ function parseLetForm(
   nodeArgOrders: Map<string, string[]>;
   nodeRefs: Map<string, string>;
   nodeDestructuredKeys: Map<string, string[]>;
+  nodeOutputPorts: Map<string, string>;
 } {
   const errors: string[] = [];
   const nodeLabels = new Set<string>();
@@ -884,6 +912,10 @@ function parseLetForm(
   // Maps node label → list of destructured binding key names.
   // Used by the emitter to reconstruct {:keys [...]} syntax.
   const nodeDestructuredKeys = new Map<string, string[]>();
+  // Maps node label → output port name for map-key terminals that collide with
+  // params. E.g. in `(defn normalise [a b] {:b (divide b a)})`, the divide node
+  // gets label "divide" but outputPort "b" so the emitter can reconstruct {:b (divide ...)}.
+  const nodeOutputPorts = new Map<string, string>();
 
   if (letParts.length < 1 || letParts[0].type !== "vector") {
     errors.push("let: expected binding vector");
@@ -895,6 +927,7 @@ function parseLetForm(
       nodeArgOrders: new Map(),
       nodeRefs: new Map(),
       nodeDestructuredKeys: new Map(),
+      nodeOutputPorts: new Map(),
     };
   }
 
@@ -1107,10 +1140,30 @@ function parseLetForm(
       // Map body: {:k (call ...) ...} — expand each call using the map key as
       // the node's identity. This preserves distinct terminal nodes even when
       // the same function (e.g. `divide`) is called multiple times.
+      // When a map key collides with a param name, skip the override so
+      // expandCall chooses a conjunctive name, and record the port mapping.
       for (const [key, val] of body.entries) {
+        const portName = key.type === "keyword" ? key.value : undefined;
         if (val.type === "list") {
-          const nameOverride = key.type === "keyword" ? key.value : undefined;
-          expandCall(val, nameOverride);
+          const collides = portName !== undefined && nodeLabels.has(portName);
+          const nameOverride = collides ? undefined : portName;
+          const resultLabel = expandCall(val, nameOverride);
+          if (resultLabel && portName && collides) {
+            nodeOutputPorts.set(resultLabel, portName);
+          }
+        } else if (val.type === "symbol" && portName) {
+          // Passthrough: {:x1 x1} — the symbol references a binding.
+          // Create the port-named node with an edge from the source node.
+          const sourceLabel = bindingToLabel.get(val.value);
+          if (sourceLabel && !nodeLabels.has(portName)) {
+            nodeLabels.add(portName);
+            nodeOutputPorts.set(portName, portName); // marks as passthrough terminal
+            const edgeKey = `${sourceLabel}->${portName}`;
+            if (!seenEdges.has(edgeKey)) {
+              seenEdges.add(edgeKey);
+              edges.push({ from: sourceLabel, to: portName, label: "", data: {} });
+            }
+          }
         }
       }
     }
@@ -1124,5 +1177,6 @@ function parseLetForm(
     nodeArgOrders,
     nodeRefs,
     nodeDestructuredKeys,
+    nodeOutputPorts,
   };
 }

@@ -378,8 +378,15 @@ function pinPortNodes(
   const halfH = parentFn.h / 2;
   const portPositions = rectPortPositions(parentNode.ports, halfW, halfH, LABEL_H);
 
-  // Map port name → child node ID (ports reference children by label)
+  // Map port name → child node ID (ports reference children by label, or by
+  // data.outputPort when a map-key terminal collided with a param name).
   const childByLabel = new Map(parentNode.children.map((c) => [c.label, c.id]));
+  for (const child of parentNode.children) {
+    const outputPort = child.data.outputPort as string | undefined;
+    if (outputPort && !childByLabel.has(outputPort)) {
+      childByLabel.set(outputPort, child.id);
+    }
+  }
   const pinMap = new Map<string, { x: number; y: number }>();
   for (const pp of portPositions) {
     const childId = childByLabel.get(pp.portName);
