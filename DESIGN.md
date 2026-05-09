@@ -271,9 +271,10 @@ and resolver treat it as opaque; algorithm selection is a storage/registry conce
 
 ### Entity References
 
-An **entity reference** (ref node) is a node that points to another node rather than defining its own
-structure — a symlink or live-alias in filesystem terms. References enable reuse: a function like
-`square` can be defined once and referenced multiple times without duplicating its internal structure.
+An **entity reference** (ref node) is a node that points to another node rather than defining its
+own structure — a symlink or live-alias in filesystem terms. References enable reuse: a function
+like `square` can be defined once and referenced multiple times without duplicating its internal
+structure.
 
 #### Graph representation
 
@@ -303,20 +304,20 @@ against definitions visible in the source text. There are three sources of defin
 3. **Everything else** — unresolved symbol, not the parser's concern
 
 This means ref resolution is fully syntactic — every reference can be determined by reading the
-source, without consulting the broader graph. The graph layer validates that imports actually resolve
-(and flags broken references as diagnostics), but the parser trusts the declarations.
+source, without consulting the broader graph. The graph layer validates that imports actually
+resolve (and flags broken references as diagnostics), but the parser trusts the declarations.
 
 **Symbol classification:**
 
-| Symbol resolves to | Graph element | `type` | `ref` |
-|---|---|---|---|
-| Prior `def`/`defn` in source | Ref node | `"ref"` | name of target definition |
-| Imported name via `require` | Ref node | `"ref"` | qualified name or URI |
-| `let`-binding / function parameter | Leaf node (input) | *none* | *none* |
-| Nothing (unresolved) | Plain leaf node | *none* | *none* |
+| Symbol resolves to                 | Graph element     | `type`  | `ref`                     |
+| ---------------------------------- | ----------------- | ------- | ------------------------- |
+| Prior `def`/`defn` in source       | Ref node          | `"ref"` | name of target definition |
+| Imported name via `require`        | Ref node          | `"ref"` | qualified name or URI     |
+| `let`-binding / function parameter | Leaf node (input) | _none_  | _none_                    |
+| Nothing (unresolved)               | Plain leaf node   | _none_  | _none_                    |
 
 Note that call-position symbols and argument-position symbols are treated the same way for reference
-resolution. Position determines the *role* in the graph (node vs edge source), not whether something
+resolution. Position determines the _role_ in the graph (node vs edge source), not whether something
 is a reference.
 
 #### Node identity for ref invocations
@@ -331,24 +332,33 @@ identity. The `let`-binding name provides this:
     {:b b-over-a :c c-over-a}))
 ```
 
-| id | label | type | ref |
-|---|---|---|---|
-| `b-over-a` | `divide` | `"ref"` | `"divide"` |
-| `c-over-a` | `divide` | `"ref"` | `"divide"` |
+| id                   | label    | type    | ref        |
+| -------------------- | -------- | ------- | ---------- |
+| `normalise/b-over-a` | `divide` | `"ref"` | `"divide"` |
+| `normalise/c-over-a` | `divide` | `"ref"` | `"divide"` |
 
 The binding name is the node's **identity** (stable across round-trips). The function name is the
 **label** (what's being applied) and also the **ref target**. No UUID metadata is needed — the
 binding name is already in the syntax.
 
+Child IDs are **namespaced** as `defnName/childLabel` to prevent edge conflation when multiple
+`defn` bodies contain children with the same label. The namespace prefix is stripped for display and
+codec round-trip — it's an internal identity mechanism only.
+
+When a function name collides with an existing node (e.g. two calls to `divide`), a **conjunctive
+naming heuristic** generates a unique binding name using the base function name plus a serial suffix
+(e.g. `divide`, `divide-2`).
+
 #### Destructuring as port-level edges
 
 Map bodies and destructuring patterns map to port connections on edges rather than node identity:
 
-| Clojure form | Graph concept |
-|---|---|
-| `{:b expr}` in return position | Output port `:b` fed by `expr` |
-| `{:keys [p q]}` in let binding | Edges from output ports `:p`, `:q` to downstream nodes |
-| `(f x y)` plain call | Node-to-node edge (no port distinction) |
+| Clojure form                   | Graph concept                                                 |
+| ------------------------------ | ------------------------------------------------------------- |
+| `{:b expr}` in return position | Output port `:b` fed by `expr`                                |
+| `{:b b}` in return position    | Passthrough terminal — output port `:b` with edge from source |
+| `{:keys [p q]}` in let binding | Edges from output ports `:p`, `:q` to downstream nodes        |
+| `(f x y)` plain call           | Node-to-node edge (no port distinction)                       |
 
 Edge data carries the syntactic provenance for round-trip reconstruction:
 
@@ -362,6 +372,17 @@ Edge data carries the syntactic provenance for round-trip reconstruction:
   }
 }
 ```
+
+**Passthrough map terminals**: When a map return contains `{:x1 x1}` where the value is a symbol
+referencing a binding (not a function call), the parser creates a terminal node with an edge from
+the source binding to the output port. This makes the dataflow visible — without it, the connection
+between the source node and the output port would be implicit.
+
+**Map-key/param collision**: When a map return key matches an input parameter name (e.g. `{:b expr}`
+where `b` is also a param), the parser skips the naming override to avoid conflating the output
+terminal with the input param. The terminal node retains its computed name and stores
+`data.outputPort` to link it to the correct port. This is also used for passthrough terminals where
+the label already matches the port name.
 
 #### Import declarations
 
@@ -383,8 +404,8 @@ broader graph.
   (auth/check x))           ;; ref — auth is declared via require
 ```
 
-The graph layer validates that imports resolve to real nodes. If `math/divide` doesn't exist at graph
-assembly time, it's a broken reference diagnostic — same treatment as any other broken ref.
+The graph layer validates that imports resolve to real nodes. If `math/divide` doesn't exist at
+graph assembly time, it's a broken reference diagnostic — same treatment as any other broken ref.
 
 #### Explicit refs
 
@@ -404,8 +425,8 @@ The round-trip is **normalising** rather than idempotent:
 
 - **Clojure → Graph**: destructuring and map bodies compile into port-level edges. Ref-ness is
   inferred from scope.
-- **Graph → Clojure**: the emitter reconstructs `let` bindings and destructuring from port edges
-  and edge data. It produces semantically equivalent Clojure, not necessarily identical syntax.
+- **Graph → Clojure**: the emitter reconstructs `let` bindings and destructuring from port edges and
+  edge data. It produces semantically equivalent Clojure, not necessarily identical syntax.
 - **Stability**: `parse(emit(parse(clj)))` stabilises after one pass. The normalised form is the
   stable representation.
 
@@ -421,17 +442,40 @@ Ref nodes are visually distinguished on the canvas:
 - **Collapsed**: dashed stroke, purple tint (`#605080`), `↗ {target-label}` beneath the node
 - **Expanded group**: dashed border, purple tint
 - **Inspector**: "Reference" section with clickable link to target, broken indicator for unresolved
+- **Navigation**: double-clicking an empty ref that targets a composite navigates focus to the
+  target (equivalent to "Go to" in the inspector). Empty refs targeting leaves or missing nodes do
+  nothing.
+
+**Port coloring**: When focused inside a composite with ports, child nodes that correspond to ports
+are tinted to make the data interface visible:
+
+- **Input params**: blue stroke (`#4080c0`), matching the input port dot color
+- **Output terminals**: orange stroke (`#c06040`), matching the output port dot color
+
+Port nodes are pinned to their port positions in the layout. Output ports are matched first (using
+`data.outputPort` when present, falling back to label match), then input ports — this prevents
+conflicts when an input param and output port share the same name.
+
+#### Focused code view
+
+When the text view is focused on a `defn` composite (a node with input ports), the emitter produces
+`(defn name [params] ...)` syntax rather than flat `(def)` forms. References to definitions outside
+the focused subtree are emitted as a `(require ...)` preamble, making the code self-contained.
+
+Redundant `:ref` metadata is suppressed when `node.ref === node.label` — the ref-ness is already
+implicit in the emitted Clojure because the definition appears earlier in the output.
 
 #### Open questions
 
-- **Subsume `data.function` / `data.script`?** — Could `type: "ref"` replace `data.function`, and
-  a new `type: "inline"` or `type: "foreign"` replace `data.script`? This would unify how nodes
+- **Subsume `data.function` / `data.script`?** — Could `type: "ref"` replace `data.function`, and a
+  new `type: "inline"` or `type: "foreign"` replace `data.script`? This would unify how nodes
   delegate to implementations.
-- **Import mechanism details** — Does `require` map to composite node boundaries (namespaces)?
-  How does it interact with the workspace tree hierarchy?
-- **Ref expansion / resolution** — When a ref node is expanded, should it show the target's
-  children inline? Currently prevented (empty ref nodes can't expand). Future work: resolve the
-  target and render its subtree with visual indication that the content is delegated.
+- **Import mechanism details** — Does `require` map to composite node boundaries (namespaces)? How
+  does it interact with the workspace tree hierarchy?
+- **Ref expansion / resolution** — Refs targeting composites now navigate focus to the target on
+  double-click (or via "Go to" in the inspector). Rendering the target's subtree _inline_ at the ref
+  site (without navigating) is future work — it would need visual indication that the content is
+  delegated, plus collision handling for nested node IDs.
 
 ---
 
@@ -1119,7 +1163,9 @@ and produces an artifact or side effect.
 - [x] Multiple port nodes per composite node
 - [ ] Port interface compatibility checking
 - [x] Entity references (`type: "ref"` field — symlink/live-alias for node reuse)
-- [ ] Reference resolution and rendering (step-into, broken ref diagnostics)
+- [x] Scope-inferred references, destructuring, import declarations
+- [x] Reference navigation (double-click / "Go to" for composite targets)
+- [ ] Inline reference resolution (render target subtree at ref site without navigating)
 
 ### Phase 3 — Extensibility (Schema Plugin Foundation)
 

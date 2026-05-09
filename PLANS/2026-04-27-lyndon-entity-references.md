@@ -181,6 +181,22 @@ incrementally — each step is independently useful and testable.
 - [x] Add **ImportDeclarations** story — require preamble with inferred refs
 - [x] CubicRoots story retained as-is (manually constructed; scope-inferred refs are a parser feature)
 
+### Step 15: Canvas and codec polish
+
+- [x] Route reference edges to nearest visible ancestor when target is inside collapsed subgroup
+- [x] Indirect ref edges rendered dimmer (opacity 0.6, sparser dash `2,4`, smaller arrowhead)
+- [x] Focused code view emits `(defn ...)` body when focused on a defn composite (not flat defs)
+- [x] Suppress redundant `:ref` metadata when `node.ref === node.label`
+- [x] Updated cubic-roots fixtures/stories to use idiomatic scope-inferred refs and destructuring
+- [x] `destructuredKeys` added to `INTERNAL_DATA_KEYS` (no metadata leaking)
+- [x] Output ports derived from map return keys (no explicit `{:ports}` attr-map needed)
+- [x] Conjunctive naming heuristic uses base function names + serial suffix (avoids absurd names)
+- [x] Namespace defn child IDs as `defnName/childLabel` to prevent cross-defn edge conflation
+- [x] Fix map-key/param name collision (normalise `{:b (divide b a)}` where `b` is also a param)
+- [x] Passthrough map terminals (`{:x1 x1}`) create nodes with edges to output ports
+- [x] Canvas pins `data.outputPort` nodes to port positions
+- [x] Double-click ref targeting composite navigates focus to target ("Go to" in inspector)
+
 ## Open Questions
 
 - **Subsume `data.function` / `data.script`?** — Could the `ref` concept subsume these? E.g. a
@@ -217,17 +233,13 @@ incrementally — each step is independently useful and testable.
   graph-relative imports from hypothetical external/remote imports.
 - **Topogrid layout direction** — Topogrid doesn't work correctly with ports. Consider making it
   left-to-right by default to match the port-based dataflow direction.
-- **Focused code view for defn internals** — When focused inside a defn composite, the code view
-  emits children as flat `(def ...)` forms instead of a `(defn ... (let [...] ...))` body. The
-  emitter doesn't know the focused container was a defn. Fix: pass the container node to the emitter
-  and emit its body directly (with transient imports for out-of-scope refs).
-- **Unconnected nodes in code view** — Some nodes in the depressed-coefficients code view (e.g.
-  `b`, `c`, `d`) appear unconnected by edge or ref. These are input parameters — they have no
-  incoming edges because they're the defn's arguments. The flat-def code view loses this context.
+- ~~**Focused code view for defn internals**~~ — Resolved: `emitWorkspace` now passes the focused
+  container to `graphToSpike` which emits as `(defn ...)` body when the container has input ports.
+- ~~**Unconnected nodes in code view**~~ — Resolved by the focused defn code view fix above.
 
 ## Verification
 
-- [x] `NO_COLOR=1 deno task ci` passes (396 tests, 0 failures)
+- [x] `NO_COLOR=1 deno task ci` passes (396 tests, 0 failures) — last verified 2026-05-09
 - [x] Stories render at `/stories` — visual inspection of reference treatments
 - [x] Cubic-roots-with-refs fixture in RoundTripGallery
 - [x] Spike-Clojure round-trip preserves `:ref` metadata (scope-inferred)
