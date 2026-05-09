@@ -1843,6 +1843,20 @@ function renderLevel(
     levelEdgeKeys.some((le) => le.a === e.fromId && le.b === e.toId)
   );
 
+  // Determine which children are input params or output terminals based on
+  // the parent's ports. Used to tint nodes with port colors when focused.
+  const parentNode = levelId ? findNode(ws.treeNodes, levelId) : null;
+  const inputPortNames = new Set(
+    (parentNode?.ports ?? []).filter((p) => p.direction === "in").map((p) => p.name),
+  );
+  const outputPortNames = new Set(
+    (parentNode?.ports ?? []).filter((p) => p.direction === "out").map((p) => p.name),
+  );
+  // A node is an "output terminal" if its label or data.outputPort matches an output port
+  const isInputParam = (n: TreeNode) => inputPortNames.has(n.label);
+  const isOutputTerminal = (n: TreeNode) =>
+    outputPortNames.has(n.label) || outputPortNames.has(n.data.outputPort as string);
+
   return (
     <>
       {/* Shapes first (nodes and expanded group boxes) */}
@@ -2000,6 +2014,8 @@ function renderLevel(
         const hasError = nodeDiags.some((d) => d.severity === "error");
         const hasWarning = !hasError && nodeDiags.some((d) => d.severity === "warning");
         const isHighlighted = highlightEntityIds.has(node.id);
+        const isInput = isInputParam(node);
+        const isOutput = isOutputTerminal(node);
 
         const fill = isEdgeSource || isHovered
           ? "#1e2a4a"
@@ -2011,6 +2027,10 @@ function renderLevel(
           ? "#141428"
           : isComposite
           ? "#141430"
+          : isInput
+          ? "#101828"
+          : isOutput
+          ? "#181410"
           : "#111125";
         const stroke = isEdgeSource
           ? "#5070c0"
@@ -2028,6 +2048,10 @@ function renderLevel(
           ? "#50c070"
           : isRefNode
           ? "#605080"
+          : isInput
+          ? "#4080c0"
+          : isOutput
+          ? "#c06040"
           : isComposite
           ? "#303060"
           : "#252545";
