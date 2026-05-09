@@ -1845,7 +1845,9 @@ function renderLevel(
 
   // Determine which children are input params or output terminals based on
   // the parent's ports. Used to tint nodes with port colors when focused.
-  const parentNode = levelId ? findNode(ws.treeNodes, levelId) : null;
+  // When levelId is "" (top-level focused view), use the focused node as parent
+  const parentNode = (levelId ? findNode(ws.treeNodes, levelId) : null) ??
+    (ws.focusId ? findNode(ws.treeNodes, ws.focusId) : null);
   const inputPortNames = new Set(
     (parentNode?.ports ?? []).filter((p) => p.direction === "in").map((p) => p.name),
   );
