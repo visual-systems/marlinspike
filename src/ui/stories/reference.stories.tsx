@@ -10,6 +10,7 @@ import {
   type Updater,
   type WorkspaceState,
 } from "../workspace.ts";
+import { spikeToGraph } from "../../code/spike-clojure.ts";
 
 export const meta = { title: "References" };
 
@@ -373,6 +374,94 @@ export function CubicRoots() {
         and referenced throughout the pipeline steps. Expand <em>cubic-roots</em>{" "}
         to see the pipeline flow; expand any step to see its ref nodes. Each dashed node is a
         reference to a shared primitive.
+      </div>
+      <StoryWrapper initial={ws} />
+    </div>
+  );
+}
+
+/** Scope-inferred refs — parser automatically marks calls to prior defs as references. */
+export function ScopeInferredRefs() {
+  const clj = `(def square)
+(def negate)
+
+(defn pipeline [x]
+  (let [sq (square x)
+        neg (negate sq)]
+    (add neg 1)))`;
+  const { treeNodes, edges } = spikeToGraph(clj);
+  const ws = defaultState();
+  ws.focusId = null;
+  ws.treeNodes = treeNodes;
+  ws.edges = edges;
+  ws.canvasExpandedNodes = ["pipeline"];
+
+  return (
+    <div>
+      <div style="font-size:11px; color:#555; margin-bottom:8px; line-height:1.5; max-width:900px;">
+        <strong style="color:#666;">Scope-inferred refs:</strong> The parser automatically marks
+        {" "}
+        <em>sq</em> and <em>neg</em> as references to <em>square</em> and <em>negate</em> because
+        {" "}
+        those names were defined by prior <code>def</code> forms. No explicit ref annotation needed.
+        {" "}
+        Dashed nodes with purple tint are references; <em>add</em>{" "}
+        is not a ref (undefined in scope).
+      </div>
+      <StoryWrapper initial={ws} />
+    </div>
+  );
+}
+
+/** Destructuring — {:keys [p q]} bindings parsed and round-tripped. */
+export function Destructuring() {
+  const clj = `(defn pipeline [input]
+  (let [{:keys [p q]} (split input)]
+    (combine p q)))`;
+  const { treeNodes, edges } = spikeToGraph(clj);
+  const ws = defaultState();
+  ws.focusId = null;
+  ws.treeNodes = treeNodes;
+  ws.edges = edges;
+  ws.canvasExpandedNodes = ["pipeline"];
+
+  return (
+    <div>
+      <div style="font-size:11px; color:#555; margin-bottom:8px; line-height:1.5; max-width:900px;">
+        <strong style="color:#666;">Destructuring:</strong> The <code>{"{:keys [p q]}"}</code>{" "}
+        let-binding is parsed into a <em>split</em> node with <code>destructuredKeys</code>{" "}
+        data. The downstream <em>combine</em> node references <em>p</em> and <em>q</em> from{" "}
+        split's output ports.
+      </div>
+      <StoryWrapper initial={ws} />
+    </div>
+  );
+}
+
+/** Import declarations — require preamble adds names to scope for ref inference. */
+export function ImportDeclarations() {
+  const clj = `(require divide multiply)
+
+(defn pipeline [a b]
+  (let [result (divide a b)]
+    (multiply result 2.0)))`;
+  const { treeNodes, edges } = spikeToGraph(clj);
+  const ws = defaultState();
+  ws.focusId = null;
+  ws.treeNodes = treeNodes;
+  ws.edges = edges;
+  ws.canvasExpandedNodes = ["pipeline"];
+
+  return (
+    <div>
+      <div style="font-size:11px; color:#555; margin-bottom:8px; line-height:1.5; max-width:900px;">
+        <strong style="color:#666;">Import declarations:</strong> The{" "}
+        <code>(require divide multiply)</code> preamble adds names to scope without creating nodes.
+        {" "}
+        Inside <em>pipeline</em>, calls to <em>divide</em> and <em>multiply</em> are inferred as
+        {" "}
+        references (dashed/purple). The require form is used for focused code views where the{" "}
+        referenced definitions live outside the visible scope.
       </div>
       <StoryWrapper initial={ws} />
     </div>

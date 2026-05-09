@@ -1151,3 +1151,100 @@ Deno.test("scope-inferred ref: duplicate calls with distinct binding names → d
   assertEquals(xNode.id, "x");
   assertEquals(yNode.id, "y");
 });
+
+// ---------------------------------------------------------------------------
+// Destructuring: {:keys [...]} in let bindings
+// ---------------------------------------------------------------------------
+
+Deno.test("destructuring: {:keys} binding creates node with destructuredKeys", () => {
+  const clj = `(defn pipeline [input]
+  (let [{:keys [p q]} (split input)]
+    (combine p q)))`;
+  const { treeNodes, edges } = spikeToGraph(clj);
+  const pipeline = treeNodes[0];
+  assertEquals(pipeline.label, "pipeline");
+
+  const split = pipeline.children.find((c) => c.label === "split" || c.data.fn === "split");
+  assertExists(split, "split node should exist");
+  assertEquals(split.data.destructuredKeys, ["p", "q"]);
+
+  const combine = pipeline.children.find((c) => c.label === "combine" || c.data.fn === "combine");
+  assertExists(combine, "combine node should exist");
+  // argOrder uses destructured binding names, not source node label
+  assertEquals(combine.data.argOrder, ["p", "q"]);
+
+  // Single edge from split → combine (not two separate edges)
+  const splitToCombine = edges.filter((e) => e.fromId === split.id && e.toId === combine.id);
+  assertEquals(splitToCombine.length, 1);
+});
+
+Deno.test("destructuring: round-trip preserves {:keys} syntax", () => {
+  const clj = `(defn pipeline [input]
+  (let [{:keys [p q]} (split input)]
+    (combine p q)))`;
+  const { treeNodes, edges } = spikeToGraph(clj);
+  const emitted = graphToSpike(treeNodes, edges);
+  // Emitter puts param vector on new line — normalising round-trip
+  const expected =
+    `(defn pipeline\n  [input]\n  (let [{:keys [p q]} (split input)]\n    (combine p q)))`;
+  assertEquals(emitted.trim(), expected);
+});
+
+Deno.test("destructuring: normalising round-trip stabilises", () => {
+  const clj = `(defn pipeline [input]
+  (let [{:keys [p q]} (split input)]
+    (combine p q)))`;
+  const pass1 = spikeToGraph(clj);
+  const emitted1 = graphToSpike(pass1.treeNodes, pass1.edges);
+  const pass2 = spikeToGraph(emitted1);
+  const emitted2 = graphToSpike(pass2.treeNodes, pass2.edges);
+  assertEquals(emitted1, emitted2);
+});
+
+// ---------------------------------------------------------------------------
+// Import declarations: (require name1 name2 ...)
+// ---------------------------------------------------------------------------
+
+Deno.test("import: require adds names to scope for ref inference", () => {
+  const clj = `(require divide multiply)
+
+(defn pipeline [a b]
+  (let [result (divide a b)]
+    (multiply result 2.0)))`;
+  const { treeNodes } = spikeToGraph(clj);
+  // require should NOT create nodes — only the defn should exist
+  assertEquals(treeNodes.length, 1);
+  assertEquals(treeNodes[0].label, "pipeline");
+  // divide and multiply should be inferred as refs
+  const divideNode = treeNodes[0].children.find((c) => c.id === "result");
+  assertExists(divideNode);
+  assertEquals(divideNode.type, "ref");
+  assertEquals(divideNode.ref, "divide");
+  const mulNode = treeNodes[0].children.find(
+    (c) => c.label === "multiply" || c.data.fn === "multiply",
+  );
+  assertExists(mulNode);
+  assertEquals(mulNode.type, "ref");
+  assertEquals(mulNode.ref, "multiply");
+});
+
+Deno.test("import: graphToSpike emits require preamble when imports provided", () => {
+  const clj = `(defn f [x] (add x 1))`;
+  const { treeNodes, edges } = spikeToGraph(clj);
+  const emitted = graphToSpike(treeNodes, edges, ["add", "subtract"]);
+  assertEquals(emitted.startsWith("(require add subtract)"), true);
+});
+
+Deno.test("import: round-trip with require preserves refs", () => {
+  const clj = `(require divide)
+
+(defn f [a b]
+  (divide a b))`;
+  const pass1 = spikeToGraph(clj);
+  const divNode = pass1.treeNodes[0].children.find(
+    (c) => c.label === "divide" || c.data.fn === "divide",
+  );
+  assertExists(divNode);
+  assertEquals(divNode.type, "ref");
+  assertEquals(divNode.ref, "divide");
+});

@@ -553,4 +553,34 @@ export const FIXTURES: Fixture[] = [
     shortcoming: "graph→clj→graph: graph nodes/edges are a simplified skeleton — " +
       "the defn internals are only fully represented via the clj form.",
   },
+
+  // ── destructuring ────────────────────────────────────────────────────────
+
+  {
+    label: "destructuring: {:keys} in let binding",
+    description: "A destructured let binding produces a node with destructuredKeys " +
+      "and downstream args use port names in argOrder.",
+    nodes: [],
+    edges: [],
+    clj: `(defn pipeline [input]
+  (let [{:keys [p q]} (split input)]
+    (combine p q)))`,
+  },
+
+  // ── imports ──────────────────────────────────────────────────────────────
+
+  {
+    label: "require: imported names become refs",
+    description: "A (require ...) preamble adds names to scope so calls to those " +
+      "functions produce ref nodes, without creating any top-level nodes.",
+    nodes: [],
+    edges: [],
+    clj: `(require divide multiply)
+
+(defn pipeline [a b]
+  (let [result (divide a b)]
+    (multiply result 2.0)))`,
+    cljShortcoming: "require preamble is lost in graph — imports are only scope markers, " +
+      "not stored as nodes. Re-emit loses the require and ref annotations.",
+  },
 ];

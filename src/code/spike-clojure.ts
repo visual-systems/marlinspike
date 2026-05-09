@@ -281,6 +281,7 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
     const node = nodeById.get(id);
     if (!node) return false;
     if (node.data.fn !== undefined) return false; // explicitly renamed — must keep binding
+    if (node.data.destructuredKeys !== undefined) return false; // destructured output — needs let
     return (outgoingCounts.get(id) ?? 0) <= 1;
   }
 
@@ -374,8 +375,14 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
     return `(defn ${nameForm}${attrMap}\n  [${paramList}]\n  ${returnExpr})`;
   }
 
-  // Format let bindings: first on same line as `[`, rest indented to align
-  const bindingLines = letIds.map((id) => `${binding(id)} ${callExpr(id)}`);
+  // Format let bindings: first on same line as `[`, rest indented to align.
+  // Nodes with destructuredKeys emit {:keys [k1 k2]} instead of a simple binding name.
+  const bindingLines = letIds.map((id) => {
+    const node = nodeById.get(id)!;
+    const keys = node.data.destructuredKeys as string[] | undefined;
+    const binder = keys ? `{:keys [${keys.join(" ")}]}` : binding(id);
+    return `${binder} ${callExpr(id)}`;
+  });
 
   const indent = " ".repeat(8); // aligns under first binding name after `  (let [`
   const letBlock = bindingLines
@@ -402,8 +409,15 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
  * Edges between nodes that are not co-children of a composite are not
  * encoded (by design — edges require a containing defn/let scope).
  */
-export function graphToSpike(nodes: TreeNode[], edges: Edge[]): string {
+export function graphToSpike(
+  nodes: TreeNode[],
+  edges: Edge[],
+  imports?: string[],
+): string {
   const lines: string[] = [];
+  if (imports && imports.length > 0) {
+    lines.push(`(require ${imports.join(" ")})`);
+  }
   const emitted = new Set<string>();
 
   function emitNode(node: TreeNode): void {
@@ -493,6 +507,7 @@ export function spikeToGraph(
       nodeFunctions: Map<string, string>;
       nodeArgOrders: Map<string, string[]>;
       nodeRefs: Map<string, string>;
+      nodeDestructuredKeys: Map<string, string[]>;
     }
   >();
   // Label → explicit UUID pulled from `^{:id "..."}` reader metadata on the
@@ -510,8 +525,22 @@ export function spikeToGraph(
 
   for (const form of forms) {
     if (form.type !== "list" || form.items.length < 2) continue;
-    const [head, nameForm] = form.items;
-    if (head.type !== "symbol" || nameForm.type !== "symbol") continue;
+    const head = form.items[0];
+    if (head.type !== "symbol") continue;
+
+    // (require name1 name2 ...) — import declarations add names to scope
+    // without creating nodes. Used for transient imports in focused code views.
+    if (head.value === "require") {
+      for (const arg of form.items.slice(1)) {
+        if (arg.type === "symbol") {
+          definedNames.add(arg.value);
+        }
+      }
+      continue;
+    }
+
+    const nameForm = form.items[1];
+    if (nameForm.type !== "symbol") continue;
     const name = nameForm.value;
     const uuid = extractIdMeta(nameForm);
     if (uuid) nameId.set(name, uuid);
@@ -630,7 +659,15 @@ export function spikeToGraph(
   for (
     const [
       name,
-      { nodes: childLabels, edges: rawEdges, ports, nodeFunctions, nodeArgOrders, nodeRefs },
+      {
+        nodes: childLabels,
+        edges: rawEdges,
+        ports,
+        nodeFunctions,
+        nodeArgOrders,
+        nodeRefs,
+        nodeDestructuredKeys,
+      },
     ] of defns
   ) {
     const children: TreeNode[] = childLabels.map((label) => ({
@@ -645,6 +682,11 @@ export function spikeToGraph(
         // argOrder: preserved arg list (symbolic labels + literal reprs) so the
         // emitter can reconstruct the exact call including literal values.
         ...(nodeArgOrders.has(label) ? { argOrder: nodeArgOrders.get(label)! } : {}),
+        // destructuredKeys: binding names from {:keys [p q]} destructuring.
+        // The emitter uses this to reconstruct destructuring syntax.
+        ...(nodeDestructuredKeys.has(label)
+          ? { destructuredKeys: nodeDestructuredKeys.get(label)! }
+          : {}),
       },
       // Scope-inferred ref: call-position function was defined by a prior def/defn
       ...(nodeRefs.has(label) ? { type: "ref" as const, ref: nodeRefs.get(label)! } : {}),
@@ -766,6 +808,7 @@ function parseLetForm(
   nodeFunctions: Map<string, string>;
   nodeArgOrders: Map<string, string[]>;
   nodeRefs: Map<string, string>;
+  nodeDestructuredKeys: Map<string, string[]>;
 } {
   const errors: string[] = [];
   const nodeLabels = new Set<string>();
@@ -777,6 +820,12 @@ function parseLetForm(
   const nodeArgOrders = new Map<string, string[]>();
   // Maps node label → ref target when the call-position function name is a prior definition.
   const nodeRefs = new Map<string, string>();
+  // Maps binding name → output port name for destructured bindings.
+  // When a destructured binding is used as an arg, the edge gets outputPort metadata.
+  const bindingPorts = new Map<string, string>();
+  // Maps node label → list of destructured binding key names.
+  // Used by the emitter to reconstruct {:keys [...]} syntax.
+  const nodeDestructuredKeys = new Map<string, string[]>();
 
   if (letParts.length < 1 || letParts[0].type !== "vector") {
     errors.push("let: expected binding vector");
@@ -787,6 +836,7 @@ function parseLetForm(
       nodeFunctions,
       nodeArgOrders: new Map(),
       nodeRefs: new Map(),
+      nodeDestructuredKeys: new Map(),
     };
   }
 
@@ -844,6 +894,7 @@ function parseLetForm(
     // Nested calls are recursively expanded, creating their own nodes and edges.
     const resolvedArgs: Array<{
       label: string | null;
+      port?: string;
       literal: string | null;
       edgeMeta: { label: string; data: Record<string, unknown> };
     }> = [];
@@ -855,8 +906,13 @@ function parseLetForm(
       } else if (arg.type === "string") {
         resolvedArgs.push({ label: null, literal: JSON.stringify(arg.value), edgeMeta });
       } else {
-        const srcLabel = resolveArg(arg);
-        resolvedArgs.push({ label: srcLabel, literal: null, edgeMeta });
+        const resolved = resolveArg(arg);
+        resolvedArgs.push({
+          label: resolved?.label ?? null,
+          port: resolved?.port,
+          literal: null,
+          edgeMeta,
+        });
       }
     }
 
@@ -901,31 +957,63 @@ function parseLetForm(
             data: a.edgeMeta.data,
           });
         }
-        argList.push(a.label);
+        // Use port name in argOrder when available (destructured binding)
+        argList.push(a.port ?? a.label);
       }
     }
 
-    if (effectiveOverride !== undefined) {
+    // Store argOrder when the node has a name override (let-bound or conjunctive),
+    // or when any arg uses a destructured port (so emitter can reconstruct port names).
+    const hasPortArgs = resolvedArgs.some((a) => a.port !== undefined);
+    if (effectiveOverride !== undefined || hasPortArgs) {
       nodeArgOrders.set(nodeLabel, argList);
     }
     return nodeLabel;
   }
 
   // Resolve an argument SExp to the node label it refers to:
-  //   - known binding symbol → the label bound to it
+  //   - known binding symbol → the label bound to it (+ port if destructured)
   //   - nested call → recursively expand and return its outermost label
   //   - anything else (literal, keyword, unknown symbol) → null
-  function resolveArg(arg: SExp): string | null {
+  function resolveArg(arg: SExp): { label: string; port?: string } | null {
     if (arg.type === "symbol" && bindingToLabel.has(arg.value)) {
-      return bindingToLabel.get(arg.value)!;
+      const label = bindingToLabel.get(arg.value)!;
+      const port = bindingPorts.get(arg.value);
+      return { label, port };
     }
-    if (arg.type === "list") return expandCall(arg);
+    if (arg.type === "list") {
+      const l = expandCall(arg);
+      return l ? { label: l } : null;
+    }
     return null;
   }
 
   for (let i = 0; i + 1 < bindingVec.length; i += 2) {
     const bname = bindingVec[i];
     const callExpr = bindingVec[i + 1];
+
+    if (bname.type === "map") {
+      // Destructuring binding: {:keys [p q]} (call ...)
+      // Expand the call, then register each destructured key as a binding
+      // that maps to the same node label but with a port annotation.
+      const keysEntry = bname.entries.find(([k]) => k.type === "keyword" && k.value === "keys");
+      if (keysEntry && keysEntry[1].type === "vector") {
+        const nodeLabel = expandCall(callExpr);
+        if (nodeLabel !== null) {
+          const keys: string[] = [];
+          for (const keyItem of keysEntry[1].items) {
+            if (keyItem.type === "symbol") {
+              bindingToLabel.set(keyItem.value, nodeLabel);
+              bindingPorts.set(keyItem.value, keyItem.value);
+              keys.push(keyItem.value);
+            }
+          }
+          nodeDestructuredKeys.set(nodeLabel, keys);
+        }
+      }
+      continue;
+    }
+
     if (bname.type !== "symbol") continue;
 
     // Pass the binding variable name as the node identity: (let [neg-b (negate b)] ...)
@@ -953,5 +1041,13 @@ function parseLetForm(
     }
   }
 
-  return { nodes: [...nodeLabels], edges, errors, nodeFunctions, nodeArgOrders, nodeRefs };
+  return {
+    nodes: [...nodeLabels],
+    edges,
+    errors,
+    nodeFunctions,
+    nodeArgOrders,
+    nodeRefs,
+    nodeDestructuredKeys,
+  };
 }

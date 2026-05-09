@@ -56,7 +56,22 @@ export function emitWorkspace(ws: WorkspaceState): string {
     return graphToSpike(ws.treeNodes, ws.edges);
   }
   const focused = findNode(ws.treeNodes, ws.focusId);
-  return graphToSpike(focused?.children ?? [], ws.edges);
+  const children = focused?.children ?? [];
+  // Collect ref targets that are outside the focused subtree — these need
+  // a transient (require ...) preamble so the parser can infer refs.
+  const localIds = new Set(children.map((c) => c.id));
+  const imports = collectRefTargets(children).filter((ref) => !localIds.has(ref));
+  return graphToSpike(children, ws.edges, imports.length > 0 ? imports : undefined);
+}
+
+/** Recursively collect all `ref` target names from a tree of nodes. */
+function collectRefTargets(nodes: TreeNode[]): string[] {
+  const targets: string[] = [];
+  for (const node of nodes) {
+    if (node.type === "ref" && node.ref) targets.push(node.ref);
+    targets.push(...collectRefTargets(node.children));
+  }
+  return [...new Set(targets)];
 }
 
 // ---------------------------------------------------------------------------

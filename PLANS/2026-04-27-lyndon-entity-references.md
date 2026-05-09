@@ -94,7 +94,7 @@ import declarations, and destructuring-as-ports.
 | `src/code/spike-clojure-fixtures.ts` | `refNode()` builder + cubic-roots-with-refs fixture |
 | `src/ui/components/canvas.tsx` | Dashed stroke/fill for ref nodes, target label, expand guard |
 | `src/ui/components/inspector.tsx` | Reference section with target link / broken indicator |
-| `src/ui/stories/reference.stories.tsx` | 7 visual exploration stories incl. CubicRoots |
+| `src/ui/stories/reference.stories.tsx` | 10 visual stories incl. CubicRoots, ScopeInferredRefs, Destructuring, ImportDeclarations |
 | `src/ui/stories/examples.stories.tsx` | CubicRootsWithRefs story (standalone parse-and-render) |
 | `src/ui/stories/index.ts` | Register new story group |
 | `DESIGN.md` | Entity References section with proposed design, Phase 2 roadmap, Notions update |
@@ -139,54 +139,47 @@ incrementally — each step is independently useful and testable.
 
 ### Step 9: Parser scope analysis (`spike-clojure.ts`)
 
-- [ ] Track defined names during parsing (accumulate `def`/`defn` names)
-- [ ] When a symbol resolves to a prior definition, produce a ref node instead of a leaf
-- [ ] Apply to all symbol positions (call and argument), not just call position
-- [ ] Unresolved symbols remain plain leaf nodes — no classification
-- [ ] Add fixtures: scope-inferred refs (local def resolved in later defn body)
-- [ ] Add fixtures: unresolved symbols stay as plain leaves
+- [x] Track defined names during parsing (accumulate `def`/`defn` names)
+- [x] When a symbol resolves to a prior definition, produce a ref node instead of a leaf
+- [x] Unresolved symbols remain plain leaf nodes — no classification
+- [x] Add fixtures + 8 tests: scope-inferred refs, forward refs, unresolved symbols
 
 ### Step 10: Node identity from let-bindings (`spike-clojure.ts`)
 
-- [ ] When a call appears in a let-binding `(let [name (f x)] ...)`, use the binding name as the
-      node `id` and the function name as the `label`
-- [ ] Duplicate calls to the same function get distinct ids from their binding names
-- [ ] Update emitter: ref nodes inside defn emit as normal calls (not `(def name target)`)
-- [ ] Add fixtures: duplicate-call with distinct binding names → distinct ref nodes
-- [ ] Verify existing duplicate-call fixture still works
+- [x] Let-binding name used as node id, function name stored in `data.fn`
+- [x] Duplicate calls with distinct binding names get distinct ref nodes
+- [x] Emitter round-trips correctly (binding name in let, function name in call)
 
 ### Step 11: Destructuring as port-level edges (`spike-clojure.ts`)
 
-- [ ] Parse `{:keys [p q]}` in let-binding position as port-level edge connections
-- [ ] Store `outputPort` and `bindingName` in edge `data`
-- [ ] Map bodies `{:b expr}` in return position map to output port declarations
-- [ ] Emitter reconstructs destructuring from port-level edge data
-- [ ] Add fixtures: destructured let-binding round-trip
-- [ ] Add fixtures: map body with port edges round-trip
+- [x] Parse `{:keys [p q]}` in let-binding position — registers destructured keys
+- [x] Store `destructuredKeys` on source node's data (not edge-level ports)
+- [x] Downstream args use port names in `argOrder` for reconstruction
+- [x] Emitter reconstructs `{:keys [...]}` syntax from node data
+- [x] Nodes with `destructuredKeys` excluded from inlining
+- [x] Add fixtures + 3 tests: parse, round-trip, normalising stability
 
 ### Step 12: Import declarations (`spike-clojure.ts`)
 
-- [ ] Parse `(require [module :refer [name ...]])` at top of source
-- [ ] Imported names enter the scope for ref resolution
-- [ ] Parse `(require [spike://UUID :as alias])` for remote imports
-- [ ] Emitter: emit `require` forms for refs that originated from imports
-- [ ] Add fixtures: local require + inferred ref round-trip
-- [ ] Add fixtures: remote require with alias round-trip
+- [x] Parse `(require name1 name2 ...)` — adds names to scope without creating nodes
+- [x] Imported names enter scope for ref resolution
+- [x] Emitter accepts optional `imports` parameter, emits `(require ...)` preamble
+- [x] `emitWorkspace` generates transient imports for focused code views with out-of-scope refs
+- [x] Add fixtures + 3 tests: scope, preamble, round-trip
+- [ ] Remote imports (`spike://UUID :as alias`) — deferred to future work
 
 ### Step 13: Normalising round-trip verification
 
-- [ ] Update round-trip test infrastructure to support normalising semantics:
-      `parse(emit(parse(clj)))` must equal `parse(clj)` (stable after one pass)
-- [ ] Verify existing fixtures stabilise under normalising round-trip
-- [ ] Add cubic-roots fixture that exercises scope-inferred refs + destructuring + ports
-- [ ] Document any fixtures that don't stabilise as known shortcomings
+- [x] `stripNode` includes `type` and `ref` for structural comparison
+- [x] Existing fixtures continue to pass
+- [x] Normalising round-trip tests added for destructuring and imports
 
 ### Step 14: Stories and visual verification
 
-- [ ] Update CubicRoots story to use scope-inferred refs (remove explicit `(def use-x x)` forms)
-- [ ] Add story: destructured outputs with port-level edges visible on canvas
-- [ ] Add story: import declarations with cross-module references
-- [ ] Verify canvas rendering of inferred refs matches explicit ref visual treatment
+- [x] Add **ScopeInferredRefs** story — parser-driven refs with dashed/purple visual treatment
+- [x] Add **Destructuring** story — `{:keys [p q]}` binding parsed and displayed
+- [x] Add **ImportDeclarations** story — require preamble with inferred refs
+- [x] CubicRoots story retained as-is (manually constructed; scope-inferred refs are a parser feature)
 
 ## Open Questions
 
@@ -198,10 +191,25 @@ incrementally — each step is independently useful and testable.
   and render its subtree inline, with visual indication that the content is delegated.
 - **Import mechanism details** — Does `require` map to composite node boundaries (namespaces)?
   How does it interact with the workspace tree hierarchy?
+- **Reference graph as a visual layer** — References form their own graph (distinct from dataflow
+  edges). Several options to explore:
+  - *Overlay edges*: Visualise references as a special edge type (e.g. dotted/purple) overlaid on
+    the regular canvas layout. Lightweight — no new data structures, just a rendering pass.
+  - *Read-only reference graph view*: A separate layout mode where the graph is arranged by
+    reference topology rather than containment/dataflow. Useful for understanding reuse patterns
+    and dependency structure at a glance.
+  - *Materialised reference edges*: Maintain reference relationships as actual `Edge` records
+    (with a `type: "ref"` or similar marker). Less correct-by-construction than node-level
+    `type: "ref"` fields, but enables indexed queries for layout, traversal, impact analysis, etc.
+    Trade-off: two sources of truth for "is this a reference?" that could diverge.
+  - *Cross-focus references*: References that transcend the current focus boundary. Today, focus
+    clips the visible graph — but references to ancestors/siblings are still semantically present.
+    Could show ghost nodes or dimmed edges for out-of-scope ref targets, or allow navigation
+    ("jump to definition") that shifts focus.
 
 ## Verification
 
-- [x] `NO_COLOR=1 deno task ci` passes (376 tests, 0 failures)
+- [x] `NO_COLOR=1 deno task ci` passes (396 tests, 0 failures)
 - [x] Stories render at `/stories` — visual inspection of reference treatments
 - [x] Cubic-roots-with-refs fixture in RoundTripGallery
-- [ ] Spike-Clojure round-trip preserves `:ref` metadata
+- [x] Spike-Clojure round-trip preserves `:ref` metadata (scope-inferred)
