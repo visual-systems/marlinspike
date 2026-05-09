@@ -23,12 +23,16 @@ export function Dropdown(
 ) {
   const [open, setOpen] = useState(false);
 
-  // Close on outside click
+  // Close on outside click or when another dropdown opens
   useEffect(() => {
     if (!open) return;
     const close = () => setOpen(false);
     document.addEventListener("click", close, { once: true });
-    return () => document.removeEventListener("click", close);
+    document.addEventListener("dropdown-open", close, { once: true });
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("dropdown-open", close);
+    };
   }, [open]);
 
   const selectedItem = items.find((i) => i.value === selectedValue);
@@ -42,7 +46,8 @@ export function Dropdown(
 
   function handleBtnClick(e: MouseEvent) {
     e.stopPropagation();
-    setOpen((prev) => !prev);
+    document.dispatchEvent(new Event("dropdown-open"));
+    queueMicrotask(() => setOpen((prev) => !prev));
   }
 
   function handleSelect(value: string) {

@@ -696,7 +696,13 @@ function ToggleDropdown({ ws, update }: { ws: WorkspaceState; update: Updater })
     if (!open) return;
     const close = () => setOpen(false);
     document.addEventListener("click", close, { once: true });
-    return () => document.removeEventListener("click", close);
+    // Close when another dropdown opens (Dropdown uses stopPropagation,
+    // so the document click listener won't fire for those clicks).
+    document.addEventListener("dropdown-open", close, { once: true });
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("dropdown-open", close);
+    };
   }, [open]);
 
   return (
@@ -709,7 +715,9 @@ function ToggleDropdown({ ws, update }: { ws: WorkspaceState; update: Updater })
         title="View toggles"
         onClick={(e: MouseEvent) => {
           e.stopPropagation();
-          setOpen((prev) => !prev);
+          // Signal other dropdowns to close before we open
+          document.dispatchEvent(new Event("dropdown-open"));
+          queueMicrotask(() => setOpen((prev) => !prev));
         }}
       >
         ⚙
@@ -2214,7 +2222,10 @@ function renderLevel(
         }> = [];
         for (const node of nodes) {
           if (node.type === "ref" && node.ref) {
-            const target = nodes.find((n) => n.id === node.ref || n.label === node.ref);
+            // Match by id first; fall back to label but only for non-ref nodes
+            // (avoid chaining ref→ref when multiple refs share a target label).
+            const target = nodes.find((n) => n.id === node.ref) ??
+              nodes.find((n) => n.label === node.ref && n.type !== "ref");
             if (target) {
               const pa = posMap.get(node.id);
               const pb = posMap.get(target.id);

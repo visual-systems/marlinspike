@@ -206,6 +206,24 @@ incrementally — each step is independently useful and testable.
     clips the visible graph — but references to ancestors/siblings are still semantically present.
     Could show ghost nodes or dimmed edges for out-of-scope ref targets, or allow navigation
     ("jump to definition") that shifts focus.
+- **Redundancy between `data.fn` and `ref`** — When a node has `type: "ref"` and `ref: "divide"`,
+  `data.fn` stores the same function name. Could `data.fn` be inferred from `ref` (or vice versa)?
+  Removing the duplication simplifies the data model but means the emitter must know about refs.
+- **`argOrder` for trivial cases** — Not worth storing `data.argOrder` when there's 0 or 1 args.
+  Could save space and reduce noise in the inspector data view.
+- **Require terminology for graph-relative imports** — The `(require ...)` preamble currently uses
+  bare names. Should reference the containing graph/workspace explicitly, e.g.
+  `(require :from workspace-id [name1 name2])` or `(require :ancestor [name1 name2])` to distinguish
+  graph-relative imports from hypothetical external/remote imports.
+- **Topogrid layout direction** — Topogrid doesn't work correctly with ports. Consider making it
+  left-to-right by default to match the port-based dataflow direction.
+- **Focused code view for defn internals** — When focused inside a defn composite, the code view
+  emits children as flat `(def ...)` forms instead of a `(defn ... (let [...] ...))` body. The
+  emitter doesn't know the focused container was a defn. Fix: pass the container node to the emitter
+  and emit its body directly (with transient imports for out-of-scope refs).
+- **Unconnected nodes in code view** — Some nodes in the depressed-coefficients code view (e.g.
+  `b`, `c`, `d`) appear unconnected by edge or ref. These are input parameters — they have no
+  incoming edges because they're the defn's arguments. The flat-def code view loses this context.
 
 ## Verification
 
