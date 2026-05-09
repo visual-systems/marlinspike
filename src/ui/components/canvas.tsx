@@ -703,7 +703,7 @@ function ToggleDropdown({ ws, update }: { ws: WorkspaceState; update: Updater })
     <div style="position:relative; flex-shrink:0;">
       <span
         style={[
-          "cursor:pointer; user-select:none; font-size:11px; padding:2px 6px;",
+          "cursor:pointer; user-select:none; font-size:14px; padding:2px 6px;",
           `color:${ws.canvasShowRefEdges ? "#9080b0" : "#404466"};`,
         ].join("")}
         title="View toggles"
@@ -748,7 +748,17 @@ function ToggleRow(
       onMouseLeave={() => setHovered(false)}
       onClick={onToggle}
     >
-      <span style={`color:${checked ? "#9080b0" : "#333"};`}>{checked ? "◉" : "○"}</span>
+      <svg width="10" height="10" viewBox="0 0 10 10" style="flex-shrink:0;">
+        <circle
+          cx="5"
+          cy="5"
+          r="4"
+          stroke={checked ? "#9080b0" : "#333"}
+          stroke-width="1"
+          fill="none"
+        />
+        {checked && <circle cx="5" cy="5" r="2.5" fill="#9080b0" />}
+      </svg>
       {label}
     </div>
   );
