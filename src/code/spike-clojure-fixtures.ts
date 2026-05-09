@@ -460,7 +460,7 @@ export const FIXTURES: Fixture[] = [
   {
     label: "def: cubic roots with references",
     description:
-      "Shared math primitives referenced across four pipeline steps via (def name target) ref syntax.",
+      "Scope-inferred refs and destructuring: step functions called inside a top-level defn pipeline.",
     nodes: [
       leaf("divide"),
       leaf("multiply"),
@@ -490,10 +490,6 @@ export const FIXTURES: Fixture[] = [
         leaf("v"),
         leaf("b-norm"),
       ]),
-      refNode("use-normalise", "normalise"),
-      refNode("use-depressed", "depressed-coefficients"),
-      refNode("use-cardano", "cardano-terms"),
-      refNode("use-back-sub", "back-substitute"),
     ],
     edges: [
       // normalise internals
@@ -545,11 +541,13 @@ export const FIXTURES: Fixture[] = [
      :x2 (subtract (negate uv-half) shift)
      :x3 (subtract (negate uv-half) shift)}))
 
-; Top-level entry point — references to shared functions
-(def use-normalise normalise)
-(def use-depressed depressed-coefficients)
-(def use-cardano cardano-terms)
-(def use-back-sub back-substitute)`,
+; Top-level pipeline — scope-inferred references with destructuring
+(defn cubic-roots [a b c d]
+  (let [{:keys [b c d]}    (normalise a b c d)
+        {:keys [p q]}      (depressed-coefficients b c d)
+        {:keys [u v]}      (cardano-terms p q)
+        {:keys [x1 x2 x3]} (back-substitute u v b)]
+    {:x1 x1 :x2 x2 :x3 x3}))`,
     shortcoming: "graph→clj→graph: graph nodes/edges are a simplified skeleton — " +
       "the defn internals are only fully represented via the clj form.",
   },

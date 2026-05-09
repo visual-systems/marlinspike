@@ -470,11 +470,13 @@ const CUBIC_ROOTS_WITH_REFS = `\
      :x2 (subtract (negate uv-half) shift)
      :x3 (subtract (negate uv-half) shift)}))
 
-; Top-level entry point — references to shared functions
-(def use-normalise normalise)
-(def use-depressed depressed-coefficients)
-(def use-cardano cardano-terms)
-(def use-back-sub back-substitute)
+; Top-level pipeline — scope-inferred references with destructuring
+(defn cubic-roots [a b c d]
+  (let [{:keys [b c d]}    (normalise a b c d)
+        {:keys [p q]}      (depressed-coefficients b c d)
+        {:keys [u v]}      (cardano-terms p q)
+        {:keys [x1 x2 x3]} (back-substitute u v b)]
+    {:x1 x1 :x2 x2 :x3 x3}))
 `;
 
 /** Cardano's cubic root formula parsed from Spike-Clojure source.
