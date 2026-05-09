@@ -1567,6 +1567,78 @@ export function Canvas(
             diagnostics,
             highlightEntityIds ?? new Set(),
           )}
+          {/* Reference edges — cross-level dotted edges from ref nodes to targets */}
+          {ws.canvasShowRefEdges && (() => {
+            const worldPos = new Map<
+              string,
+              { node: TreeNode; wx: number; wy: number; w: number; h: number }
+            >();
+            collectWorldPositions(
+              focusedRootNodes,
+              "",
+              layout,
+              expandedSet,
+              { x: 0, y: 0 },
+              worldPos,
+            );
+            // Build label→id index for non-ref nodes (fallback target resolution)
+            const labelToId = new Map<string, string>();
+            for (const [id, { node }] of worldPos) {
+              if (node.type !== "ref") labelToId.set(node.label, id);
+            }
+            const refEdges: Array<{
+              fromId: string;
+              toId: string;
+              d: string;
+              dx: number;
+              dy: number;
+            }> = [];
+            for (const [id, { node, wx, wy, w, h }] of worldPos) {
+              if (node.type !== "ref" || !node.ref) continue;
+              const targetId = worldPos.has(node.ref) ? node.ref : labelToId.get(node.ref);
+              if (!targetId || targetId === id) continue;
+              const t = worldPos.get(targetId)!;
+              // Compute surface points — cast to ForceNode (surfacePoint only reads x/y/w/h)
+              const pa = { x: wx, y: wy, w, h } as ForceNode;
+              const pb = { x: t.wx, y: t.wy, w: t.w, h: t.h } as ForceNode;
+              const src = surfacePoint(pa, pb, 5);
+              const dst = surfacePoint(pb, pa, 5);
+              const dx = dst.x - src.x, dy = dst.y - src.y;
+              refEdges.push({
+                fromId: id,
+                toId: targetId,
+                d: `M${src.x},${src.y} L${dst.x},${dst.y}`,
+                dx,
+                dy,
+              });
+            }
+            return refEdges.map(({ fromId, toId, d, dx, dy }) => {
+              const len = Math.sqrt(dx * dx + dy * dy);
+              const ux = len > 0 ? dx / len : 1, uy = len > 0 ? dy / len : 0;
+              // Parse endpoint from path
+              const parts = d.split("L");
+              const end = parts[1].split(",").map(Number);
+              return (
+                <g key={`ref-${fromId}-${toId}`}>
+                  <path
+                    d={d}
+                    stroke="#605080"
+                    stroke-width={1}
+                    stroke-dasharray="4,3"
+                    fill="none"
+                    style="pointer-events:none;"
+                  />
+                  <circle
+                    cx={end[0] + ux * 5}
+                    cy={end[1] + uy * 5}
+                    r={3}
+                    fill="#605080"
+                    style="pointer-events:none;"
+                  />
+                </g>
+              );
+            });
+          })()}
           {/* Ghost edge line while drawing */}
           {mode === "add-edge" && edgeDraw && mouseCanvas && (() => {
             const gdx = mouseCanvas.x - edgeDraw.x;
@@ -1633,6 +1705,33 @@ type StartDragFn = (
   origY: number,
   onClickFn: (() => void) | null,
 ) => void;
+
+/**
+ * Collect world-space positions and TreeNode references for all visible nodes
+ * across all expanded levels. Used for cross-level reference edge rendering.
+ */
+function collectWorldPositions(
+  nodes: TreeNode[],
+  levelId: string,
+  layout: LayoutMap,
+  expandedSet: Set<string>,
+  worldOffset: { x: number; y: number },
+  out: Map<string, { node: TreeNode; wx: number; wy: number; w: number; h: number }>,
+): void {
+  const level = layout.get(levelId);
+  if (!level) return;
+  const posMap = new Map(level.nodes.map((n) => [n.id, n]));
+  for (const node of nodes) {
+    const pos = posMap.get(node.id);
+    if (!pos) continue;
+    const wx = worldOffset.x + pos.x;
+    const wy = worldOffset.y + pos.y;
+    out.set(node.id, { node, wx, wy, w: pos.w, h: pos.h });
+    if (expandedSet.has(node.id) && node.kind === "composite") {
+      collectWorldPositions(node.children, node.id, layout, expandedSet, { x: wx, y: wy }, out);
+    }
+  }
+}
 
 function renderLevel(
   nodes: TreeNode[],
@@ -2210,49 +2309,6 @@ function renderLevel(
             })}
           </>
         );
-      })()}
-
-      {/* Reference edges — virtual dotted edges from ref nodes to their targets */}
-      {ws.canvasShowRefEdges && (() => {
-        const refEdges: Array<{
-          fromId: string;
-          toId: string;
-          src: { x: number; y: number };
-          dst: { x: number; y: number };
-        }> = [];
-        for (const node of nodes) {
-          if (node.type === "ref" && node.ref) {
-            // Match by id first; fall back to label but only for non-ref nodes
-            // (avoid chaining ref→ref when multiple refs share a target label).
-            const target = nodes.find((n) => n.id === node.ref) ??
-              nodes.find((n) => n.label === node.ref && n.type !== "ref");
-            if (target) {
-              const pa = posMap.get(node.id);
-              const pb = posMap.get(target.id);
-              if (pa && pb) {
-                refEdges.push({
-                  fromId: node.id,
-                  toId: target.id,
-                  src: surfacePoint(pa, pb, 5),
-                  dst: surfacePoint(pb, pa, 5),
-                });
-              }
-            }
-          }
-        }
-        return refEdges.map(({ fromId, toId, src, dst }) => (
-          <g key={`ref-${fromId}-${toId}`}>
-            <path
-              d={`M${src.x},${src.y} L${dst.x},${dst.y}`}
-              stroke="#605080"
-              stroke-width={1}
-              stroke-dasharray="4,3"
-              fill="none"
-              style="pointer-events:none;"
-            />
-            <circle cx={dst.x} cy={dst.y} r={3} fill="#605080" style="pointer-events:none;" />
-          </g>
-        ));
       })()}
     </>
   );
