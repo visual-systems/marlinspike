@@ -132,6 +132,62 @@ The round-trip becomes normalising rather than idempotent: `parse(emit(parse(clj
 after one pass. The emitter reconstructs semantically equivalent Clojure from port edges and
 edge data.
 
+## Phase 2: Scope-inferred references and destructuring
+
+This phase implements the proposed design from the design exploration above. It can be done
+incrementally — each step is independently useful and testable.
+
+### Step 9: Parser scope analysis (`spike-clojure.ts`)
+
+- [ ] Track defined names during parsing (accumulate `def`/`defn` names)
+- [ ] When a symbol resolves to a prior definition, produce a ref node instead of a leaf
+- [ ] Apply to all symbol positions (call and argument), not just call position
+- [ ] Unresolved symbols remain plain leaf nodes — no classification
+- [ ] Add fixtures: scope-inferred refs (local def resolved in later defn body)
+- [ ] Add fixtures: unresolved symbols stay as plain leaves
+
+### Step 10: Node identity from let-bindings (`spike-clojure.ts`)
+
+- [ ] When a call appears in a let-binding `(let [name (f x)] ...)`, use the binding name as the
+      node `id` and the function name as the `label`
+- [ ] Duplicate calls to the same function get distinct ids from their binding names
+- [ ] Update emitter: ref nodes inside defn emit as normal calls (not `(def name target)`)
+- [ ] Add fixtures: duplicate-call with distinct binding names → distinct ref nodes
+- [ ] Verify existing duplicate-call fixture still works
+
+### Step 11: Destructuring as port-level edges (`spike-clojure.ts`)
+
+- [ ] Parse `{:keys [p q]}` in let-binding position as port-level edge connections
+- [ ] Store `outputPort` and `bindingName` in edge `data`
+- [ ] Map bodies `{:b expr}` in return position map to output port declarations
+- [ ] Emitter reconstructs destructuring from port-level edge data
+- [ ] Add fixtures: destructured let-binding round-trip
+- [ ] Add fixtures: map body with port edges round-trip
+
+### Step 12: Import declarations (`spike-clojure.ts`)
+
+- [ ] Parse `(require [module :refer [name ...]])` at top of source
+- [ ] Imported names enter the scope for ref resolution
+- [ ] Parse `(require [spike://UUID :as alias])` for remote imports
+- [ ] Emitter: emit `require` forms for refs that originated from imports
+- [ ] Add fixtures: local require + inferred ref round-trip
+- [ ] Add fixtures: remote require with alias round-trip
+
+### Step 13: Normalising round-trip verification
+
+- [ ] Update round-trip test infrastructure to support normalising semantics:
+      `parse(emit(parse(clj)))` must equal `parse(clj)` (stable after one pass)
+- [ ] Verify existing fixtures stabilise under normalising round-trip
+- [ ] Add cubic-roots fixture that exercises scope-inferred refs + destructuring + ports
+- [ ] Document any fixtures that don't stabilise as known shortcomings
+
+### Step 14: Stories and visual verification
+
+- [ ] Update CubicRoots story to use scope-inferred refs (remove explicit `(def use-x x)` forms)
+- [ ] Add story: destructured outputs with port-level edges visible on canvas
+- [ ] Add story: import declarations with cross-module references
+- [ ] Verify canvas rendering of inferred refs matches explicit ref visual treatment
+
 ## Open Questions
 
 - **Subsume `data.function` / `data.script`?** — Could the `ref` concept subsume these? E.g. a
