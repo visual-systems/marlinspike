@@ -62,13 +62,17 @@ export function emitWorkspace(ws: WorkspaceState): string {
   const localIds = new Set(children.map((c) => c.id));
   const imports = collectRefTargets(children).filter((ref) => !localIds.has(ref));
   const importList = imports.length > 0 ? imports : undefined;
-  // When focused on a composite with edges (a defn), emit as a defn body
-  // instead of flat (def ...) forms — preserves function application structure.
+  // When focused on a defn (composite with input ports and edges), emit as a
+  // defn body instead of flat (def ...) forms — preserves function application
+  // structure. Plain containers (like the workspace root) are never defns.
   if (focused && focused.kind === "composite") {
-    const childIds = new Set(children.map((c) => c.id));
-    const hasEdges = ws.edges.some((e) => childIds.has(e.fromId) && childIds.has(e.toId));
-    if (hasEdges) {
-      return graphToSpike(children, ws.edges, importList, focused);
+    const hasPorts = (focused.ports ?? []).some((p) => p.direction === "in");
+    if (hasPorts) {
+      const childIds = new Set(children.map((c) => c.id));
+      const hasEdges = ws.edges.some((e) => childIds.has(e.fromId) && childIds.has(e.toId));
+      if (hasEdges) {
+        return graphToSpike(children, ws.edges, importList, focused);
+      }
     }
   }
   return graphToSpike(children, ws.edges, importList);

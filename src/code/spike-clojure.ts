@@ -36,7 +36,7 @@ import { parse } from "../graph/base_lisp.ts";
 // ---------------------------------------------------------------------------
 
 /** Data keys that are internal to the codec or the reactivity system and should not be emitted. */
-const INTERNAL_DATA_KEYS = new Set(["fn", "argOrder"]);
+const INTERNAL_DATA_KEYS = new Set(["fn", "argOrder", "destructuredKeys"]);
 
 /**
  * Return the def/defn name form, optionally prefixed with `^{...}` reader
@@ -331,9 +331,11 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   // Param list with optional ^Type hints
   const paramList = inputPorts.map((p) => p.type ? `^${p.type} ${p.name}` : p.name).join(" ");
 
-  // Output ports attr-map: emit if any output ports are declared
+  // Output ports attr-map: only emit when ports carry explicit type annotations.
+  // Untyped output ports are derived from the map return keys — no attr-map needed.
   const outputPorts = (container.ports ?? []).filter((p) => p.direction === "out");
-  const attrMap = outputPorts.length > 0
+  const hasTypedOutputPorts = outputPorts.some((p) => p.type !== undefined);
+  const attrMap = hasTypedOutputPorts
     ? `\n  {:ports {${outputPorts.map((p) => `:${p.name} ${p.type ?? "any"}`).join(" ")}}}`
     : "";
 
@@ -669,6 +671,19 @@ export function spikeToGraph(
         letParts = [{ type: "vector", items: [] }, bodyForm];
       }
 
+      // Derive output ports from map return keys when no explicit {:ports ...} attr-map.
+      // A map return like {:u (cbrt ...) :v (cbrt ...)} naturally defines output ports.
+      if (outputPorts.length === 0) {
+        const bodyExpr = letParts[1];
+        if (bodyExpr?.type === "map") {
+          for (const [k] of bodyExpr.entries) {
+            if (k.type === "keyword") {
+              outputPorts.push({ name: k.value, direction: "out" });
+            }
+          }
+        }
+      }
+
       definedNames.add(name);
       const result = parseLetForm(letParts, paramNames, definedNames);
       if (result.errors.length > 0) errors.push(...result.errors);
@@ -945,11 +960,13 @@ function parseLetForm(
     }
 
     // Determine node label. When no nameOverride is given and the function name
-    // already exists as a node, generate a conjunctive name (fn-arg1-arg2) to
-    // avoid collapsing distinct inline calls into a single node. The conjunctive
-    // name becomes the node's identity and data.fn stores the real function name.
+    // already exists as a node OR is a prior definition (would shadow), generate
+    // a conjunctive name (fn-arg1-arg2) to avoid collapsing distinct inline calls
+    // into a single node and to prevent shadowing outer definitions.
     let effectiveOverride = nameOverride;
-    if (effectiveOverride === undefined && nodeLabels.has(funcLabel)) {
+    if (
+      effectiveOverride === undefined && (nodeLabels.has(funcLabel) || definedNames.has(funcLabel))
+    ) {
       const parts = resolvedArgs
         .map((a) => a.label ?? a.literal)
         .filter((x): x is string => x !== null);

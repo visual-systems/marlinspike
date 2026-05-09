@@ -9,7 +9,7 @@
  * documented in the fixture's `shortcoming` field.
  */
 
-import type { Edge, TreeNode } from "../ui/workspace.ts";
+import type { Edge, Port, TreeNode } from "../ui/workspace.ts";
 import type { NumericFnEnv } from "./spike-clojure-eval.ts";
 
 // ---------------------------------------------------------------------------
@@ -20,15 +20,26 @@ export function leaf(label: string): TreeNode {
   return { id: label, label, kind: "leaf", children: [], data: {}, version: 1 };
 }
 
-export function composite(label: string, children: TreeNode[]): TreeNode {
+export function composite(label: string, children: TreeNode[], ports?: Port[]): TreeNode {
   return {
     id: label,
     label,
     kind: "composite",
     children,
+    ...(ports ? { ports } : {}),
     data: {},
     version: 1,
   };
+}
+
+/** Shorthand for input port. */
+export function inPort(name: string): Port {
+  return { name, direction: "in" };
+}
+
+/** Shorthand for output port. */
+export function outPort(name: string): Port {
+  return { name, direction: "out" };
 }
 
 export function refNode(label: string, target: string): TreeNode {
@@ -207,7 +218,13 @@ export const FIXTURES: Fixture[] = [
   (let [b (B A)
         c (C A)]
     {:b b :c c}))`,
-    nodes: [composite("pipeline", [leaf("A"), leaf("B"), leaf("C")])],
+    nodes: [
+      composite("pipeline", [leaf("A"), leaf("B"), leaf("C")], [
+        inPort("A"),
+        outPort("B"),
+        outPort("C"),
+      ]),
+    ],
     edges: [edge("A", "B"), edge("A", "C")],
   },
   {
@@ -219,7 +236,12 @@ export const FIXTURES: Fixture[] = [
         d (D A)]
     {:b b :c c :d d}))`,
     nodes: [
-      composite("pipeline", [leaf("A"), leaf("B"), leaf("C"), leaf("D")]),
+      composite("pipeline", [leaf("A"), leaf("B"), leaf("C"), leaf("D")], [
+        inPort("A"),
+        outPort("B"),
+        outPort("C"),
+        outPort("D"),
+      ]),
     ],
     edges: [edge("A", "B"), edge("A", "C"), edge("A", "D")],
   },
@@ -358,7 +380,7 @@ export const FIXTURES: Fixture[] = [
         leaf("sub-minus"),
         leaf("div-x1"),
         leaf("div-x2"),
-      ]),
+      ], [outPort("div-x1"), outPort("div-x2")]),
     ],
     edges: [
       edge("b", "negate-b"),

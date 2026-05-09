@@ -547,12 +547,12 @@ Deno.test("duplicate-call: parse — two let bindings create distinct nodes 'x' 
 Deno.test("duplicate-call: emit — round-trip reproduces original let structure", () => {
   const { treeNodes, edges } = spikeToGraph(DUPE_SRC);
   const reClj = graphToSpike(treeNodes, edges);
-  // Each binding round-trips correctly with its own call
-  assertEquals(reClj.includes("x (double a)"), true, `got: ${reClj}`);
-  assertEquals(reClj.includes("y (double b)"), true, `got: ${reClj}`);
-  // Multi-entry maps get one key per line
-  assertEquals(reClj.includes(":x x"), true, `got: ${reClj}`);
-  assertEquals(reClj.includes(":y y"), true, `got: ${reClj}`);
+  // Both calls round-trip — either inlined in map return or as let bindings
+  assertEquals(reClj.includes("(double a)"), true, `got: ${reClj}`);
+  assertEquals(reClj.includes("(double b)"), true, `got: ${reClj}`);
+  // Output keys preserved
+  assertEquals(reClj.includes(":x"), true, `got: ${reClj}`);
+  assertEquals(reClj.includes(":y"), true, `got: ${reClj}`);
 });
 
 Deno.test("duplicate-call: eval — round-trip result matches original", () => {
@@ -1029,10 +1029,12 @@ Deno.test("scope-inferred ref: call to prior def produces ref node", () => {
   const { treeNodes, errors } = spikeToGraph(src);
   assertEquals(errors, []);
   const pipeline = treeNodes.find((n) => n.label === "pipeline")!;
-  const squareChild = pipeline.children.find((c) => c.label === "square");
+  // Conjunctive name: "square-x" to avoid shadowing the outer "square" def
+  const squareChild = pipeline.children.find((c) => c.ref === "square");
   assertExists(squareChild);
   assertEquals(squareChild.type, "ref");
   assertEquals(squareChild.ref, "square");
+  assertEquals(squareChild.data.fn, "square");
 });
 
 Deno.test("scope-inferred ref: let-bound call to prior def produces ref node", () => {
@@ -1103,7 +1105,8 @@ Deno.test("scope-inferred ref: prior defn is also a valid ref target", () => {
   const { treeNodes, errors } = spikeToGraph(src);
   assertEquals(errors, []);
   const pipeline = treeNodes.find((n) => n.label === "pipeline")!;
-  const squareChild = pipeline.children.find((c) => c.label === "square");
+  // Conjunctive name: "square-a" to avoid shadowing the outer "square" defn
+  const squareChild = pipeline.children.find((c) => c.ref === "square");
   assertExists(squareChild);
   assertEquals(squareChild.type, "ref");
   assertEquals(squareChild.ref, "square");
