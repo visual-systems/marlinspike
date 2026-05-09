@@ -243,17 +243,19 @@ function formatMap(entries: [string, string][], baseIndent = ""): string {
 function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   const nodes = container.children;
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const nodeByLabel = new Map(nodes.map((n) => [n.label, n]));
 
-  // Input ports are defn params: in scope as bindings, not in let block
+  // Input ports are defn params: in scope as bindings, not in let block.
+  // Match by label (not id) since child IDs may be namespaced (e.g. "defn/a").
   const inputPorts = (container.ports ?? []).filter((p) => p.direction === "in");
-  const inputPortIds = new Set(inputPorts.map((p) => p.name));
+  const inputPortLabels = new Set(inputPorts.map((p) => p.name));
 
   // Binding name for a node: always the node label.
   // Under binding-name-as-identity, the label IS the let variable name.
   const binding = (id: string) => nodeById.get(id)!.label;
 
   // Non-param nodes are the ones that go in the let bindings
-  const letNodes = nodes.filter((n) => !inputPortIds.has(n.id));
+  const letNodes = nodes.filter((n) => !inputPortLabels.has(n.label));
 
   const sorted = topoSort(letNodes.map((n) => n.id), edges);
   const sourceIds = new Set(edges.map((e) => e.fromId));
@@ -277,7 +279,7 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   // name both lack data.fn. Inlining them is always safe because the binding name
   // carries no extra identity beyond the function name.
   function isInlineable(id: string): boolean {
-    if (inputPortIds.has(id)) return false;
+    if (inputPortLabels.has(nodeById.get(id)?.label ?? "")) return false;
     const node = nodeById.get(id);
     if (!node) return false;
     if (node.data.fn !== undefined) return false; // explicitly renamed — must keep binding
@@ -301,10 +303,10 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
 
   /** Emit an argument, prefixed with ^{...} reader metadata if the edge carries label/data. */
   function emitArg(argLabel: string, targetId: string): string {
-    const argId = [...nodeById.entries()].find(([_, n]) => n.label === argLabel)?.[0];
-    const expr = nodeById.has(argLabel) && isInlineable(argLabel) ? callExpr(argLabel) : argLabel;
-    if (!argId) return expr;
-    const edge = edgeLookup.get(`${argId}->${targetId}`);
+    const argNode = nodeByLabel.get(argLabel);
+    const expr = argNode && isInlineable(argNode.id) ? callExpr(argNode.id) : argLabel;
+    if (!argNode) return expr;
+    const edge = edgeLookup.get(`${argNode.id}->${targetId}`);
     if (!edge) return expr;
     const metaEntries: string[] = [];
     if (edge.label) metaEntries.push(`:label ${JSON.stringify(edge.label)}`);
@@ -344,15 +346,18 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   // than binding it in a let. This produces {:x1 (divide ...) :x2 (divide ...)}
   // instead of {:x1 x1 :x2 x2} and preserves distinct output slots.
   const portNameSet = new Set(outputPorts.map((p) => p.name));
+  const terminalLabels = terminalIds.map((id) => nodeById.get(id)!.label);
   const portsMatchTerminals = outputPorts.length > 0 &&
-    terminalIds.length > 0 &&
-    terminalIds.every((id) => portNameSet.has(id));
+    terminalLabels.length > 0 &&
+    terminalLabels.every((label) => portNameSet.has(label));
+  // Set of terminal IDs whose labels match output port names
+  const terminalPortIds = portsMatchTerminals ? new Set(terminalIds) : new Set<string>();
 
   // Let bindings: exclude terminals and inline-able nodes (which are folded
   // directly into their single consumer's call expression).
   const letIds =
     (portsMatchTerminals
-      ? sorted.filter((id) => !portNameSet.has(id))
+      ? sorted.filter((id) => !terminalPortIds.has(id))
       : terminalIds.length === 1
       ? sorted.filter((id) => id !== terminalIds[0])
       : sorted).filter((id) => !isInlineable(id));
@@ -365,8 +370,14 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
 
   // Return expression — map keys get their own lines for readability.
   // Base indent depends on whether there is a let block (4 spaces) or not (2 spaces).
+  // Map port names to their node IDs for callExpr lookup.
+  const portNameToId = new Map(
+    outputPorts.map((p) => [p.name, nodes.find((n) => n.label === p.name)?.id ?? p.name]),
+  );
   const mapEntries: [string, string][] | null = portsMatchTerminals
-    ? outputPorts.map((p) => [`:${p.name}`, callExpr(p.name)] as [string, string])
+    ? outputPorts.map((p) =>
+      [`:${p.name}`, callExpr(portNameToId.get(p.name)!)] as [string, string]
+    )
     : terminalIds.length === 1
     ? null
     : terminalIds.map((id) => [`:${nodeById.get(id)!.label}`, returnRef(id)] as [string, string]);
@@ -713,8 +724,12 @@ export function spikeToGraph(
       },
     ] of defns
   ) {
+    // Namespace child IDs with parent defn name to avoid collisions between
+    // children of different defns that share the same label (e.g. param "a").
+    const defnId = nameId.get(name) ?? name;
+    const childId = (label: string) => `${defnId}/${label}`;
     const children: TreeNode[] = childLabels.map((label) => ({
-      id: label,
+      id: childId(label),
       label,
       kind: "leaf" as const,
       children: [],
@@ -737,7 +752,7 @@ export function spikeToGraph(
     }));
     const meta = nameMeta.get(name);
     builtDefn.set(name, {
-      id: nameId.get(name) ?? name,
+      id: defnId,
       label: name,
       kind: "composite",
       children,
@@ -748,9 +763,9 @@ export function spikeToGraph(
     });
     for (const pe of rawEdges) {
       allEdges.push({
-        id: `${pe.from}-${pe.to}`,
-        fromId: pe.from,
-        toId: pe.to,
+        id: `${defnId}/${pe.from}-${pe.to}`,
+        fromId: childId(pe.from),
+        toId: childId(pe.to),
         label: pe.label,
         data: pe.data,
         version: 1,
@@ -961,18 +976,33 @@ function parseLetForm(
 
     // Determine node label. When no nameOverride is given and the function name
     // already exists as a node OR is a prior definition (would shadow), generate
-    // a conjunctive name (fn-arg1-arg2) to avoid collapsing distinct inline calls
-    // into a single node and to prevent shadowing outer definitions.
+    // a disambiguated name to avoid collapsing distinct inline calls into a single
+    // node and to prevent shadowing outer definitions.
+    //
+    // Strategy: use base function names of args (via nodeFunctions), deduplicate,
+    // and append a serial suffix only if still not unique.
     let effectiveOverride = nameOverride;
     if (
       effectiveOverride === undefined && (nodeLabels.has(funcLabel) || definedNames.has(funcLabel))
     ) {
-      const parts = resolvedArgs
-        .map((a) => a.label ?? a.literal)
+      const baseParts = resolvedArgs
+        .map((a) => {
+          const raw = a.label ?? a.literal;
+          if (raw === null) return null;
+          // Use the base function name if this arg is a generated node
+          return nodeFunctions.get(raw) ?? raw;
+        })
         .filter((x): x is string => x !== null);
-      if (parts.length > 0) {
-        effectiveOverride = `${funcLabel}-${parts.join("-")}`;
+      // Deduplicate while preserving order
+      const unique = [...new Set(baseParts)];
+      let candidate = unique.length > 0 ? `${funcLabel}-${unique.join("-")}` : funcLabel;
+      // Serial suffix for remaining collisions
+      if (nodeLabels.has(candidate)) {
+        let n = 2;
+        while (nodeLabels.has(`${candidate}-${n}`)) n++;
+        candidate = `${candidate}-${n}`;
       }
+      effectiveOverride = candidate;
     }
 
     const nodeLabel = effectiveOverride ?? funcLabel;
