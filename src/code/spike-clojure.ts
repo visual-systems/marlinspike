@@ -492,6 +492,7 @@ export function spikeToGraph(
       ports: Port[];
       nodeFunctions: Map<string, string>;
       nodeArgOrders: Map<string, string[]>;
+      nodeRefs: Map<string, string>;
     }
   >();
   // Label → explicit UUID pulled from `^{:id "..."}` reader metadata on the
@@ -502,6 +503,10 @@ export function spikeToGraph(
     string,
     { uri: string | undefined; ref: string | undefined; data: Record<string, unknown> }
   >();
+
+  // Names defined by prior def/defn forms, accumulated top-to-bottom so that
+  // scope-inferred references match Clojure's sequential evaluation model.
+  const definedNames = new Set<string>();
 
   for (const form of forms) {
     if (form.type !== "list" || form.items.length < 2) continue;
@@ -539,6 +544,7 @@ export function spikeToGraph(
         }
         defs.set(name, childNames);
       }
+      definedNames.add(name);
     } else if (head.value === "defn") {
       // (defn name [params] (let [...] body))
       // Also handles attr-map position: (defn name {:ports ...} [params] body)
@@ -606,7 +612,8 @@ export function spikeToGraph(
         letParts = [{ type: "vector", items: [] }, bodyForm];
       }
 
-      const result = parseLetForm(letParts, paramNames);
+      definedNames.add(name);
+      const result = parseLetForm(letParts, paramNames, definedNames);
       if (result.errors.length > 0) errors.push(...result.errors);
       defns.set(name, { ...result, ports: [...inputPorts, ...outputPorts] });
     }
@@ -621,8 +628,10 @@ export function spikeToGraph(
   const allEdges: Edge[] = [];
 
   for (
-    const [name, { nodes: childLabels, edges: rawEdges, ports, nodeFunctions, nodeArgOrders }]
-      of defns
+    const [
+      name,
+      { nodes: childLabels, edges: rawEdges, ports, nodeFunctions, nodeArgOrders, nodeRefs },
+    ] of defns
   ) {
     const children: TreeNode[] = childLabels.map((label) => ({
       id: label,
@@ -637,6 +646,8 @@ export function spikeToGraph(
         // emitter can reconstruct the exact call including literal values.
         ...(nodeArgOrders.has(label) ? { argOrder: nodeArgOrders.get(label)! } : {}),
       },
+      // Scope-inferred ref: call-position function was defined by a prior def/defn
+      ...(nodeRefs.has(label) ? { type: "ref" as const, ref: nodeRefs.get(label)! } : {}),
       version: 1,
     }));
     const meta = nameMeta.get(name);
@@ -707,8 +718,12 @@ export function spikeToGraph(
   for (const children of defs.values()) {
     for (const c of children) allChildLabels.add(c);
   }
-  for (const { nodes } of defns.values()) {
-    for (const n of nodes) allChildLabels.add(n);
+  for (const { nodes, nodeRefs } of defns.values()) {
+    for (const n of nodes) {
+      // Scope-inferred ref nodes reference an external definition — they should
+      // NOT suppress that definition from appearing as a root node.
+      if (!nodeRefs.has(n)) allChildLabels.add(n);
+    }
   }
 
   const defRoots = [...defs.keys()]
@@ -743,12 +758,14 @@ interface ParsedEdge {
 function parseLetForm(
   letParts: SExp[],
   paramNames: string[] = [],
+  definedNames: Set<string> = new Set(),
 ): {
   nodes: string[];
   edges: ParsedEdge[];
   errors: string[];
   nodeFunctions: Map<string, string>;
   nodeArgOrders: Map<string, string[]>;
+  nodeRefs: Map<string, string>;
 } {
   const errors: string[] = [];
   const nodeLabels = new Set<string>();
@@ -758,10 +775,19 @@ function parseLetForm(
   // Maps node label → ordered arg list (symbolic labels + literal reprs).
   // Stored for let-bound nodes and conjunctive-named inline nodes.
   const nodeArgOrders = new Map<string, string[]>();
+  // Maps node label → ref target when the call-position function name is a prior definition.
+  const nodeRefs = new Map<string, string>();
 
   if (letParts.length < 1 || letParts[0].type !== "vector") {
     errors.push("let: expected binding vector");
-    return { nodes: [], edges: [], errors, nodeFunctions, nodeArgOrders: new Map() };
+    return {
+      nodes: [],
+      edges: [],
+      errors,
+      nodeFunctions,
+      nodeArgOrders: new Map(),
+      nodeRefs: new Map(),
+    };
   }
 
   const bindingVec = letParts[0].items;
@@ -853,6 +879,11 @@ function parseLetForm(
     if (effectiveOverride && effectiveOverride !== funcLabel) {
       nodeFunctions.set(nodeLabel, funcLabel);
     }
+    // Scope-inferred ref: if the function name was defined by a prior def/defn,
+    // mark this node as a reference to that definition.
+    if (definedNames.has(funcLabel)) {
+      nodeRefs.set(nodeLabel, funcLabel);
+    }
 
     // Second pass: build argList and add edges from resolved args to this node.
     const argList: string[] = [];
@@ -922,5 +953,5 @@ function parseLetForm(
     }
   }
 
-  return { nodes: [...nodeLabels], edges, errors, nodeFunctions, nodeArgOrders };
+  return { nodes: [...nodeLabels], edges, errors, nodeFunctions, nodeArgOrders, nodeRefs };
 }

@@ -11,7 +11,7 @@
  * Fixtures are defined in spike-clojure-fixtures.ts and shared with stories.
  */
 
-import { assertAlmostEquals, assertEquals, assertNotEquals } from "@std/assert";
+import { assertAlmostEquals, assertEquals, assertExists, assertNotEquals } from "@std/assert";
 import { graphToSpike, spikeToGraph } from "./spike-clojure.ts";
 import { evaluateSpike, numericEnv } from "./spike-clojure-eval.ts";
 import { FIXTURES } from "./spike-clojure-fixtures.ts";
@@ -29,6 +29,9 @@ function stripNode(n: TreeNode): unknown {
     id: n.id,
     label: n.label,
     kind: n.kind,
+    // Include ref fields so scope-inferred refs are verified in round-trip tests.
+    ...(n.type ? { type: n.type } : {}),
+    ...(n.ref ? { ref: n.ref } : {}),
     // Include ports so port stability is verified in round-trip tests.
     ...(sortedPorts.length > 0 ? { ports: sortedPorts } : {}),
     // Sort children by id: defn round-trips reorder children via topo sort,
@@ -1013,4 +1016,138 @@ Deno.test("edge meta: round-trip preserves edge label and data", () => {
   const edge = parsed.edges.find((e) => e.fromId === "A" && e.toId === "B");
   assertEquals(edge?.label, "transforms");
   assertEquals(edge?.data.weight, 5);
+});
+
+// ---------------------------------------------------------------------------
+// Scope-inferred references
+// ---------------------------------------------------------------------------
+
+Deno.test("scope-inferred ref: call to prior def produces ref node", () => {
+  const src = `(def square)
+(defn pipeline [x]
+  (square x))`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const pipeline = treeNodes.find((n) => n.label === "pipeline")!;
+  const squareChild = pipeline.children.find((c) => c.label === "square");
+  assertExists(squareChild);
+  assertEquals(squareChild.type, "ref");
+  assertEquals(squareChild.ref, "square");
+});
+
+Deno.test("scope-inferred ref: let-bound call to prior def produces ref node", () => {
+  const src = `(def negate)
+(defn f [b]
+  (let [neg-b (negate b)]
+    neg-b))`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const f = treeNodes.find((n) => n.label === "f")!;
+  const negB = f.children.find((c) => c.label === "neg-b");
+  assertExists(negB);
+  assertEquals(negB.type, "ref");
+  assertEquals(negB.ref, "negate");
+  assertEquals(negB.data.fn, "negate");
+});
+
+Deno.test("scope-inferred ref: unresolved symbol is NOT marked as ref", () => {
+  const src = `(defn f [x]
+  (unknown x))`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const f = treeNodes.find((n) => n.label === "f")!;
+  const unknownChild = f.children.find((c) => c.label === "unknown");
+  assertExists(unknownChild);
+  assertEquals(unknownChild.type, undefined);
+  assertEquals(unknownChild.ref, undefined);
+});
+
+Deno.test("scope-inferred ref: forward reference is NOT marked as ref", () => {
+  const src = `(defn pipeline [x]
+  (square x))
+(def square)`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const pipeline = treeNodes.find((n) => n.label === "pipeline")!;
+  const squareChild = pipeline.children.find((c) => c.label === "square");
+  assertExists(squareChild);
+  assertEquals(squareChild.type, undefined, "forward ref should not be marked as ref");
+});
+
+Deno.test("scope-inferred ref: multiple defs, multiple refs in one defn", () => {
+  const src = `(def add)
+(def multiply)
+(defn f [a b]
+  (let [sum (add a b)
+        product (multiply a b)]
+    {:sum sum :product product}))`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const f = treeNodes.find((n) => n.label === "f")!;
+  const sum = f.children.find((c) => c.label === "sum");
+  const product = f.children.find((c) => c.label === "product");
+  assertExists(sum);
+  assertExists(product);
+  assertEquals(sum.type, "ref");
+  assertEquals(sum.ref, "add");
+  assertEquals(product.type, "ref");
+  assertEquals(product.ref, "multiply");
+});
+
+Deno.test("scope-inferred ref: prior defn is also a valid ref target", () => {
+  const src = `(defn square [x]
+  (let [result (multiply x x)]
+    result))
+(defn pipeline [a]
+  (square a))`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const pipeline = treeNodes.find((n) => n.label === "pipeline")!;
+  const squareChild = pipeline.children.find((c) => c.label === "square");
+  assertExists(squareChild);
+  assertEquals(squareChild.type, "ref");
+  assertEquals(squareChild.ref, "square");
+});
+
+Deno.test("scope-inferred ref: round-trip preserves ref through emit and re-parse", () => {
+  const src = `(def divide)
+(defn normalise [a b]
+  (divide b a))`;
+  const { treeNodes, edges, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  // Re-emit and re-parse
+  const clj2 = graphToSpike(treeNodes, edges);
+  const { treeNodes: rt, errors: e2 } = spikeToGraph(clj2);
+  assertEquals(e2, []);
+  const normalise = rt.find((n) => n.label === "normalise")!;
+  const divChild = normalise.children.find((c) => c.label === "divide" || c.ref === "divide");
+  assertExists(divChild);
+  assertEquals(divChild.type, "ref");
+  assertEquals(divChild.ref, "divide");
+});
+
+Deno.test("scope-inferred ref: duplicate calls with distinct binding names → distinct ref nodes", () => {
+  const src = `(def double)
+(defn f [a b]
+  (let [x (double a)
+        y (double b)]
+    {:x x :y y}))`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const f = treeNodes.find((n) => n.label === "f")!;
+  const xNode = f.children.find((c) => c.label === "x");
+  const yNode = f.children.find((c) => c.label === "y");
+  assertExists(xNode);
+  assertExists(yNode);
+  // Both are refs to the same target
+  assertEquals(xNode.type, "ref");
+  assertEquals(xNode.ref, "double");
+  assertEquals(yNode.type, "ref");
+  assertEquals(yNode.ref, "double");
+  // Both preserve data.fn
+  assertEquals(xNode.data.fn, "double");
+  assertEquals(yNode.data.fn, "double");
+  // Distinct identities
+  assertEquals(xNode.id, "x");
+  assertEquals(yNode.id, "y");
 });
