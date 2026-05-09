@@ -275,11 +275,12 @@ An **entity reference** (ref node) is a node that points to another node rather 
 structure — a symlink or live-alias in filesystem terms. References enable reuse: a function like
 `square` can be defined once and referenced multiple times without duplicating its internal structure.
 
+#### Graph representation
+
 A ref node carries two additional fields on `TreeNode`:
 
 - **`type: "ref"`** — a soft discriminator that marks the node as a reference. Standard nodes have
-  no `type` field (or `undefined`). This avoids a full discriminated union refactor while the design
-  is explored.
+  no `type` field (or `undefined`).
 - **`ref: string`** — the target identifier. Within the same workspace this is a node label or UUID.
   For cross-workspace references, a `spike://UUID` URI identifies the remote target.
 
@@ -287,32 +288,150 @@ Ref nodes are structurally simple: they have an `id`, `label`, `type: "ref"`, `r
 Their `kind` is `"composite"` (they delegate structure to their target) but `children` is empty —
 the target's subtree is resolved at render/evaluation time, not stored inline.
 
-**Scope rules:**
+#### Scope-inferred references
 
-| Context | `ref` value | Resolution |
-|---------|------------|------------|
-| Same workspace | Node label or UUID | Direct lookup in tree |
-| Cross-workspace | `spike://UUID` | Resolved via connection/registry |
+References are inferred from scope rather than explicitly annotated. Any symbol — in call position
+or argument position — that resolves to a prior definition is a reference. Symbols that don't
+resolve are just symbols: no ontological commitment about whether they're primitives, builtins, or
+errors. That classification is deferred to a later layer (constraint evaluation, type checking).
 
-**Broken references:** When the target doesn't exist (label changed, remote disconnected), the node
-renders with a broken-reference visual treatment — analogous to a failing constraint diagnostic.
+The parser operates on a **closed world**: a symbol is a reference if and only if it can be resolved
+against definitions visible in the source text. There are three sources of definitions:
 
-**Spike-Clojure syntax:**
+1. **Definitions in the source** — `def`, `defn`, `let` bindings
+2. **Explicit imports** — a `require` declaration at the top of the source
+3. **Everything else** — unresolved symbol, not the parser's concern
+
+This means ref resolution is fully syntactic — every reference can be determined by reading the
+source, without consulting the broader graph. The graph layer validates that imports actually resolve
+(and flags broken references as diagnostics), but the parser trusts the declarations.
+
+**Symbol classification:**
+
+| Symbol resolves to | Graph element | `type` | `ref` |
+|---|---|---|---|
+| Prior `def`/`defn` in source | Ref node | `"ref"` | name of target definition |
+| Imported name via `require` | Ref node | `"ref"` | qualified name or URI |
+| `let`-binding / function parameter | Leaf node (input) | *none* | *none* |
+| Nothing (unresolved) | Plain leaf node | *none* | *none* |
+
+Note that call-position symbols and argument-position symbols are treated the same way for reference
+resolution. Position determines the *role* in the graph (node vs edge source), not whether something
+is a reference.
+
+#### Node identity for ref invocations
+
+When a function is called multiple times inside a `defn` body, each invocation needs a distinct
+identity. The `let`-binding name provides this:
 
 ```clojure
-;; Local reference — bind a name to another name
-(def use-square square)
-
-;; Remote reference — spike://UUID
-(def remote-square spike://a1b2c3d4-...)
+(defn normalise [a b c d]
+  (let [b-over-a (divide b a)
+        c-over-a (divide c a)]
+    {:b b-over-a :c c-over-a}))
 ```
 
-The `ref` target is also stored in reader metadata (`:ref`) for round-trip preservation.
+| id | label | type | ref |
+|---|---|---|---|
+| `b-over-a` | `divide` | `"ref"` | `"divide"` |
+| `c-over-a` | `divide` | `"ref"` | `"divide"` |
 
-**Open question:** Could the `ref` concept subsume `data.function` and `data.script`? A `type: "ref"`
-node could replace `data.function`, and a new `type: "inline"` or `type: "foreign"` node type could
-replace `data.script`. This would unify how nodes delegate to implementations. Flagged for future
-exploration.
+The binding name is the node's **identity** (stable across round-trips). The function name is the
+**label** (what's being applied) and also the **ref target**. No UUID metadata is needed — the
+binding name is already in the syntax.
+
+#### Destructuring as port-level edges
+
+Map bodies and destructuring patterns map to port connections on edges rather than node identity:
+
+| Clojure form | Graph concept |
+|---|---|
+| `{:b expr}` in return position | Output port `:b` fed by `expr` |
+| `{:keys [p q]}` in let binding | Edges from output ports `:p`, `:q` to downstream nodes |
+| `(f x y)` plain call | Node-to-node edge (no port distinction) |
+
+Edge data carries the syntactic provenance for round-trip reconstruction:
+
+```typescript
+{
+  fromId: "depressed-coefficients",
+  toId: "downstream-node",
+  data: {
+    outputPort: "p",        // which port this edge originates from
+    bindingName: "p",       // original let-binding name
+  }
+}
+```
+
+#### Import declarations
+
+Symbols not defined in the current source require an explicit import to be recognised as references.
+Without an import, an unresolved symbol remains a plain node — no ambient resolution against the
+broader graph.
+
+```clojure
+;; Import from a named module / composite
+(require [math :refer [divide multiply sqrt]])
+
+;; Import from a remote workspace
+(require [spike://a1b2c3d4 :as auth])
+
+(defn normalise [a b c d]
+  {:b (divide b a)})        ;; ref — divide is declared via require
+
+(defn pipeline [x]
+  (auth/check x))           ;; ref — auth is declared via require
+```
+
+The graph layer validates that imports resolve to real nodes. If `math/divide` doesn't exist at graph
+assembly time, it's a broken reference diagnostic — same treatment as any other broken ref.
+
+#### Explicit refs
+
+Most refs are inferred from scope. Explicit ref syntax is only needed for top-level aliases:
+
+```clojure
+;; Top-level alias (structural ref)
+(def use-normalise normalise)
+
+;; Remote reference
+(def remote-auth spike://a1b2c3d4-...)
+```
+
+#### Round-trip semantics
+
+The round-trip is **normalising** rather than idempotent:
+
+- **Clojure → Graph**: destructuring and map bodies compile into port-level edges. Ref-ness is
+  inferred from scope.
+- **Graph → Clojure**: the emitter reconstructs `let` bindings and destructuring from port edges
+  and edge data. It produces semantically equivalent Clojure, not necessarily identical syntax.
+- **Stability**: `parse(emit(parse(clj)))` stabilises after one pass. The normalised form is the
+  stable representation.
+
+#### Broken references
+
+When the target doesn't exist (name changed, import stale, remote disconnected), the node renders
+with a broken-reference visual treatment — analogous to a failing constraint diagnostic.
+
+#### Canvas rendering
+
+Ref nodes are visually distinguished on the canvas:
+
+- **Collapsed**: dashed stroke, purple tint (`#605080`), `↗ {target-label}` beneath the node
+- **Expanded group**: dashed border, purple tint
+- **Inspector**: "Reference" section with clickable link to target, broken indicator for unresolved
+
+#### Open questions
+
+- **Subsume `data.function` / `data.script`?** — Could `type: "ref"` replace `data.function`, and
+  a new `type: "inline"` or `type: "foreign"` replace `data.script`? This would unify how nodes
+  delegate to implementations.
+- **Import mechanism details** — Does `require` map to composite node boundaries (namespaces)?
+  How does it interact with the workspace tree hierarchy?
+- **Ref expansion / resolution** — When a ref node is expanded, should it show the target's
+  children inline? Currently prevented (empty ref nodes can't expand). Future work: resolve the
+  target and render its subtree with visual indication that the content is delegated.
 
 ---
 
@@ -1172,12 +1291,17 @@ Regardless of variant, the mapping follows a common pattern:
 | -------------------------- | --------------------------------------------------- |
 | Structural container       | Named value / variable binding                      |
 | Callable node              | Function definition with typed arguments and return |
-| Call graph topology        | `let` bindings referencing each other               |
+| Dataflow topology          | `let` bindings referencing each other               |
+| Reference (local)          | Symbol resolving to prior `def`/`defn` in scope     |
+| Reference (imported)       | Symbol declared via `require`                       |
+| Reference (remote)         | `spike://` URI or `:ref` metadata                   |
+| Unresolved symbol          | Plain symbol — classification deferred              |
 | Input ports                | Function arguments (with type annotations)          |
 | Single output port         | Return type annotation                              |
 | Multiple output ports      | Named fields in return map / record                 |
-| Port selection             | Destructuring of the return value                   |
+| Port-level edges           | Destructuring of the return value                   |
 | Inline subgraph            | Function body                                       |
+| External imports           | `require` declaration                               |
 | Opaque / external subgraph | URI reference in place of body                      |
 
 ### MCP Server Interface
@@ -1684,8 +1808,8 @@ The current persistence model is a single-user, single-browser solution. The pat
   subgraph URI without forking it; composing compatible graphs by overlay.
 - **Class / template system** — a mechanism for templating new nodes from a prototype, similar to
   class inheritance, enabling reuse patterns beyond URI reference. (Partially addressed by entity
-  references — ref nodes provide symlink-style reuse. Full class/template instantiation with
-  overrides is not yet explored.)
+  references — ref nodes provide symlink-style reuse with scope-inferred resolution. Full
+  class/template instantiation with overrides is not yet explored.)
 - **Workflow notion** — alongside the existing persona notion, workflows could allow easily
   bootstrapping projects of a certain type (e.g. "K8s service", "audio DSP graph", "ETL pipeline")
   with pre-configured schemas and constraint plugins.

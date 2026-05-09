@@ -17,7 +17,8 @@ the design in DESIGN.md.
 
 Introduce entity references as a first-class concept: `type?: "ref"` and `ref?: string` on TreeNode,
 with full round-trip support through the DB layer, Spike-Clojure codec, canvas/inspector visual
-distinction, and exploration via stories.
+distinction, and exploration via stories. Develop a proposed design for scope-inferred references,
+import declarations, and destructuring-as-ports.
 
 ## Approach
 
@@ -63,13 +64,21 @@ distinction, and exploration via stories.
 - [x] **CubicRoots** — real-world example: shared math primitives referenced across
       four pipeline steps with full internal dataflow edges
 
-### Step 6: DESIGN.md updates
+### Step 6: Round-trip gallery fixture
+
+- [x] Add `refNode()` builder to `spike-clojure-fixtures.ts`
+- [x] Add cubic-roots-with-refs fixture to `FIXTURES` (clj + skeleton graph)
+
+### Step 7: DESIGN.md updates
 
 - [x] New "Entity References" section under Data Model
 - [x] Add to Phase 2 roadmap
 - [x] Update "Notions Not Yet Explored" re: class/template system
+- [x] Proposed design: scope-inferred references, node identity from let-bindings,
+      destructuring as port-level edges, import declarations, normalising round-trip
+- [x] Updated graph-concept mapping table (references, imports, unresolved symbols, port-level edges)
 
-### Step 7: CI
+### Step 8: CI
 
 - [x] `NO_COLOR=1 deno task ci` passes
 
@@ -82,11 +91,46 @@ distinction, and exploration via stories.
 | `src/ui/db/operations.ts` | `type`/`ref` in FlatNode, flattenTree, buildTree, saveTreeNode |
 | `src/code/spike-clojure.ts` | Emit/parse `:ref` metadata + idiomatic `(def name target)` syntax |
 | `src/code/workspace-codec.ts` | Preserve `ref`/`type` in mergeTrees |
+| `src/code/spike-clojure-fixtures.ts` | `refNode()` builder + cubic-roots-with-refs fixture |
 | `src/ui/components/canvas.tsx` | Dashed stroke/fill for ref nodes, target label, expand guard |
 | `src/ui/components/inspector.tsx` | Reference section with target link / broken indicator |
 | `src/ui/stories/reference.stories.tsx` | 7 visual exploration stories incl. CubicRoots |
+| `src/ui/stories/examples.stories.tsx` | CubicRootsWithRefs story (standalone parse-and-render) |
 | `src/ui/stories/index.ts` | Register new story group |
-| `DESIGN.md` | Entity References section, Phase 2 roadmap, Notions update |
+| `DESIGN.md` | Entity References section with proposed design, Phase 2 roadmap, Notions update |
+
+## Proposed design (documented in DESIGN.md)
+
+The current branch implements explicit refs (`(def use-square square)` and `type: "ref"` on
+TreeNode). Through design exploration, a fuller proposal emerged for how refs should work:
+
+### Scope-inferred references
+
+Any symbol that resolves to a prior definition in scope is a reference — not just call-position
+symbols. The parser operates on a closed world:
+
+1. **Source definitions** — `def`, `defn`, `let` bindings
+2. **Explicit imports** — `(require [math :refer [divide]])` declarations
+3. **Everything else** — unresolved symbol, classification deferred to later layers
+
+This makes ref resolution fully syntactic — no ambient resolution against the broader graph.
+
+### Node identity from let-bindings
+
+Multiple invocations of the same function get distinct identity from their binding names:
+`(let [b-over-a (divide b a)])` → `{id: "b-over-a", label: "divide", type: "ref", ref: "divide"}`.
+No UUID metadata needed.
+
+### Destructuring as port-level edges
+
+Map bodies and `{:keys}` patterns map to port connections on edges, with `outputPort` and
+`bindingName` in edge data for round-trip reconstruction.
+
+### Normalising round-trip
+
+The round-trip becomes normalising rather than idempotent: `parse(emit(parse(clj)))` stabilises
+after one pass. The emitter reconstructs semantically equivalent Clojure from port edges and
+edge data.
 
 ## Open Questions
 
@@ -96,9 +140,12 @@ distinction, and exploration via stories.
 - **Ref expansion / resolution** — When a ref node is expanded, should it show the target's
   children? Currently prevented (empty ref nodes can't expand). Future work: resolve the target
   and render its subtree inline, with visual indication that the content is delegated.
+- **Import mechanism details** — Does `require` map to composite node boundaries (namespaces)?
+  How does it interact with the workspace tree hierarchy?
 
 ## Verification
 
-- [x] `NO_COLOR=1 deno task ci` passes (375 tests, 0 failures)
+- [x] `NO_COLOR=1 deno task ci` passes (376 tests, 0 failures)
 - [x] Stories render at `/stories` — visual inspection of reference treatments
+- [x] Cubic-roots-with-refs fixture in RoundTripGallery
 - [ ] Spike-Clojure round-trip preserves `:ref` metadata

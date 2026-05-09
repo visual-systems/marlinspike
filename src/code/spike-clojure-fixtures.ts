@@ -31,6 +31,19 @@ export function composite(label: string, children: TreeNode[]): TreeNode {
   };
 }
 
+export function refNode(label: string, target: string): TreeNode {
+  return {
+    id: label,
+    label,
+    kind: "composite",
+    type: "ref",
+    ref: target,
+    children: [],
+    data: {},
+    version: 1,
+  };
+}
+
 export function edge(from: string, to: string): Edge {
   return {
     id: `${from}-${to}`,
@@ -440,5 +453,104 @@ export const FIXTURES: Fixture[] = [
     edges: [edge("A", "B"), edge("B", "C")],
     shortcoming: "By design: root-level edges require a containing composite (defn). " +
       "Leaf nodes are emitted as bare (def name) but edges need let-binding scope.",
+  },
+
+  // ── entity references ────────────────────────────────────────────────────
+
+  {
+    label: "def: cubic roots with references",
+    description:
+      "Shared math primitives referenced across four pipeline steps via (def name target) ref syntax.",
+    nodes: [
+      leaf("divide"),
+      leaf("multiply"),
+      leaf("square"),
+      leaf("add"),
+      leaf("subtract"),
+      leaf("negate"),
+      leaf("sqrt"),
+      leaf("cbrt"),
+      composite("normalise", [
+        leaf("a"),
+        leaf("b"),
+        leaf("c"),
+        leaf("d"),
+      ]),
+      composite("depressed-coefficients", [
+        leaf("b"),
+        leaf("c"),
+        leaf("d"),
+      ]),
+      composite("cardano-terms", [
+        leaf("p"),
+        leaf("q"),
+      ]),
+      composite("back-substitute", [
+        leaf("u"),
+        leaf("v"),
+        leaf("b-norm"),
+      ]),
+      refNode("use-normalise", "normalise"),
+      refNode("use-depressed", "depressed-coefficients"),
+      refNode("use-cardano", "cardano-terms"),
+      refNode("use-back-sub", "back-substitute"),
+    ],
+    edges: [
+      // normalise internals
+      edge("b", "divide"),
+      edge("a", "divide"),
+      edge("c", "divide"),
+      edge("d", "divide"),
+    ],
+    clj: `; Shared primitives
+(def divide)
+(def multiply)
+(def square)
+(def add)
+(def subtract)
+(def negate)
+(def sqrt)
+(def cbrt)
+
+; Step 1 — normalise coefficients by dividing through by a
+(defn normalise [a b c d]
+  {:b (divide b a)
+   :c (divide c a)
+   :d (divide d a)})
+
+; Step 2 — depress the cubic: eliminate the x² term
+(defn depressed-coefficients [b c d]
+  (let [b-sq (square b)
+        b-cu (multiply b-sq b)
+        p    (subtract c (divide b-sq 3))
+        q    (add (subtract d (divide (multiply b c) 3))
+                  (divide (multiply 2 b-cu) 27))]
+    {:p p :q q}))
+
+; Step 3 — Cardano's u and v terms
+(defn cardano-terms [p q]
+  (let [inner      (add (divide (square q) 4)
+                         (divide (multiply p (square p)) 27))
+        sqrt-inner (sqrt inner)
+        neg-q-half (divide (negate q) 2)]
+    {:u (cbrt (add      neg-q-half sqrt-inner))
+     :v (cbrt (subtract neg-q-half sqrt-inner))}))
+
+; Step 4 — recover x roots, back-substituting x = t - b/3
+(defn back-substitute [u v b-norm]
+  (let [shift    (divide b-norm 3)
+        uv       (add u v)
+        uv-half  (divide uv 2)]
+    {:x1 (subtract uv          shift)
+     :x2 (subtract (negate uv-half) shift)
+     :x3 (subtract (negate uv-half) shift)}))
+
+; Top-level entry point — references to shared functions
+(def use-normalise normalise)
+(def use-depressed depressed-coefficients)
+(def use-cardano cardano-terms)
+(def use-back-sub back-substitute)`,
+    shortcoming: "graph→clj→graph: graph nodes/edges are a simplified skeleton — " +
+      "the defn internals are only fully represented via the clj form.",
   },
 ];
