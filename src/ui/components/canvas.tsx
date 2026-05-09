@@ -378,24 +378,39 @@ function pinPortNodes(
   const halfH = parentFn.h / 2;
   const portPositions = rectPortPositions(parentNode.ports, halfW, halfH, LABEL_H);
 
-  // Map port name → child node ID (ports reference children by label, or by
-  // data.outputPort when a map-key terminal collided with a param name).
+  // Build separate lookups for input and output port pinning.
+  // Output ports prefer children with data.outputPort (map-key terminals that
+  // collided with param names, e.g. normalise's "divide-b-a" → port "b").
+  // Input ports match children by label. When port names overlap (normalise has
+  // both input "b" and output "b"), each child is claimed at most once.
   const childByLabel = new Map(parentNode.children.map((c) => [c.label, c.id]));
+  const childByOutputPort = new Map<string, string>();
   for (const child of parentNode.children) {
     const outputPort = child.data.outputPort as string | undefined;
-    if (outputPort && !childByLabel.has(outputPort)) {
-      childByLabel.set(outputPort, child.id);
-    }
+    if (outputPort) childByOutputPort.set(outputPort, child.id);
   }
+  const claimed = new Set<string>(); // child IDs already pinned
   const pinMap = new Map<string, { x: number; y: number }>();
+  const toPin = (childId: string, pp: { x: number; y: number }) => {
+    claimed.add(childId);
+    // Port positions are relative to the rect center; child level is centered
+    // at (0, 0) but the rect center is offset by -LABEL_H/2 in y. Shift
+    // y by +LABEL_H/2 to convert to child level coordinate space.
+    pinMap.set(childId, { x: pp.x, y: pp.y + LABEL_H / 2 });
+  };
+  // Pin output ports first (prefer data.outputPort, fall back to label match)
   for (const pp of portPositions) {
+    if (pp.direction !== "out") continue;
+    const byData = childByOutputPort.get(pp.portName);
+    const byLabel = childByLabel.get(pp.portName);
+    const childId = byData ?? byLabel;
+    if (childId && !claimed.has(childId)) toPin(childId, pp);
+  }
+  // Pin input ports (label match, skip already-claimed children)
+  for (const pp of portPositions) {
+    if (pp.direction === "out") continue;
     const childId = childByLabel.get(pp.portName);
-    if (childId) {
-      // Port positions are relative to the rect center; child level is centered
-      // at (0, 0) but the rect center is offset by -LABEL_H/2 in y. Shift
-      // y by +LABEL_H/2 to convert to child level coordinate space.
-      pinMap.set(childId, { x: pp.x, y: pp.y + LABEL_H / 2 });
-    }
+    if (childId && !claimed.has(childId)) toPin(childId, pp);
   }
 
   if (pinMap.size === 0) return nodes;
