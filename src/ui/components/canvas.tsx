@@ -1586,16 +1586,54 @@ export function Canvas(
             for (const [id, { node }] of worldPos) {
               if (node.type !== "ref") labelToId.set(node.label, id);
             }
+            // Build parent map + full node-id→id index for ancestor walking
+            const parentOf = new Map<string, string>();
+            const allNodeIds = new Set<string>();
+            function indexTree(nodes: TreeNode[], parentId: string | null) {
+              for (const n of nodes) {
+                allNodeIds.add(n.id);
+                if (parentId) parentOf.set(n.id, parentId);
+                indexTree(n.children, n.id);
+              }
+            }
+            indexTree(focusedRootNodes, null);
+            /** Find the nearest visible ancestor of `nodeId` in worldPos. */
+            function nearestVisibleAncestor(nodeId: string): string | undefined {
+              let cur = parentOf.get(nodeId);
+              while (cur) {
+                if (worldPos.has(cur)) return cur;
+                cur = parentOf.get(cur);
+              }
+              return undefined;
+            }
             const refEdges: Array<{
               fromId: string;
               toId: string;
               d: string;
               dx: number;
               dy: number;
+              indirect: boolean;
             }> = [];
             for (const [id, { node, wx, wy, w, h }] of worldPos) {
               if (node.type !== "ref" || !node.ref) continue;
-              const targetId = worldPos.has(node.ref) ? node.ref : labelToId.get(node.ref);
+              // Resolve target: direct id → label match → nearest visible ancestor
+              let targetId = worldPos.has(node.ref) ? node.ref : labelToId.get(node.ref);
+              let indirect = false;
+              if (!targetId) {
+                // Target not visible — try to find by id in full tree, then walk up
+                const exactId = allNodeIds.has(node.ref) ? node.ref : undefined;
+                const labelId = !exactId
+                  ? [...allNodeIds].find((nid) => {
+                    const wp = worldPos.get(nid);
+                    return !wp && parentOf.has(nid); // exists in tree but not visible
+                  })
+                  : undefined;
+                const hiddenId = exactId ?? labelId;
+                if (hiddenId) {
+                  targetId = nearestVisibleAncestor(hiddenId);
+                  indirect = true;
+                }
+              }
               if (!targetId || targetId === id) continue;
               const t = worldPos.get(targetId)!;
               // Compute surface points — cast to ForceNode (surfacePoint only reads x/y/w/h)
@@ -1610,30 +1648,31 @@ export function Canvas(
                 d: `M${src.x},${src.y} L${dst.x},${dst.y}`,
                 dx,
                 dy,
+                indirect,
               });
             }
-            return refEdges.map(({ fromId, toId, d, dx, dy }) => {
+            return refEdges.map(({ fromId, toId, d, dx, dy, indirect: ind }) => {
               const len = Math.sqrt(dx * dx + dy * dy);
               const ux = len > 0 ? dx / len : 1, uy = len > 0 ? dy / len : 0;
-              // Parse endpoint from path
               const parts = d.split("L");
               const end = parts[1].split(",").map(Number);
+              const color = ind ? "#403860" : "#605080";
               return (
-                <g key={`ref-${fromId}-${toId}`}>
+                <g key={`ref-${fromId}-${toId}`} style="pointer-events:none;">
                   <path
                     d={d}
-                    stroke="#605080"
+                    stroke={color}
                     stroke-width={1}
-                    stroke-dasharray="4,3"
+                    stroke-dasharray={ind ? "2,4" : "4,3"}
                     fill="none"
-                    style="pointer-events:none;"
+                    opacity={ind ? 0.6 : 1}
                   />
                   <circle
                     cx={end[0] + ux * 5}
                     cy={end[1] + uy * 5}
-                    r={3}
-                    fill="#605080"
-                    style="pointer-events:none;"
+                    r={ind ? 2 : 3}
+                    fill={color}
+                    opacity={ind ? 0.6 : 1}
                   />
                 </g>
               );
