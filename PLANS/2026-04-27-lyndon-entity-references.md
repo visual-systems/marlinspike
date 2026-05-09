@@ -196,6 +196,7 @@ incrementally — each step is independently useful and testable.
 - [x] Passthrough map terminals (`{:x1 x1}`) create nodes with edges to output ports
 - [x] Canvas pins `data.outputPort` nodes to port positions
 - [x] Double-click ref targeting composite navigates focus to target ("Go to" in inspector)
+- [x] Reserve dashed outlines for explicit aliases, broken/imported refs, URI refs (not scope-inferred)
 
 ## Open Questions
 
@@ -233,6 +234,11 @@ incrementally — each step is independently useful and testable.
   graph-relative imports from hypothetical external/remote imports.
 - **Topogrid layout direction** — Topogrid doesn't work correctly with ports. Consider making it
   left-to-right by default to match the port-based dataflow direction.
+- **Ports on ref nodes** — Ref nodes targeting composites with ports should render the target's
+  ports on the ref node itself, with edges routed to port positions. This would make dataflow
+  through referenced functions visible without navigating into the target — the primary visual
+  benefit of a port-based system. Requires: resolving target ports at render time, drawing port
+  dots/labels on the ref bounding box, and routing edges to port positions. Branch separately.
 - ~~**Focused code view for defn internals**~~ — Resolved: `emitWorkspace` now passes the focused
   container to `graphToSpike` which emits as `(defn ...)` body when the container has input ports.
 - ~~**Unconnected nodes in code view**~~ — Resolved by the focused defn code view fix above.

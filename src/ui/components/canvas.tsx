@@ -60,6 +60,34 @@ const LABEL_H = 22;
 const DRAG_THRESHOLD_SQ = 16; // 4px
 
 // ---------------------------------------------------------------------------
+// Ref helpers
+// ---------------------------------------------------------------------------
+
+/** Collect all node labels in the tree (flat). */
+function collectAllLabels(roots: TreeNode[]): Set<string> {
+  const labels = new Set<string>();
+  (function walk(ns: TreeNode[]) {
+    for (const n of ns) {
+      labels.add(n.label);
+      walk(n.children);
+    }
+  })(roots);
+  return labels;
+}
+
+/** Dashed outline for explicit aliases, URI refs, broken/imported refs — NOT scope-inferred. */
+function refNeedsDash(node: TreeNode, allLabels: Set<string>): boolean {
+  if (!isRef(node) || !node.ref) return false;
+  // Explicit top-level alias (def name target) — no data.fn
+  if (!node.data.fn) return true;
+  // URI reference (spike://...)
+  if (node.ref.startsWith("spike://")) return true;
+  // Broken or imported: target not found in tree
+  if (!allLabels.has(node.ref)) return true;
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Edge helpers
 // ---------------------------------------------------------------------------
 
@@ -1843,6 +1871,9 @@ function renderLevel(
     levelEdgeKeys.some((le) => le.a === e.fromId && le.b === e.toId)
   );
 
+  // All labels in the tree — used to distinguish scope-inferred refs from broken/imported.
+  const allLabels = collectAllLabels(ws.treeNodes);
+
   // Determine which children are input params or output terminals based on
   // the parent's ports. Used to tint nodes with port colors when focused.
   // When levelId is "" (top-level focused view), use the focused node as parent
@@ -1898,7 +1929,7 @@ function renderLevel(
             ? 2
             : 1;
           const groupIsRef = isRef(node);
-          const groupStrokeDash = groupIsRef ? "6,3" : undefined;
+          const groupStrokeDash = refNeedsDash(node, allLabels) ? "6,3" : undefined;
 
           return (
             <g key={node.id} transform={`translate(${pos.x}, ${pos.y})`}>
@@ -2057,7 +2088,7 @@ function renderLevel(
           : isComposite
           ? "#303060"
           : "#252545";
-        const strokeDash = isRefNode ? "3,2" : undefined;
+        const strokeDash = refNeedsDash(node, allLabels) ? "3,2" : undefined;
         const strokeWidth = isEdgeSource || isSelected || isHovered
           ? 2
           : isCandidate
