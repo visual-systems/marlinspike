@@ -58,7 +58,7 @@ function nameWithIdMeta(node: TreeNode): string {
   if (node.uri) {
     entries.push(`:uri ${JSON.stringify(node.uri)}`);
   }
-  if (node.ref) {
+  if (node.ref && node.ref !== node.label) {
     entries.push(`:ref ${JSON.stringify(node.ref)}`);
   }
   // Emit user data fields nested under :data {...}
@@ -413,54 +413,82 @@ export function graphToSpike(
   nodes: TreeNode[],
   edges: Edge[],
   imports?: string[],
+  /** When set, emit as a single defn body instead of flat top-level defs. */
+  container?: TreeNode,
 ): string {
   const lines: string[] = [];
   if (imports && imports.length > 0) {
     lines.push(`(require ${imports.join(" ")})`);
   }
-  const emitted = new Set<string>();
 
-  function emitNode(node: TreeNode): void {
-    if (emitted.has(node.id)) return;
-    emitted.add(node.id);
-
-    if (node.kind === "leaf" || (node.type === "ref" && node.children.length === 0)) {
-      if (node.type === "ref" && node.ref) {
-        lines.push(`(def ${nameWithIdMeta(node)} ${node.ref})`);
-      } else {
-        lines.push(`(def ${nameWithIdMeta(node)})`);
-      }
-      return;
-    }
-
-    // Determine which edges are local to this node's direct children
-    const childIds = new Set(node.children.map((c) => c.id));
+  // If a container is provided and it has edges among its children, emit as defn
+  if (container) {
+    const childIds = new Set(container.children.map((c) => c.id));
     const localEdges = edges.filter(
       (e) => childIds.has(e.fromId) && childIds.has(e.toId),
     );
-
-    // Emit composite children first (depth-first), each separated by a blank line
-    for (const child of node.children) {
-      if (child.kind === "composite") {
-        emitNode(child);
-        lines.push("");
-      }
-    }
-
     if (localEdges.length > 0) {
-      lines.push(emitDefnForm(node, localEdges));
-    } else {
-      const refs = node.children.map((c) => c.label).join(" ");
-      lines.push(`(def ${nameWithIdMeta(node)} [${refs}])`);
+      // Emit any composite children first (depth-first)
+      const emitted = new Set<string>();
+      for (const child of container.children) {
+        if (child.kind === "composite") {
+          emitNodeInto(child, edges, lines, emitted);
+          lines.push("");
+        }
+      }
+      lines.push(emitDefnForm(container, localEdges));
+      return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
     }
+    // Fall through to flat emission if no edges
   }
 
+  const emitted = new Set<string>();
   for (const node of nodes) {
-    emitNode(node);
+    emitNodeInto(node, edges, lines, emitted);
     lines.push("");
   }
 
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function emitNodeInto(
+  node: TreeNode,
+  edges: Edge[],
+  lines: string[],
+  emitted: Set<string>,
+): void {
+  if (emitted.has(node.id)) return;
+  emitted.add(node.id);
+
+  if (node.kind === "leaf" || (node.type === "ref" && node.children.length === 0)) {
+    if (node.type === "ref" && node.ref) {
+      lines.push(`(def ${nameWithIdMeta(node)} ${node.ref})`);
+    } else {
+      lines.push(`(def ${nameWithIdMeta(node)})`);
+    }
+    return;
+  }
+
+  // Determine which edges are local to this node's direct children
+  const childIds = new Set(node.children.map((c) => c.id));
+  const localEdges = edges.filter(
+    (e) => childIds.has(e.fromId) && childIds.has(e.toId),
+  );
+
+  // Emit composite children first (depth-first), each separated by a blank line
+  for (const child of node.children) {
+    if (child.kind === "composite") {
+      emitNodeInto(child, edges, lines, emitted);
+      lines.push("");
+    }
+  }
+
+  if (localEdges.length > 0) {
+    lines.push(emitDefnForm(node, localEdges));
+  } else {
+    const refs = node.children.map((c) => c.label).join(" ");
+    lines.push(`(def ${nameWithIdMeta(node)} [${refs}])`);
+  }
 }
 
 // ---------------------------------------------------------------------------

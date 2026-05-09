@@ -61,7 +61,17 @@ export function emitWorkspace(ws: WorkspaceState): string {
   // a transient (require ...) preamble so the parser can infer refs.
   const localIds = new Set(children.map((c) => c.id));
   const imports = collectRefTargets(children).filter((ref) => !localIds.has(ref));
-  return graphToSpike(children, ws.edges, imports.length > 0 ? imports : undefined);
+  const importList = imports.length > 0 ? imports : undefined;
+  // When focused on a composite with edges (a defn), emit as a defn body
+  // instead of flat (def ...) forms — preserves function application structure.
+  if (focused && focused.kind === "composite") {
+    const childIds = new Set(children.map((c) => c.id));
+    const hasEdges = ws.edges.some((e) => childIds.has(e.fromId) && childIds.has(e.toId));
+    if (hasEdges) {
+      return graphToSpike(children, ws.edges, importList, focused);
+    }
+  }
+  return graphToSpike(children, ws.edges, importList);
 }
 
 /** Recursively collect all `ref` target names from a tree of nodes. */
