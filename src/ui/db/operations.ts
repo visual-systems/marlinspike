@@ -356,6 +356,7 @@ export interface CanvasState {
   canvasNodePositions: Record<string, { x: number; y: number; pinned?: boolean }>;
   canvasSelected: WorkspaceState["canvasSelected"];
   canvasAlgorithm: AlgorithmId;
+  canvasShowRefEdges?: boolean;
   entityDrafts: Record<string, string>;
 }
 

@@ -686,6 +686,75 @@ function CanvasInspector(
 }
 
 // ---------------------------------------------------------------------------
+// ToggleDropdown — overlay toggle menu (reference edges, etc.)
+// ---------------------------------------------------------------------------
+
+function ToggleDropdown({ ws, update }: { ws: WorkspaceState; update: Updater }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    document.addEventListener("click", close, { once: true });
+    return () => document.removeEventListener("click", close);
+  }, [open]);
+
+  return (
+    <div style="position:relative; flex-shrink:0;">
+      <span
+        style={[
+          "cursor:pointer; user-select:none; font-size:11px; padding:2px 6px;",
+          `color:${ws.canvasShowRefEdges ? "#9080b0" : "#404466"};`,
+        ].join("")}
+        title="View toggles"
+        onClick={(e: MouseEvent) => {
+          e.stopPropagation();
+          setOpen((prev) => !prev);
+        }}
+      >
+        ⚙
+      </span>
+      {open && (
+        <div
+          style={[
+            "position:absolute; top:100%; right:0; min-width:160px;",
+            "background:#0d0d1e; border:1px solid #252538; z-index:200;",
+            "display:flex; flex-direction:column; box-shadow:0 4px 12px rgba(0,0,0,0.5);",
+          ].join("")}
+          onClick={(e: MouseEvent) => e.stopPropagation()}
+        >
+          <ToggleRow
+            label="Reference edges"
+            checked={ws.canvasShowRefEdges}
+            onToggle={() => update((s) => ({ ...s, canvasShowRefEdges: !s.canvasShowRefEdges }))}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToggleRow(
+  { label, checked, onToggle }: { label: string; checked: boolean; onToggle: () => void },
+) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      style={[
+        "padding:5px 8px; font-size:11px; cursor:pointer; display:flex; align-items:center; gap:6px;",
+        `color:${hovered ? "#aaa" : "#666"};`,
+      ].join("")}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={onToggle}
+    >
+      <span style={`color:${checked ? "#9080b0" : "#333"};`}>{checked ? "◉" : "○"}</span>
+      {label}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // CanvasTopBar — always visible in top-right
 // Contains canvas-wide controls (layout selector) + breadcrumb navigation.
 // ---------------------------------------------------------------------------
@@ -762,6 +831,7 @@ function CanvasTopBar(
           update((s) => ({ ...s, canvasAlgorithm: id as WorkspaceState["canvasAlgorithm"] }))}
         width={90}
       />
+      <ToggleDropdown ws={ws} update={update} />
       <span
         title="Fit to screen"
         onClick={onFitView}
@@ -2122,6 +2192,46 @@ function renderLevel(
             })}
           </>
         );
+      })()}
+
+      {/* Reference edges — virtual dotted edges from ref nodes to their targets */}
+      {ws.canvasShowRefEdges && (() => {
+        const refEdges: Array<{
+          fromId: string;
+          toId: string;
+          src: { x: number; y: number };
+          dst: { x: number; y: number };
+        }> = [];
+        for (const node of nodes) {
+          if (node.type === "ref" && node.ref) {
+            const target = nodes.find((n) => n.id === node.ref || n.label === node.ref);
+            if (target) {
+              const pa = posMap.get(node.id);
+              const pb = posMap.get(target.id);
+              if (pa && pb) {
+                refEdges.push({
+                  fromId: node.id,
+                  toId: target.id,
+                  src: surfacePoint(pa, pb, 5),
+                  dst: surfacePoint(pb, pa, 5),
+                });
+              }
+            }
+          }
+        }
+        return refEdges.map(({ fromId, toId, src, dst }) => (
+          <g key={`ref-${fromId}-${toId}`}>
+            <path
+              d={`M${src.x},${src.y} L${dst.x},${dst.y}`}
+              stroke="#605080"
+              stroke-width={1}
+              stroke-dasharray="4,3"
+              fill="none"
+              style="pointer-events:none;"
+            />
+            <circle cx={dst.x} cy={dst.y} r={3} fill="#605080" style="pointer-events:none;" />
+          </g>
+        ));
       })()}
     </>
   );

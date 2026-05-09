@@ -107,6 +107,8 @@ export interface WorkspaceState {
   canvasNodePositions: Record<string, { x: number; y: number; pinned?: boolean }>;
   canvasSelected: Selection;
   canvasAlgorithm: AlgorithmId;
+  /** When true, overlay virtual edges showing ref→target relationships. */
+  canvasShowRefEdges: boolean;
   /** Live unsaved edits keyed by entity ID. Shared between code panels and inspector. */
   entityDrafts: Record<string, string>;
 }
@@ -594,6 +596,7 @@ export function freshProfileState(
     canvasNodePositions: {},
     canvasSelected: null,
     canvasAlgorithm: "SDF",
+    canvasShowRefEdges: false,
     entityDrafts: {},
     connectedGraphs: [{
       id: databaseId,
@@ -619,6 +622,7 @@ type ProfileStateFields = Pick<
   | "canvasNodePositions"
   | "canvasSelected"
   | "canvasAlgorithm"
+  | "canvasShowRefEdges"
   | "entityDrafts"
   | "connectedGraphs"
 >;
@@ -726,6 +730,7 @@ export async function loadProfileState(
     canvasNodePositions: canvasState?.canvasNodePositions ?? {},
     canvasSelected: canvasState?.canvasSelected ?? null,
     canvasAlgorithm: canvasState?.canvasAlgorithm ?? "SDF",
+    canvasShowRefEdges: canvasState?.canvasShowRefEdges ?? false,
     entityDrafts: canvasState?.entityDrafts ?? {},
     connectedGraphs: [{
       id: dbId,
@@ -930,6 +935,7 @@ export function loadState(): WorkspaceState {
           | undefined) ?? {},
         canvasSelected: null,
         canvasAlgorithm: (parsed.canvasAlgorithm as AlgorithmId | undefined) ?? "SDF",
+        canvasShowRefEdges: (parsed.canvasShowRefEdges as boolean | undefined) ?? false,
         entityDrafts: {},
       });
     }
@@ -1159,6 +1165,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       canvasNodePositions: canvasState?.canvasNodePositions ?? {},
       canvasSelected: canvasState?.canvasSelected ?? null,
       canvasAlgorithm: canvasState?.canvasAlgorithm ?? ds.canvasAlgorithm,
+      canvasShowRefEdges: canvasState?.canvasShowRefEdges ?? false,
       entityDrafts: canvasState?.entityDrafts ?? {},
     });
   }
@@ -1258,6 +1265,7 @@ async function migrateToSurreal(state: WorkspaceState, databaseId: string): Prom
     canvasNodePositions: state.canvasNodePositions,
     canvasSelected: state.canvasSelected,
     canvasAlgorithm: state.canvasAlgorithm,
+    canvasShowRefEdges: state.canvasShowRefEdges,
     entityDrafts: state.entityDrafts,
   });
 
