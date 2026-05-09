@@ -651,9 +651,19 @@ function CanvasInspector(
     const node = findNode(ws.treeNodes, sel.id);
     if (node) {
       const isExpanded = ws.canvasExpandedNodes.includes(node.id);
-      const canExpand = node.kind === "composite" &&
-        !(isRef(node) && node.children.length === 0);
-      const expandAction = canExpand
+      const isEmptyRef = isRef(node) && node.children.length === 0;
+      const canExpand = node.kind === "composite" && !isEmptyRef;
+      // Ref nodes targeting composites show "Go to" instead of "Expand"
+      const refTarget = isEmptyRef && node.ref
+        ? (findNode(ws.treeNodes, node.ref) ??
+          ws.treeNodes.flatMap(function flat(n: TreeNode): TreeNode[] {
+            return [n, ...n.children.flatMap(flat)];
+          }).find((n) => n.label === node.ref))
+        : undefined;
+      const canNavigate = refTarget?.kind === "composite" && refTarget.children.length > 0;
+      const expandAction = canNavigate
+        ? <SmallBtn label="Go to" onClick={() => onExpand(node.id)} />
+        : canExpand
         ? isExpanded
           ? <SmallBtn label="Collapse" onClick={() => onCollapse(node.id)} />
           : <SmallBtn label="Expand" onClick={() => onExpand(node.id)} />
@@ -1486,10 +1496,22 @@ export function Canvas(
   }
 
   function expandNode(nodeId: string) {
-    // Ref nodes with no children can't be expanded — their structure
-    // is delegated to the target (resolution is future work).
     const node = findNode(ws.treeNodes, nodeId);
-    if (node && isRef(node) && node.children.length === 0) return;
+    if (!node) return;
+    // Ref nodes pointing at composites: navigate focus to the target
+    // instead of expanding (avoids cloning children and ID collisions).
+    if (isRef(node) && node.children.length === 0 && node.ref) {
+      // Resolve target by ID first, then by label as fallback
+      const target = findNode(ws.treeNodes, node.ref) ??
+        ws.treeNodes.flatMap(function flat(n: TreeNode): TreeNode[] {
+          return [n, ...n.children.flatMap(flat)];
+        }).find((n) => n.label === node.ref);
+      if (target && target.kind === "composite" && target.children.length > 0) {
+        update((s) => ({ ...s, focusId: target.id, selectedId: null }));
+        return;
+      }
+      return; // empty ref with no resolvable composite target — do nothing
+    }
     update((s) => ({
       ...s,
       canvasExpandedNodes: s.canvasExpandedNodes.includes(nodeId)
