@@ -44,6 +44,7 @@ function minimalWs(
     canvasNodePositions: {},
     canvasSelected: null,
     canvasAlgorithm: "SDF",
+    canvasShowRefEdges: false,
     entityDrafts: {},
     ...overrides,
   };

@@ -15,6 +15,8 @@ export const GRAPH_SCHEMA = `
 DEFINE TABLE IF NOT EXISTS tree_node SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS label    ON tree_node TYPE string;
 DEFINE FIELD IF NOT EXISTS uri      ON tree_node TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS type     ON tree_node TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS ref      ON tree_node TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS kind     ON tree_node TYPE string
   ASSERT $value IN ["leaf", "composite"];
 DEFINE FIELD IF NOT EXISTS parent   ON tree_node TYPE option<record<tree_node>>;

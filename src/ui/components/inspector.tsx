@@ -8,6 +8,7 @@ import {
   findSiblings,
   getEdgesIn,
   getEdgesOut,
+  isRef,
   nodeHash,
   type Panel,
   type Port,
@@ -299,6 +300,59 @@ export function NodeInspector(
         <CopyField title="ID (click to copy)" value={node.id} />
         {node.uri && <CopyField title="URI (click to copy)" value={node.uri} />}
       </div>
+
+      {/* Reference — shown for ref nodes */}
+      {isRef(node) && (() => {
+        const refTarget = node.ref;
+        const targetNode = refTarget ? findNode(ws.treeNodes, refTarget) : null;
+        // Also try matching by label if the ref is a label, not an id
+        const targetByLabel = !targetNode && refTarget
+          ? (function findByLabel(nodes: TreeNode[]): TreeNode | null {
+            for (const n of nodes) {
+              if (n.label === refTarget) return n;
+              const found = findByLabel(n.children);
+              if (found) return found;
+            }
+            return null;
+          })(ws.treeNodes)
+          : null;
+        const resolved = targetNode ?? targetByLabel;
+        const isRemote = refTarget?.startsWith("spike://");
+        const isBroken = !resolved && !isRemote;
+        return (
+          <div style="display:flex; flex-direction:column; gap:3px;">
+            <PropLabel text="Reference" />
+            <div style="font-size:11px; color:#9080b0; border:1px dashed #605080; border-radius:3px; padding:4px 6px;">
+              {resolved
+                ? (
+                  <div
+                    style="color:#9080d0; cursor:pointer; word-break:break-all;"
+                    title="Navigate to target"
+                    onClick={() => navigateToNode(resolved.id)}
+                  >
+                    {"↗ "}
+                    {resolved.label || resolved.id}
+                  </div>
+                )
+                : isRemote
+                ? (
+                  <div style="color:#707090; word-break:break-all;" title="Remote reference">
+                    {"↗ "}
+                    {refTarget}
+                  </div>
+                )
+                : isBroken
+                ? (
+                  <div style="color:#c07070; word-break:break-all;" title="Target not found">
+                    {"⚠ "}
+                    {refTarget} <span style="color:#804040; font-style:italic;">(broken)</span>
+                  </div>
+                )
+                : <span style="color:#404466; font-style:italic;">no target</span>}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Parent */}
       <div style="display:flex; flex-direction:column; gap:3px;">

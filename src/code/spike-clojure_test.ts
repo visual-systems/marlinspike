@@ -11,7 +11,7 @@
  * Fixtures are defined in spike-clojure-fixtures.ts and shared with stories.
  */
 
-import { assertAlmostEquals, assertEquals, assertNotEquals } from "@std/assert";
+import { assertAlmostEquals, assertEquals, assertExists, assertNotEquals } from "@std/assert";
 import { graphToSpike, spikeToGraph } from "./spike-clojure.ts";
 import { evaluateSpike, numericEnv } from "./spike-clojure-eval.ts";
 import { FIXTURES } from "./spike-clojure-fixtures.ts";
@@ -21,28 +21,47 @@ import type { Edge, TreeNode } from "../ui/workspace.ts";
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Strip the parent namespace prefix from a node ID (e.g. "defn/label" → "label"). */
+function stripNs(id: string): string {
+  const slash = id.lastIndexOf("/");
+  return slash >= 0 ? id.slice(slash + 1) : id;
+}
+
 function stripNode(n: TreeNode): unknown {
   const sortedPorts = (n.ports ?? [])
     .map((p) => ({ name: p.name, direction: p.direction, ...(p.type ? { type: p.type } : {}) }))
     .sort((a, b) => a.name.localeCompare(b.name));
   return {
-    id: n.id,
+    id: stripNs(n.id),
     label: n.label,
     kind: n.kind,
+    // Include ref fields so scope-inferred refs are verified in round-trip tests.
+    ...(n.type ? { type: n.type } : {}),
+    ...(n.ref ? { ref: n.ref } : {}),
     // Include ports so port stability is verified in round-trip tests.
     ...(sortedPorts.length > 0 ? { ports: sortedPorts } : {}),
-    // Sort children by id: defn round-trips reorder children via topo sort,
+    // Sort children by label: defn round-trips reorder children via topo sort,
     // and child order is not semantically significant for dataflow graphs.
     children: n.children.map(stripNode).sort((a, b) =>
-      String((a as { id: string }).id).localeCompare(
-        String((b as { id: string }).id),
+      String((a as { label: string }).label).localeCompare(
+        String((b as { label: string }).label),
       )
     ),
   };
 }
 
 function edgeSet(edges: Edge[]) {
-  return new Set(edges.map((e) => `${e.fromId}->${e.toId}`));
+  return new Set(edges.map((e) => `${stripNs(e.fromId)}->${stripNs(e.toId)}`));
+}
+
+/** Check for an edge between two labels, ignoring namespace prefixes on IDs. */
+function hasEdge(edges: Edge[], from: string, to: string): boolean {
+  return edges.some((e) => stripNs(e.fromId) === from && stripNs(e.toId) === to);
+}
+
+/** Find an edge between two labels, ignoring namespace prefixes on IDs. */
+function findEdge(edges: Edge[], from: string, to: string): Edge | undefined {
+  return edges.find((e) => stripNs(e.fromId) === from && stripNs(e.toId) === to);
 }
 
 // ---------------------------------------------------------------------------
@@ -223,11 +242,7 @@ Deno.test("inlined call: simple nesting — (outer (inner)) produces inner→x e
   assertEquals(nodeLabels.has("x"), true, "let-bound node uses binding name 'x'");
   const xNode = allNodes.find((n) => n.label === "x")!;
   assertEquals(xNode.data.fn as string, "outer", "node 'x' should store fn='outer'");
-  assertEquals(
-    edges.some((e) => e.fromId === "inner" && e.toId === "x"),
-    true,
-    "should have edge inner→x",
-  );
+  assertEquals(hasEdge(edges, "inner", "x"), true, "should have edge inner→x");
 });
 
 Deno.test("inlined call: two-deep nesting — (f (g (h))) produces h→g→result edges", () => {
@@ -245,16 +260,8 @@ Deno.test("inlined call: two-deep nesting — (f (g (h))) produces h→g→resul
   assertEquals(nodeLabels.has("result"), true, "let-bound node uses binding name 'result'");
   const resultNode = allNodes.find((n) => n.label === "result")!;
   assertEquals(resultNode.data.fn as string, "f", "node 'result' should store fn='f'");
-  assertEquals(
-    edges.some((e) => e.fromId === "h" && e.toId === "g"),
-    true,
-    "should have edge h→g",
-  );
-  assertEquals(
-    edges.some((e) => e.fromId === "g" && e.toId === "result"),
-    true,
-    "should have edge g→result",
-  );
+  assertEquals(hasEdge(edges, "h", "g"), true, "should have edge h→g");
+  assertEquals(hasEdge(edges, "g", "result"), true, "should have edge g→result");
 });
 
 Deno.test("inlined call: mixed binding and inlined — (f (g a) b) where a is a param", () => {
@@ -267,21 +274,9 @@ Deno.test("inlined call: mixed binding and inlined — (f (g a) b) where a is a 
   const nodeLabels = new Set(allNodes.map((n) => n.label));
   assertEquals(nodeLabels.has("g"), true, "g should be a node");
   assertEquals(nodeLabels.has("f"), true, "f should be a node");
-  assertEquals(
-    edges.some((e) => e.fromId === "a" && e.toId === "g"),
-    true,
-    "should have edge a→g",
-  );
-  assertEquals(
-    edges.some((e) => e.fromId === "g" && e.toId === "f"),
-    true,
-    "should have edge g→f",
-  );
-  assertEquals(
-    edges.some((e) => e.fromId === "b" && e.toId === "f"),
-    true,
-    "should have edge b→f",
-  );
+  assertEquals(hasEdge(edges, "a", "g"), true, "should have edge a→g");
+  assertEquals(hasEdge(edges, "g", "f"), true, "should have edge g→f");
+  assertEquals(hasEdge(edges, "b", "f"), true, "should have edge b→f");
 });
 
 // ---------------------------------------------------------------------------
@@ -322,11 +317,7 @@ Deno.test("quadratic-roots clj: map body values expanded — add, x1, x2 are nod
   for (const expected of ["add", "x1", "x2"]) {
     assertEquals(childLabels.has(expected), true, `${expected} should be a node`);
   }
-  assertEquals(
-    edges.some((e) => e.fromId === "add" && e.toId === "x1"),
-    true,
-    "should have edge add→x1",
-  );
+  assertEquals(hasEdge(edges, "add", "x1"), true, "should have edge add→x1");
 });
 
 Deno.test("quadratic-roots clj: all nodes captured — full 14-node set", () => {
@@ -534,8 +525,8 @@ Deno.test("duplicate-call: parse — two let bindings create distinct nodes 'x' 
   assertEquals(children.filter((c) => c.label === "y").length, 1, "node 'y' should exist");
   assertEquals(children.filter((c) => c.label === "double").length, 0, "no raw 'double' node");
   // Each binding has its own distinct incoming edge
-  assertEquals(edges.some((e) => e.fromId === "a" && e.toId === "x"), true);
-  assertEquals(edges.some((e) => e.fromId === "b" && e.toId === "y"), true);
+  assertEquals(hasEdge(edges, "a", "x"), true);
+  assertEquals(hasEdge(edges, "b", "y"), true);
   // Nodes store the function name in data.fn
   const xNode = children.find((c) => c.label === "x")!;
   assertEquals(xNode.data.fn as string, "double");
@@ -544,12 +535,12 @@ Deno.test("duplicate-call: parse — two let bindings create distinct nodes 'x' 
 Deno.test("duplicate-call: emit — round-trip reproduces original let structure", () => {
   const { treeNodes, edges } = spikeToGraph(DUPE_SRC);
   const reClj = graphToSpike(treeNodes, edges);
-  // Each binding round-trips correctly with its own call
-  assertEquals(reClj.includes("x (double a)"), true, `got: ${reClj}`);
-  assertEquals(reClj.includes("y (double b)"), true, `got: ${reClj}`);
-  // Multi-entry maps get one key per line
-  assertEquals(reClj.includes(":x x"), true, `got: ${reClj}`);
-  assertEquals(reClj.includes(":y y"), true, `got: ${reClj}`);
+  // Both calls round-trip — either inlined in map return or as let bindings
+  assertEquals(reClj.includes("(double a)"), true, `got: ${reClj}`);
+  assertEquals(reClj.includes("(double b)"), true, `got: ${reClj}`);
+  // Output keys preserved
+  assertEquals(reClj.includes(":x"), true, `got: ${reClj}`);
+  assertEquals(reClj.includes(":y"), true, `got: ${reClj}`);
 });
 
 Deno.test("duplicate-call: eval — round-trip result matches original", () => {
@@ -581,16 +572,8 @@ Deno.test("inlined call: quadratic-roots disc binding — (subtract (square b) .
   assertEquals(nodeLabels.has("square"), true, "square should be a node");
   // Let-bound node uses binding name "disc", not function name "subtract"
   assertEquals(nodeLabels.has("disc"), true, "let-bound node should use binding name 'disc'");
-  assertEquals(
-    edges.some((e) => e.fromId === "b" && e.toId === "square"),
-    true,
-    "should have edge b→square",
-  );
-  assertEquals(
-    edges.some((e) => e.fromId === "square" && e.toId === "disc"),
-    true,
-    "should have edge square→disc",
-  );
+  assertEquals(hasEdge(edges, "b", "square"), true, "should have edge b→square");
+  assertEquals(hasEdge(edges, "square", "disc"), true, "should have edge square→disc");
 });
 
 // ---------------------------------------------------------------------------
@@ -641,7 +624,7 @@ Deno.test("def referencing a defn child resolves as composite, not leaf", () => 
   assertEquals(proc.kind, "composite", "processor should be composite, not leaf");
   assertEquals(proc.children.length > 0, true, "processor should have children");
   // Binding-name-as-identity: `v (validate input)` creates node "v" (fn=validate)
-  assertEquals(edges.some((e) => e.fromId === "v" && e.toId === "respond"), true);
+  assertEquals(hasEdge(edges, "v", "respond"), true);
 });
 
 // ---------------------------------------------------------------------------
@@ -974,7 +957,7 @@ Deno.test("edge meta: parser extracts label from argument metadata", () => {
   const src = `(defn flow\n  [A]\n  (B ^{:label "transforms"} A))`;
   const { edges, errors } = spikeToGraph(src);
   assertEquals(errors, []);
-  const edge = edges.find((e) => e.fromId === "A" && e.toId === "B");
+  const edge = findEdge(edges, "A", "B");
   assertEquals(edge?.label, "transforms");
 });
 
@@ -982,7 +965,7 @@ Deno.test("edge meta: parser extracts data from argument metadata", () => {
   const src = `(defn flow\n  [A]\n  (B ^{:label "conn" :weight 3} A))`;
   const { edges, errors } = spikeToGraph(src);
   assertEquals(errors, []);
-  const edge = edges.find((e) => e.fromId === "A" && e.toId === "B");
+  const edge = findEdge(edges, "A", "B");
   assertEquals(edge?.label, "conn");
   assertEquals(edge?.data.weight, 3);
 });
@@ -1010,7 +993,241 @@ Deno.test("edge meta: round-trip preserves edge label and data", () => {
   const clj = graphToSpike([container], edges);
   const parsed = spikeToGraph(clj);
   assertEquals(parsed.errors, []);
-  const edge = parsed.edges.find((e) => e.fromId === "A" && e.toId === "B");
+  const edge = findEdge(parsed.edges, "A", "B");
   assertEquals(edge?.label, "transforms");
   assertEquals(edge?.data.weight, 5);
+});
+
+// ---------------------------------------------------------------------------
+// Scope-inferred references
+// ---------------------------------------------------------------------------
+
+Deno.test("scope-inferred ref: call to prior def produces ref node", () => {
+  const src = `(def square)
+(defn pipeline [x]
+  (square x))`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const pipeline = treeNodes.find((n) => n.label === "pipeline")!;
+  // Conjunctive name: "square-x" to avoid shadowing the outer "square" def
+  const squareChild = pipeline.children.find((c) => c.ref === "square");
+  assertExists(squareChild);
+  assertEquals(squareChild.type, "ref");
+  assertEquals(squareChild.ref, "square");
+  assertEquals(squareChild.data.fn, "square");
+});
+
+Deno.test("scope-inferred ref: let-bound call to prior def produces ref node", () => {
+  const src = `(def negate)
+(defn f [b]
+  (let [neg-b (negate b)]
+    neg-b))`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const f = treeNodes.find((n) => n.label === "f")!;
+  const negB = f.children.find((c) => c.label === "neg-b");
+  assertExists(negB);
+  assertEquals(negB.type, "ref");
+  assertEquals(negB.ref, "negate");
+  assertEquals(negB.data.fn, "negate");
+});
+
+Deno.test("scope-inferred ref: unresolved symbol is NOT marked as ref", () => {
+  const src = `(defn f [x]
+  (unknown x))`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const f = treeNodes.find((n) => n.label === "f")!;
+  const unknownChild = f.children.find((c) => c.label === "unknown");
+  assertExists(unknownChild);
+  assertEquals(unknownChild.type, undefined);
+  assertEquals(unknownChild.ref, undefined);
+});
+
+Deno.test("scope-inferred ref: forward reference is NOT marked as ref", () => {
+  const src = `(defn pipeline [x]
+  (square x))
+(def square)`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const pipeline = treeNodes.find((n) => n.label === "pipeline")!;
+  const squareChild = pipeline.children.find((c) => c.label === "square");
+  assertExists(squareChild);
+  assertEquals(squareChild.type, undefined, "forward ref should not be marked as ref");
+});
+
+Deno.test("scope-inferred ref: multiple defs, multiple refs in one defn", () => {
+  const src = `(def add)
+(def multiply)
+(defn f [a b]
+  (let [sum (add a b)
+        product (multiply a b)]
+    {:sum sum :product product}))`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const f = treeNodes.find((n) => n.label === "f")!;
+  const sum = f.children.find((c) => c.label === "sum");
+  const product = f.children.find((c) => c.label === "product");
+  assertExists(sum);
+  assertExists(product);
+  assertEquals(sum.type, "ref");
+  assertEquals(sum.ref, "add");
+  assertEquals(product.type, "ref");
+  assertEquals(product.ref, "multiply");
+});
+
+Deno.test("scope-inferred ref: prior defn is also a valid ref target", () => {
+  const src = `(defn square [x]
+  (let [result (multiply x x)]
+    result))
+(defn pipeline [a]
+  (square a))`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const pipeline = treeNodes.find((n) => n.label === "pipeline")!;
+  // Conjunctive name: "square-a" to avoid shadowing the outer "square" defn
+  const squareChild = pipeline.children.find((c) => c.ref === "square");
+  assertExists(squareChild);
+  assertEquals(squareChild.type, "ref");
+  assertEquals(squareChild.ref, "square");
+});
+
+Deno.test("scope-inferred ref: round-trip preserves ref through emit and re-parse", () => {
+  const src = `(def divide)
+(defn normalise [a b]
+  (divide b a))`;
+  const { treeNodes, edges, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  // Re-emit and re-parse
+  const clj2 = graphToSpike(treeNodes, edges);
+  const { treeNodes: rt, errors: e2 } = spikeToGraph(clj2);
+  assertEquals(e2, []);
+  const normalise = rt.find((n) => n.label === "normalise")!;
+  const divChild = normalise.children.find((c) => c.label === "divide" || c.ref === "divide");
+  assertExists(divChild);
+  assertEquals(divChild.type, "ref");
+  assertEquals(divChild.ref, "divide");
+});
+
+Deno.test("scope-inferred ref: duplicate calls with distinct binding names → distinct ref nodes", () => {
+  const src = `(def double)
+(defn f [a b]
+  (let [x (double a)
+        y (double b)]
+    {:x x :y y}))`;
+  const { treeNodes, errors } = spikeToGraph(src);
+  assertEquals(errors, []);
+  const f = treeNodes.find((n) => n.label === "f")!;
+  const xNode = f.children.find((c) => c.label === "x");
+  const yNode = f.children.find((c) => c.label === "y");
+  assertExists(xNode);
+  assertExists(yNode);
+  // Both are refs to the same target
+  assertEquals(xNode.type, "ref");
+  assertEquals(xNode.ref, "double");
+  assertEquals(yNode.type, "ref");
+  assertEquals(yNode.ref, "double");
+  // Both preserve data.fn
+  assertEquals(xNode.data.fn, "double");
+  assertEquals(yNode.data.fn, "double");
+  // Distinct identities (namespaced under parent defn)
+  assertEquals(stripNs(xNode.id), "x");
+  assertEquals(stripNs(yNode.id), "y");
+});
+
+// ---------------------------------------------------------------------------
+// Destructuring: {:keys [...]} in let bindings
+// ---------------------------------------------------------------------------
+
+Deno.test("destructuring: {:keys} binding creates node with destructuredKeys", () => {
+  const clj = `(defn pipeline [input]
+  (let [{:keys [p q]} (split input)]
+    (combine p q)))`;
+  const { treeNodes, edges } = spikeToGraph(clj);
+  const pipeline = treeNodes[0];
+  assertEquals(pipeline.label, "pipeline");
+
+  const split = pipeline.children.find((c) => c.label === "split" || c.data.fn === "split");
+  assertExists(split, "split node should exist");
+  assertEquals(split.data.destructuredKeys, ["p", "q"]);
+
+  const combine = pipeline.children.find((c) => c.label === "combine" || c.data.fn === "combine");
+  assertExists(combine, "combine node should exist");
+  // argOrder uses destructured binding names, not source node label
+  assertEquals(combine.data.argOrder, ["p", "q"]);
+
+  // Single edge from split → combine (not two separate edges)
+  const splitToCombine = edges.filter((e) => e.fromId === split.id && e.toId === combine.id);
+  assertEquals(splitToCombine.length, 1);
+});
+
+Deno.test("destructuring: round-trip preserves {:keys} syntax", () => {
+  const clj = `(defn pipeline [input]
+  (let [{:keys [p q]} (split input)]
+    (combine p q)))`;
+  const { treeNodes, edges } = spikeToGraph(clj);
+  const emitted = graphToSpike(treeNodes, edges);
+  // Emitter puts param vector on new line — normalising round-trip
+  const expected =
+    `(defn pipeline\n  [input]\n  (let [{:keys [p q]} (split input)]\n    (combine p q)))`;
+  assertEquals(emitted.trim(), expected);
+});
+
+Deno.test("destructuring: normalising round-trip stabilises", () => {
+  const clj = `(defn pipeline [input]
+  (let [{:keys [p q]} (split input)]
+    (combine p q)))`;
+  const pass1 = spikeToGraph(clj);
+  const emitted1 = graphToSpike(pass1.treeNodes, pass1.edges);
+  const pass2 = spikeToGraph(emitted1);
+  const emitted2 = graphToSpike(pass2.treeNodes, pass2.edges);
+  assertEquals(emitted1, emitted2);
+});
+
+// ---------------------------------------------------------------------------
+// Import declarations: (require name1 name2 ...)
+// ---------------------------------------------------------------------------
+
+Deno.test("import: require adds names to scope for ref inference", () => {
+  const clj = `(require divide multiply)
+
+(defn pipeline [a b]
+  (let [result (divide a b)]
+    (multiply result 2.0)))`;
+  const { treeNodes } = spikeToGraph(clj);
+  // require should NOT create nodes — only the defn should exist
+  assertEquals(treeNodes.length, 1);
+  assertEquals(treeNodes[0].label, "pipeline");
+  // divide and multiply should be inferred as refs
+  const divideNode = treeNodes[0].children.find((c) => stripNs(c.id) === "result");
+  assertExists(divideNode);
+  assertEquals(divideNode.type, "ref");
+  assertEquals(divideNode.ref, "divide");
+  const mulNode = treeNodes[0].children.find(
+    (c) => c.label === "multiply" || c.data.fn === "multiply",
+  );
+  assertExists(mulNode);
+  assertEquals(mulNode.type, "ref");
+  assertEquals(mulNode.ref, "multiply");
+});
+
+Deno.test("import: graphToSpike emits require preamble when imports provided", () => {
+  const clj = `(defn f [x] (add x 1))`;
+  const { treeNodes, edges } = spikeToGraph(clj);
+  const emitted = graphToSpike(treeNodes, edges, ["add", "subtract"]);
+  assertEquals(emitted.startsWith("(require add subtract)"), true);
+});
+
+Deno.test("import: round-trip with require preserves refs", () => {
+  const clj = `(require divide)
+
+(defn f [a b]
+  (divide a b))`;
+  const pass1 = spikeToGraph(clj);
+  const divNode = pass1.treeNodes[0].children.find(
+    (c) => c.label === "divide" || c.data.fn === "divide",
+  );
+  assertExists(divNode);
+  assertEquals(divNode.type, "ref");
+  assertEquals(divNode.ref, "divide");
 });

@@ -107,6 +107,8 @@ export interface WorkspaceState {
   canvasNodePositions: Record<string, { x: number; y: number; pinned?: boolean }>;
   canvasSelected: Selection;
   canvasAlgorithm: AlgorithmId;
+  /** When true, overlay virtual edges showing ref→target relationships. */
+  canvasShowRefEdges: boolean;
   /** Live unsaved edits keyed by entity ID. Shared between code panels and inspector. */
   entityDrafts: Record<string, string>;
 }
@@ -121,11 +123,20 @@ export interface TreeNode {
   id: string;
   label: string;
   uri?: string;
+  /** Node type discriminator. Absent or "standard" = regular node. "ref" = reference node. */
+  type?: "ref";
+  /** Target entity ID, label, or spike://UUID for reference nodes. */
+  ref?: string;
   kind: "leaf" | "composite";
   children: TreeNode[];
   ports?: Port[]; // declared input/output ports; absent = no port contract
   data: Record<string, unknown>;
   version: number;
+}
+
+/** Type guard: is this node a reference? */
+export function isRef(node: TreeNode): boolean {
+  return node.type === "ref";
 }
 
 export interface Edge {
@@ -351,8 +362,8 @@ export function getConnectionConfig(
 // ---------------------------------------------------------------------------
 
 export function nodeHash(node: TreeNode): string {
-  const s = node.label + node.kind + JSON.stringify(node.data) +
-    node.children.map((c) => c.id).join("");
+  const s = node.label + node.kind + (node.type ?? "") + (node.ref ?? "") +
+    JSON.stringify(node.data) + node.children.map((c) => c.id).join("");
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
   return (h >>> 0).toString(16).padStart(8, "0");
@@ -497,6 +508,20 @@ export function makeNode(
   return { id, label, kind, children, data: {}, version: 1, uri };
 }
 
+/** Create a reference node that points to another entity. */
+export function makeRefNode(id: string, label: string, ref: string): TreeNode {
+  return {
+    id,
+    label,
+    type: "ref",
+    ref,
+    kind: "composite",
+    children: [],
+    data: {},
+    version: 1,
+  };
+}
+
 export function defaultTreeNodes(rootNodeId: string): TreeNode[] {
   return ensureWorkspaceRoot([], rootNodeId).treeNodes;
 }
@@ -571,6 +596,7 @@ export function freshProfileState(
     canvasNodePositions: {},
     canvasSelected: null,
     canvasAlgorithm: "SDF",
+    canvasShowRefEdges: false,
     entityDrafts: {},
     connectedGraphs: [{
       id: databaseId,
@@ -596,6 +622,7 @@ type ProfileStateFields = Pick<
   | "canvasNodePositions"
   | "canvasSelected"
   | "canvasAlgorithm"
+  | "canvasShowRefEdges"
   | "entityDrafts"
   | "connectedGraphs"
 >;
@@ -703,6 +730,7 @@ export async function loadProfileState(
     canvasNodePositions: canvasState?.canvasNodePositions ?? {},
     canvasSelected: canvasState?.canvasSelected ?? null,
     canvasAlgorithm: canvasState?.canvasAlgorithm ?? "SDF",
+    canvasShowRefEdges: canvasState?.canvasShowRefEdges ?? false,
     entityDrafts: canvasState?.entityDrafts ?? {},
     connectedGraphs: [{
       id: dbId,
@@ -739,6 +767,8 @@ function parseNode(raw: Record<string, unknown>): TreeNode {
     id: raw.id as string,
     label: raw.label as string,
     uri: raw.uri as string | undefined,
+    type: raw.type as "ref" | undefined,
+    ref: raw.ref as string | undefined,
     kind: (raw.kind as "leaf" | "composite") ?? "leaf",
     children: ((raw.children as Record<string, unknown>[] | undefined) ?? []).map(parseNode),
     ports: raw.ports as Port[] | undefined,
@@ -905,6 +935,7 @@ export function loadState(): WorkspaceState {
           | undefined) ?? {},
         canvasSelected: null,
         canvasAlgorithm: (parsed.canvasAlgorithm as AlgorithmId | undefined) ?? "SDF",
+        canvasShowRefEdges: (parsed.canvasShowRefEdges as boolean | undefined) ?? false,
         entityDrafts: {},
       });
     }
@@ -1134,6 +1165,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       canvasNodePositions: canvasState?.canvasNodePositions ?? {},
       canvasSelected: canvasState?.canvasSelected ?? null,
       canvasAlgorithm: canvasState?.canvasAlgorithm ?? ds.canvasAlgorithm,
+      canvasShowRefEdges: canvasState?.canvasShowRefEdges ?? false,
       entityDrafts: canvasState?.entityDrafts ?? {},
     });
   }
@@ -1233,6 +1265,7 @@ async function migrateToSurreal(state: WorkspaceState, databaseId: string): Prom
     canvasNodePositions: state.canvasNodePositions,
     canvasSelected: state.canvasSelected,
     canvasAlgorithm: state.canvasAlgorithm,
+    canvasShowRefEdges: state.canvasShowRefEdges,
     entityDrafts: state.entityDrafts,
   });
 

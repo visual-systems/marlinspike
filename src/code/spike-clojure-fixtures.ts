@@ -9,7 +9,7 @@
  * documented in the fixture's `shortcoming` field.
  */
 
-import type { Edge, TreeNode } from "../ui/workspace.ts";
+import type { Edge, Port, TreeNode } from "../ui/workspace.ts";
 import type { NumericFnEnv } from "./spike-clojure-eval.ts";
 
 // ---------------------------------------------------------------------------
@@ -20,12 +20,36 @@ export function leaf(label: string): TreeNode {
   return { id: label, label, kind: "leaf", children: [], data: {}, version: 1 };
 }
 
-export function composite(label: string, children: TreeNode[]): TreeNode {
+export function composite(label: string, children: TreeNode[], ports?: Port[]): TreeNode {
   return {
     id: label,
     label,
     kind: "composite",
     children,
+    ...(ports ? { ports } : {}),
+    data: {},
+    version: 1,
+  };
+}
+
+/** Shorthand for input port. */
+export function inPort(name: string): Port {
+  return { name, direction: "in" };
+}
+
+/** Shorthand for output port. */
+export function outPort(name: string): Port {
+  return { name, direction: "out" };
+}
+
+export function refNode(label: string, target: string): TreeNode {
+  return {
+    id: label,
+    label,
+    kind: "composite",
+    type: "ref",
+    ref: target,
+    children: [],
     data: {},
     version: 1,
   };
@@ -194,7 +218,13 @@ export const FIXTURES: Fixture[] = [
   (let [b (B A)
         c (C A)]
     {:b b :c c}))`,
-    nodes: [composite("pipeline", [leaf("A"), leaf("B"), leaf("C")])],
+    nodes: [
+      composite("pipeline", [leaf("A"), leaf("B"), leaf("C")], [
+        inPort("A"),
+        outPort("B"),
+        outPort("C"),
+      ]),
+    ],
     edges: [edge("A", "B"), edge("A", "C")],
   },
   {
@@ -206,7 +236,12 @@ export const FIXTURES: Fixture[] = [
         d (D A)]
     {:b b :c c :d d}))`,
     nodes: [
-      composite("pipeline", [leaf("A"), leaf("B"), leaf("C"), leaf("D")]),
+      composite("pipeline", [leaf("A"), leaf("B"), leaf("C"), leaf("D")], [
+        inPort("A"),
+        outPort("B"),
+        outPort("C"),
+        outPort("D"),
+      ]),
     ],
     edges: [edge("A", "B"), edge("A", "C"), edge("A", "D")],
   },
@@ -345,7 +380,7 @@ export const FIXTURES: Fixture[] = [
         leaf("sub-minus"),
         leaf("div-x1"),
         leaf("div-x2"),
-      ]),
+      ], [outPort("div-x1"), outPort("div-x2")]),
     ],
     edges: [
       edge("b", "negate-b"),
@@ -440,5 +475,132 @@ export const FIXTURES: Fixture[] = [
     edges: [edge("A", "B"), edge("B", "C")],
     shortcoming: "By design: root-level edges require a containing composite (defn). " +
       "Leaf nodes are emitted as bare (def name) but edges need let-binding scope.",
+  },
+
+  // ── entity references ────────────────────────────────────────────────────
+
+  {
+    label: "def: cubic roots with references",
+    description:
+      "Scope-inferred refs and destructuring: step functions called inside a top-level defn pipeline.",
+    nodes: [
+      leaf("divide"),
+      leaf("multiply"),
+      leaf("square"),
+      leaf("add"),
+      leaf("subtract"),
+      leaf("negate"),
+      leaf("sqrt"),
+      leaf("cbrt"),
+      composite("normalise", [
+        leaf("a"),
+        leaf("b"),
+        leaf("c"),
+        leaf("d"),
+      ]),
+      composite("depressed-coefficients", [
+        leaf("b"),
+        leaf("c"),
+        leaf("d"),
+      ]),
+      composite("cardano-terms", [
+        leaf("p"),
+        leaf("q"),
+      ]),
+      composite("back-substitute", [
+        leaf("u"),
+        leaf("v"),
+        leaf("b-norm"),
+      ]),
+    ],
+    edges: [
+      // normalise internals
+      edge("b", "divide"),
+      edge("a", "divide"),
+      edge("c", "divide"),
+      edge("d", "divide"),
+    ],
+    clj: `; Shared primitives
+(def divide)
+(def multiply)
+(def square)
+(def add)
+(def subtract)
+(def negate)
+(def sqrt)
+(def cbrt)
+
+; Step 1 — normalise coefficients by dividing through by a
+(defn normalise [a b c d]
+  {:b (divide b a)
+   :c (divide c a)
+   :d (divide d a)})
+
+; Step 2 — depress the cubic: eliminate the x² term
+(defn depressed-coefficients [b c d]
+  (let [b-sq (square b)
+        b-cu (multiply b-sq b)
+        p    (subtract c (divide b-sq 3))
+        q    (add (subtract d (divide (multiply b c) 3))
+                  (divide (multiply 2 b-cu) 27))]
+    {:p p :q q}))
+
+; Step 3 — Cardano's u and v terms
+(defn cardano-terms [p q]
+  (let [inner      (add (divide (square q) 4)
+                         (divide (multiply p (square p)) 27))
+        sqrt-inner (sqrt inner)
+        neg-q-half (divide (negate q) 2)]
+    {:u (cbrt (add      neg-q-half sqrt-inner))
+     :v (cbrt (subtract neg-q-half sqrt-inner))}))
+
+; Step 4 — recover x roots, back-substituting x = t - b/3
+(defn back-substitute [u v b-norm]
+  (let [shift    (divide b-norm 3)
+        uv       (add u v)
+        uv-half  (divide uv 2)]
+    {:x1 (subtract uv          shift)
+     :x2 (subtract (negate uv-half) shift)
+     :x3 (subtract (negate uv-half) shift)}))
+
+; Top-level pipeline — scope-inferred references with destructuring
+(defn cubic-roots [a b c d]
+  (let [{:keys [b c d]}    (normalise a b c d)
+        {:keys [p q]}      (depressed-coefficients b c d)
+        {:keys [u v]}      (cardano-terms p q)
+        {:keys [x1 x2 x3]} (back-substitute u v b)]
+    {:x1 x1 :x2 x2 :x3 x3}))`,
+    shortcoming: "graph→clj→graph: graph nodes/edges are a simplified skeleton — " +
+      "the defn internals are only fully represented via the clj form.",
+  },
+
+  // ── destructuring ────────────────────────────────────────────────────────
+
+  {
+    label: "destructuring: {:keys} in let binding",
+    description: "A destructured let binding produces a node with destructuredKeys " +
+      "and downstream args use port names in argOrder.",
+    nodes: [],
+    edges: [],
+    clj: `(defn pipeline [input]
+  (let [{:keys [p q]} (split input)]
+    (combine p q)))`,
+  },
+
+  // ── imports ──────────────────────────────────────────────────────────────
+
+  {
+    label: "require: imported names become refs",
+    description: "A (require ...) preamble adds names to scope so calls to those " +
+      "functions produce ref nodes, without creating any top-level nodes.",
+    nodes: [],
+    edges: [],
+    clj: `(require divide multiply)
+
+(defn pipeline [a b]
+  (let [result (divide a b)]
+    (multiply result 2.0)))`,
+    cljShortcoming: "require preamble is lost in graph — imports are only scope markers, " +
+      "not stored as nodes. Re-emit loses the require and ref annotations.",
   },
 ];

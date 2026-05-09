@@ -10,6 +10,7 @@ import {
   getActiveTab,
   getFocusedRootNodes,
   getWorkspaceRootId,
+  isRef,
   type Panel,
   type TreeNode,
   type Updater,
@@ -57,6 +58,34 @@ const GROUP_PADDING = 32;
 /** Height of the label strip at the top of an expanded group rect */
 const LABEL_H = 22;
 const DRAG_THRESHOLD_SQ = 16; // 4px
+
+// ---------------------------------------------------------------------------
+// Ref helpers
+// ---------------------------------------------------------------------------
+
+/** Collect all node labels in the tree (flat). */
+function collectAllLabels(roots: TreeNode[]): Set<string> {
+  const labels = new Set<string>();
+  (function walk(ns: TreeNode[]) {
+    for (const n of ns) {
+      labels.add(n.label);
+      walk(n.children);
+    }
+  })(roots);
+  return labels;
+}
+
+/** Dashed outline for explicit aliases, URI refs, broken/imported refs — NOT scope-inferred. */
+function refNeedsDash(node: TreeNode, allLabels: Set<string>): boolean {
+  if (!isRef(node) || !node.ref) return false;
+  // Explicit top-level alias (def name target) — no data.fn
+  if (!node.data.fn) return true;
+  // URI reference (spike://...)
+  if (node.ref.startsWith("spike://")) return true;
+  // Broken or imported: target not found in tree
+  if (!allLabels.has(node.ref)) return true;
+  return false;
+}
 
 // ---------------------------------------------------------------------------
 // Edge helpers
@@ -377,17 +406,39 @@ function pinPortNodes(
   const halfH = parentFn.h / 2;
   const portPositions = rectPortPositions(parentNode.ports, halfW, halfH, LABEL_H);
 
-  // Map port name → child node ID (ports reference children by label)
+  // Build separate lookups for input and output port pinning.
+  // Output ports prefer children with data.outputPort (map-key terminals that
+  // collided with param names, e.g. normalise's "divide-b-a" → port "b").
+  // Input ports match children by label. When port names overlap (normalise has
+  // both input "b" and output "b"), each child is claimed at most once.
   const childByLabel = new Map(parentNode.children.map((c) => [c.label, c.id]));
+  const childByOutputPort = new Map<string, string>();
+  for (const child of parentNode.children) {
+    const outputPort = child.data.outputPort as string | undefined;
+    if (outputPort) childByOutputPort.set(outputPort, child.id);
+  }
+  const claimed = new Set<string>(); // child IDs already pinned
   const pinMap = new Map<string, { x: number; y: number }>();
+  const toPin = (childId: string, pp: { x: number; y: number }) => {
+    claimed.add(childId);
+    // Port positions are relative to the rect center; child level is centered
+    // at (0, 0) but the rect center is offset by -LABEL_H/2 in y. Shift
+    // y by +LABEL_H/2 to convert to child level coordinate space.
+    pinMap.set(childId, { x: pp.x, y: pp.y + LABEL_H / 2 });
+  };
+  // Pin output ports first (prefer data.outputPort, fall back to label match)
   for (const pp of portPositions) {
+    if (pp.direction !== "out") continue;
+    const byData = childByOutputPort.get(pp.portName);
+    const byLabel = childByLabel.get(pp.portName);
+    const childId = byData ?? byLabel;
+    if (childId && !claimed.has(childId)) toPin(childId, pp);
+  }
+  // Pin input ports (label match, skip already-claimed children)
+  for (const pp of portPositions) {
+    if (pp.direction === "out") continue;
     const childId = childByLabel.get(pp.portName);
-    if (childId) {
-      // Port positions are relative to the rect center; child level is centered
-      // at (0, 0) but the rect center is offset by -LABEL_H/2 in y. Shift
-      // y by +LABEL_H/2 to convert to child level coordinate space.
-      pinMap.set(childId, { x: pp.x, y: pp.y + LABEL_H / 2 });
-    }
+    if (childId && !claimed.has(childId)) toPin(childId, pp);
   }
 
   if (pinMap.size === 0) return nodes;
@@ -643,7 +694,19 @@ function CanvasInspector(
     const node = findNode(ws.treeNodes, sel.id);
     if (node) {
       const isExpanded = ws.canvasExpandedNodes.includes(node.id);
-      const expandAction = node.kind === "composite"
+      const isEmptyRef = isRef(node) && node.children.length === 0;
+      const canExpand = node.kind === "composite" && !isEmptyRef;
+      // Ref nodes targeting composites show "Go to" instead of "Expand"
+      const refTarget = isEmptyRef && node.ref
+        ? (findNode(ws.treeNodes, node.ref) ??
+          ws.treeNodes.flatMap(function flat(n: TreeNode): TreeNode[] {
+            return [n, ...n.children.flatMap(flat)];
+          }).find((n) => n.label === node.ref))
+        : undefined;
+      const canNavigate = refTarget?.kind === "composite" && refTarget.children.length > 0;
+      const expandAction = canNavigate
+        ? <SmallBtn label="Go to" onClick={() => onExpand(node.id)} />
+        : canExpand
         ? isExpanded
           ? <SmallBtn label="Collapse" onClick={() => onCollapse(node.id)} />
           : <SmallBtn label="Expand" onClick={() => onExpand(node.id)} />
@@ -680,6 +743,93 @@ function CanvasInspector(
   }
 
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// ToggleDropdown — overlay toggle menu (reference edges, etc.)
+// ---------------------------------------------------------------------------
+
+function ToggleDropdown({ ws, update }: { ws: WorkspaceState; update: Updater }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    document.addEventListener("click", close, { once: true });
+    // Close when another dropdown opens (Dropdown uses stopPropagation,
+    // so the document click listener won't fire for those clicks).
+    document.addEventListener("dropdown-open", close, { once: true });
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("dropdown-open", close);
+    };
+  }, [open]);
+
+  return (
+    <div style="position:relative; flex-shrink:0;">
+      <span
+        style={[
+          "cursor:pointer; user-select:none; font-size:14px; padding:2px 6px;",
+          `color:${ws.canvasShowRefEdges ? "#9080b0" : "#404466"};`,
+        ].join("")}
+        title="View toggles"
+        onClick={(e: MouseEvent) => {
+          e.stopPropagation();
+          // Signal other dropdowns to close before we open
+          document.dispatchEvent(new Event("dropdown-open"));
+          queueMicrotask(() => setOpen((prev) => !prev));
+        }}
+      >
+        ⚙
+      </span>
+      {open && (
+        <div
+          style={[
+            "position:absolute; top:100%; right:0; min-width:160px;",
+            "background:#0d0d1e; border:1px solid #252538; z-index:200;",
+            "display:flex; flex-direction:column; box-shadow:0 4px 12px rgba(0,0,0,0.5);",
+          ].join("")}
+          onClick={(e: MouseEvent) => e.stopPropagation()}
+        >
+          <ToggleRow
+            label="Reference edges"
+            checked={ws.canvasShowRefEdges}
+            onToggle={() => update((s) => ({ ...s, canvasShowRefEdges: !s.canvasShowRefEdges }))}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToggleRow(
+  { label, checked, onToggle }: { label: string; checked: boolean; onToggle: () => void },
+) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div
+      style={[
+        "padding:5px 8px; font-size:11px; cursor:pointer; display:flex; align-items:center; gap:6px;",
+        `color:${hovered ? "#aaa" : "#666"};`,
+      ].join("")}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={onToggle}
+    >
+      <svg width="10" height="10" viewBox="0 0 10 10" style="flex-shrink:0;">
+        <circle
+          cx="5"
+          cy="5"
+          r="4"
+          stroke={checked ? "#9080b0" : "#333"}
+          stroke-width="1"
+          fill="none"
+        />
+        {checked && <circle cx="5" cy="5" r="2.5" fill="#9080b0" />}
+      </svg>
+      {label}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -759,6 +909,7 @@ function CanvasTopBar(
           update((s) => ({ ...s, canvasAlgorithm: id as WorkspaceState["canvasAlgorithm"] }))}
         width={90}
       />
+      <ToggleDropdown ws={ws} update={update} />
       <span
         title="Fit to screen"
         onClick={onFitView}
@@ -1388,6 +1539,22 @@ export function Canvas(
   }
 
   function expandNode(nodeId: string) {
+    const node = findNode(ws.treeNodes, nodeId);
+    if (!node) return;
+    // Ref nodes pointing at composites: navigate focus to the target
+    // instead of expanding (avoids cloning children and ID collisions).
+    if (isRef(node) && node.children.length === 0 && node.ref) {
+      // Resolve target by ID first, then by label as fallback
+      const target = findNode(ws.treeNodes, node.ref) ??
+        ws.treeNodes.flatMap(function flat(n: TreeNode): TreeNode[] {
+          return [n, ...n.children.flatMap(flat)];
+        }).find((n) => n.label === node.ref);
+      if (target && target.kind === "composite" && target.children.length > 0) {
+        update((s) => ({ ...s, focusId: target.id, selectedId: null }));
+        return;
+      }
+      return; // empty ref with no resolvable composite target — do nothing
+    }
     update((s) => ({
       ...s,
       canvasExpandedNodes: s.canvasExpandedNodes.includes(nodeId)
@@ -1472,6 +1639,117 @@ export function Canvas(
             diagnostics,
             highlightEntityIds ?? new Set(),
           )}
+          {/* Reference edges — cross-level dotted edges from ref nodes to targets */}
+          {ws.canvasShowRefEdges && (() => {
+            const worldPos = new Map<
+              string,
+              { node: TreeNode; wx: number; wy: number; w: number; h: number }
+            >();
+            collectWorldPositions(
+              focusedRootNodes,
+              "",
+              layout,
+              expandedSet,
+              { x: 0, y: 0 },
+              worldPos,
+            );
+            // Build label→id index for non-ref nodes (fallback target resolution)
+            const labelToId = new Map<string, string>();
+            for (const [id, { node }] of worldPos) {
+              if (node.type !== "ref") labelToId.set(node.label, id);
+            }
+            // Build parent map + full node-id→id index for ancestor walking
+            const parentOf = new Map<string, string>();
+            const allNodeIds = new Set<string>();
+            function indexTree(nodes: TreeNode[], parentId: string | null) {
+              for (const n of nodes) {
+                allNodeIds.add(n.id);
+                if (parentId) parentOf.set(n.id, parentId);
+                indexTree(n.children, n.id);
+              }
+            }
+            indexTree(focusedRootNodes, null);
+            /** Find the nearest visible ancestor of `nodeId` in worldPos. */
+            function nearestVisibleAncestor(nodeId: string): string | undefined {
+              let cur = parentOf.get(nodeId);
+              while (cur) {
+                if (worldPos.has(cur)) return cur;
+                cur = parentOf.get(cur);
+              }
+              return undefined;
+            }
+            const refEdges: Array<{
+              fromId: string;
+              toId: string;
+              d: string;
+              dx: number;
+              dy: number;
+              indirect: boolean;
+            }> = [];
+            for (const [id, { node, wx, wy, w, h }] of worldPos) {
+              if (node.type !== "ref" || !node.ref) continue;
+              // Resolve target: direct id → label match → nearest visible ancestor
+              let targetId = worldPos.has(node.ref) ? node.ref : labelToId.get(node.ref);
+              let indirect = false;
+              if (!targetId) {
+                // Target not visible — try to find by id in full tree, then walk up
+                const exactId = allNodeIds.has(node.ref) ? node.ref : undefined;
+                const labelId = !exactId
+                  ? [...allNodeIds].find((nid) => {
+                    const wp = worldPos.get(nid);
+                    return !wp && parentOf.has(nid); // exists in tree but not visible
+                  })
+                  : undefined;
+                const hiddenId = exactId ?? labelId;
+                if (hiddenId) {
+                  targetId = nearestVisibleAncestor(hiddenId);
+                  indirect = true;
+                }
+              }
+              if (!targetId || targetId === id) continue;
+              const t = worldPos.get(targetId)!;
+              // Compute surface points — cast to ForceNode (surfacePoint only reads x/y/w/h)
+              const pa = { x: wx, y: wy, w, h } as ForceNode;
+              const pb = { x: t.wx, y: t.wy, w: t.w, h: t.h } as ForceNode;
+              const src = surfacePoint(pa, pb, 5);
+              const dst = surfacePoint(pb, pa, 5);
+              const dx = dst.x - src.x, dy = dst.y - src.y;
+              refEdges.push({
+                fromId: id,
+                toId: targetId,
+                d: `M${src.x},${src.y} L${dst.x},${dst.y}`,
+                dx,
+                dy,
+                indirect,
+              });
+            }
+            return refEdges.map(({ fromId, toId, d, dx, dy, indirect: ind }) => {
+              const len = Math.sqrt(dx * dx + dy * dy);
+              const ux = len > 0 ? dx / len : 1, uy = len > 0 ? dy / len : 0;
+              const parts = d.split("L");
+              const end = parts[1].split(",").map(Number);
+              const color = ind ? "#403860" : "#605080";
+              return (
+                <g key={`ref-${fromId}-${toId}`} style="pointer-events:none;">
+                  <path
+                    d={d}
+                    stroke={color}
+                    stroke-width={1}
+                    stroke-dasharray={ind ? "2,4" : "4,3"}
+                    fill="none"
+                    opacity={ind ? 0.6 : 1}
+                  />
+                  <circle
+                    cx={end[0] + ux * 5}
+                    cy={end[1] + uy * 5}
+                    r={ind ? 2 : 3}
+                    fill={color}
+                    opacity={ind ? 0.6 : 1}
+                  />
+                </g>
+              );
+            });
+          })()}
           {/* Ghost edge line while drawing */}
           {mode === "add-edge" && edgeDraw && mouseCanvas && (() => {
             const gdx = mouseCanvas.x - edgeDraw.x;
@@ -1539,6 +1817,33 @@ type StartDragFn = (
   onClickFn: (() => void) | null,
 ) => void;
 
+/**
+ * Collect world-space positions and TreeNode references for all visible nodes
+ * across all expanded levels. Used for cross-level reference edge rendering.
+ */
+function collectWorldPositions(
+  nodes: TreeNode[],
+  levelId: string,
+  layout: LayoutMap,
+  expandedSet: Set<string>,
+  worldOffset: { x: number; y: number },
+  out: Map<string, { node: TreeNode; wx: number; wy: number; w: number; h: number }>,
+): void {
+  const level = layout.get(levelId);
+  if (!level) return;
+  const posMap = new Map(level.nodes.map((n) => [n.id, n]));
+  for (const node of nodes) {
+    const pos = posMap.get(node.id);
+    if (!pos) continue;
+    const wx = worldOffset.x + pos.x;
+    const wy = worldOffset.y + pos.y;
+    out.set(node.id, { node, wx, wy, w: pos.w, h: pos.h });
+    if (expandedSet.has(node.id) && node.kind === "composite") {
+      collectWorldPositions(node.children, node.id, layout, expandedSet, { x: wx, y: wy }, out);
+    }
+  }
+}
+
 function renderLevel(
   nodes: TreeNode[],
   levelId: string,
@@ -1565,6 +1870,25 @@ function renderLevel(
   const levelEdges = ws.edges.filter((e) =>
     levelEdgeKeys.some((le) => le.a === e.fromId && le.b === e.toId)
   );
+
+  // All labels in the tree — used to distinguish scope-inferred refs from broken/imported.
+  const allLabels = collectAllLabels(ws.treeNodes);
+
+  // Determine which children are input params or output terminals based on
+  // the parent's ports. Used to tint nodes with port colors when focused.
+  // When levelId is "" (top-level focused view), use the focused node as parent
+  const parentNode = (levelId ? findNode(ws.treeNodes, levelId) : null) ??
+    (ws.focusId ? findNode(ws.treeNodes, ws.focusId) : null);
+  const inputPortNames = new Set(
+    (parentNode?.ports ?? []).filter((p) => p.direction === "in").map((p) => p.name),
+  );
+  const outputPortNames = new Set(
+    (parentNode?.ports ?? []).filter((p) => p.direction === "out").map((p) => p.name),
+  );
+  // A node is an "output terminal" if its label or data.outputPort matches an output port
+  const isInputParam = (n: TreeNode) => inputPortNames.has(n.label);
+  const isOutputTerminal = (n: TreeNode) =>
+    outputPortNames.has(n.label) || outputPortNames.has(n.data.outputPort as string);
 
   return (
     <>
@@ -1604,6 +1928,8 @@ function renderLevel(
               groupIsHighlighted
             ? 2
             : 1;
+          const groupIsRef = isRef(node);
+          const groupStrokeDash = refNeedsDash(node, allLabels) ? "6,3" : undefined;
 
           return (
             <g key={node.id} transform={`translate(${pos.x}, ${pos.y})`}>
@@ -1612,9 +1938,10 @@ function renderLevel(
                 y={ry}
                 width={rw}
                 height={rh}
-                fill={groupHasError ? "#1a0f0f" : "#0f0f28"}
-                stroke={groupStroke}
+                fill={groupHasError ? "#1a0f0f" : groupIsRef ? "#0f0f24" : "#0f0f28"}
+                stroke={groupIsRef && !isSelected ? "#605080" : groupStroke}
                 stroke-width={groupStrokeWidth}
+                stroke-dasharray={groupStrokeDash}
                 rx={8}
                 ry={8}
                 style="cursor:pointer;"
@@ -1697,6 +2024,7 @@ function renderLevel(
 
         // Collapsed node — rendered as a circle by default, or rect if constraint specifies
         const isComposite = node.kind === "composite";
+        const isRefNode = isRef(node);
         const isRect = pos?.shape === "rect";
         const r = LEAF_R;
         const hasChildren = isComposite && node.children.length > 0;
@@ -1719,6 +2047,8 @@ function renderLevel(
         const hasError = nodeDiags.some((d) => d.severity === "error");
         const hasWarning = !hasError && nodeDiags.some((d) => d.severity === "warning");
         const isHighlighted = highlightEntityIds.has(node.id);
+        const isInput = isInputParam(node);
+        const isOutput = isOutputTerminal(node);
 
         const fill = isEdgeSource || isHovered
           ? "#1e2a4a"
@@ -1726,8 +2056,14 @@ function renderLevel(
           ? "#2a1a1a"
           : isSelected
           ? "#1e2a4a"
+          : isRefNode
+          ? "#141428"
           : isComposite
           ? "#141430"
+          : isInput
+          ? "#101828"
+          : isOutput
+          ? "#181410"
           : "#111125";
         const stroke = isEdgeSource
           ? "#5070c0"
@@ -1743,9 +2079,16 @@ function renderLevel(
           ? "#3050a0"
           : isHighlighted
           ? "#50c070"
+          : isRefNode
+          ? "#605080"
+          : isInput
+          ? "#4080c0"
+          : isOutput
+          ? "#c06040"
           : isComposite
           ? "#303060"
           : "#252545";
+        const strokeDash = refNeedsDash(node, allLabels) ? "3,2" : undefined;
         const strokeWidth = isEdgeSource || isSelected || isHovered
           ? 2
           : isCandidate
@@ -1809,6 +2152,7 @@ function renderLevel(
                   fill={fill}
                   stroke={stroke}
                   stroke-width={strokeWidth}
+                  stroke-dasharray={strokeDash}
                 />
               )
               : (
@@ -1819,6 +2163,7 @@ function renderLevel(
                   fill={fill}
                   stroke={stroke}
                   stroke-width={strokeWidth}
+                  stroke-dasharray={strokeDash}
                 />
               )}
             {(hasError || hasWarning) && (
@@ -1847,6 +2192,25 @@ function renderLevel(
                   style="pointer-events:none;"
                 />
               )}
+            {/* Ref indicator — shows target label beneath the node */}
+            {isRefNode && (() => {
+              const refTarget = node.ref;
+              const targetNode = refTarget ? findNode(ws.treeNodes, refTarget) : null;
+              const targetLabel = targetNode?.label ?? refTarget ?? "?";
+              return (
+                <text
+                  x={0}
+                  y={isRect ? r * 0.7 + 9 : r + 9}
+                  text-anchor="middle"
+                  fill="#605080"
+                  font-size="7"
+                  style="user-select:none; pointer-events:none;"
+                >
+                  {"↗ "}
+                  {targetLabel}
+                </text>
+              );
+            })()}
             {node.ports && node.ports.length > 0 && (
               <NodePorts
                 ports={circlePortPositions(node.ports, r)}
@@ -1857,7 +2221,7 @@ function renderLevel(
               x={0}
               y={hasChildren ? -3 : 3}
               text-anchor="middle"
-              fill={isSelected ? "#a0b4e0" : "#777799"}
+              fill={isSelected ? "#a0b4e0" : isRefNode ? "#9080b0" : "#777799"}
               font-size="9"
               style="user-select:none; pointer-events:none;"
             >

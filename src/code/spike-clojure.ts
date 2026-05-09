@@ -36,7 +36,13 @@ import { parse } from "../graph/base_lisp.ts";
 // ---------------------------------------------------------------------------
 
 /** Data keys that are internal to the codec or the reactivity system and should not be emitted. */
-const INTERNAL_DATA_KEYS = new Set(["fn", "argOrder"]);
+const INTERNAL_DATA_KEYS = new Set([
+  "fn",
+  "argOrder",
+  "destructuredKeys",
+  "outputPort",
+  "passthrough",
+]);
 
 /**
  * Return the def/defn name form, optionally prefixed with `^{...}` reader
@@ -57,6 +63,9 @@ function nameWithIdMeta(node: TreeNode): string {
   }
   if (node.uri) {
     entries.push(`:uri ${JSON.stringify(node.uri)}`);
+  }
+  if (node.ref && node.ref !== node.label) {
+    entries.push(`:ref ${JSON.stringify(node.ref)}`);
   }
   // Emit user data fields nested under :data {...}
   const dataEntries: string[] = [];
@@ -120,22 +129,26 @@ function extractIdMeta(nameForm: SExp): string | undefined {
  */
 function extractNameMeta(nameForm: SExp): {
   uri: string | undefined;
+  ref: string | undefined;
   data: Record<string, unknown>;
 } {
   const meta = nameForm.meta;
-  if (!meta || meta.type !== "map") return { uri: undefined, data: {} };
+  if (!meta || meta.type !== "map") return { uri: undefined, ref: undefined, data: {} };
   let uri: string | undefined;
+  let ref: string | undefined;
   let data: Record<string, unknown> = {};
   for (const [k, v] of meta.entries) {
     if (k.type !== "keyword") continue;
     if (k.value === "uri" && v.type === "string") {
       uri = v.value;
+    } else if (k.value === "ref" && v.type === "string") {
+      ref = v.value;
     } else if (k.value === "data" && v.type === "map") {
       // Unwrap :data map into node.data
       data = sexpToValue(v) as Record<string, unknown>;
     }
   }
-  return { uri, data };
+  return { uri, ref, data };
 }
 
 /** Convert a SExp value to a plain JS value for storage in node.data. */
@@ -236,17 +249,19 @@ function formatMap(entries: [string, string][], baseIndent = ""): string {
 function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   const nodes = container.children;
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const nodeByLabel = new Map(nodes.map((n) => [n.label, n]));
 
-  // Input ports are defn params: in scope as bindings, not in let block
+  // Input ports are defn params: in scope as bindings, not in let block.
+  // Match by label (not id) since child IDs may be namespaced (e.g. "defn/a").
   const inputPorts = (container.ports ?? []).filter((p) => p.direction === "in");
-  const inputPortIds = new Set(inputPorts.map((p) => p.name));
+  const inputPortLabels = new Set(inputPorts.map((p) => p.name));
 
   // Binding name for a node: always the node label.
   // Under binding-name-as-identity, the label IS the let variable name.
   const binding = (id: string) => nodeById.get(id)!.label;
 
   // Non-param nodes are the ones that go in the let bindings
-  const letNodes = nodes.filter((n) => !inputPortIds.has(n.id));
+  const letNodes = nodes.filter((n) => !inputPortLabels.has(n.label));
 
   const sorted = topoSort(letNodes.map((n) => n.id), edges);
   const sourceIds = new Set(edges.map((e) => e.fromId));
@@ -270,10 +285,11 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   // name both lack data.fn. Inlining them is always safe because the binding name
   // carries no extra identity beyond the function name.
   function isInlineable(id: string): boolean {
-    if (inputPortIds.has(id)) return false;
+    if (inputPortLabels.has(nodeById.get(id)?.label ?? "")) return false;
     const node = nodeById.get(id);
     if (!node) return false;
     if (node.data.fn !== undefined) return false; // explicitly renamed — must keep binding
+    if (node.data.destructuredKeys !== undefined) return false; // destructured output — needs let
     return (outgoingCounts.get(id) ?? 0) <= 1;
   }
 
@@ -293,10 +309,10 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
 
   /** Emit an argument, prefixed with ^{...} reader metadata if the edge carries label/data. */
   function emitArg(argLabel: string, targetId: string): string {
-    const argId = [...nodeById.entries()].find(([_, n]) => n.label === argLabel)?.[0];
-    const expr = nodeById.has(argLabel) && isInlineable(argLabel) ? callExpr(argLabel) : argLabel;
-    if (!argId) return expr;
-    const edge = edgeLookup.get(`${argId}->${targetId}`);
+    const argNode = nodeByLabel.get(argLabel);
+    const expr = argNode && isInlineable(argNode.id) ? callExpr(argNode.id) : argLabel;
+    if (!argNode) return expr;
+    const edge = edgeLookup.get(`${argNode.id}->${targetId}`);
     if (!edge) return expr;
     const metaEntries: string[] = [];
     if (edge.label) metaEntries.push(`:label ${JSON.stringify(edge.label)}`);
@@ -323,26 +339,40 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   // Param list with optional ^Type hints
   const paramList = inputPorts.map((p) => p.type ? `^${p.type} ${p.name}` : p.name).join(" ");
 
-  // Output ports attr-map: emit if any output ports are declared
+  // Output ports attr-map: only emit when ports carry explicit type annotations.
+  // Untyped output ports are derived from the map return keys — no attr-map needed.
   const outputPorts = (container.ports ?? []).filter((p) => p.direction === "out");
-  const attrMap = outputPorts.length > 0
+  const hasTypedOutputPorts = outputPorts.some((p) => p.type !== undefined);
+  const attrMap = hasTypedOutputPorts
     ? `\n  {:ports {${outputPorts.map((p) => `:${p.name} ${p.type ?? "any"}`).join(" ")}}}`
     : "";
 
-  // When all terminal nodes are named by output ports (map-key identity from
-  // the parser), inline each terminal call directly in the map return rather
-  // than binding it in a let. This produces {:x1 (divide ...) :x2 (divide ...)}
-  // instead of {:x1 x1 :x2 x2} and preserves distinct output slots.
+  // When all terminal nodes map to output ports, inline each terminal call
+  // directly in the map return: {:x1 (divide ...) :x2 (divide ...)}.
+  // A terminal maps to a port either by label match or via data.outputPort
+  // (used when the map key collided with a param name during parsing).
   const portNameSet = new Set(outputPorts.map((p) => p.name));
+  const portNameToId = new Map<string, string>();
+  for (const id of terminalIds) {
+    const node = nodeById.get(id)!;
+    const outputPort = node.data.outputPort as string | undefined;
+    if (outputPort && portNameSet.has(outputPort)) {
+      portNameToId.set(outputPort, id);
+    } else if (portNameSet.has(node.label)) {
+      portNameToId.set(node.label, id);
+    }
+  }
   const portsMatchTerminals = outputPorts.length > 0 &&
     terminalIds.length > 0 &&
-    terminalIds.every((id) => portNameSet.has(id));
+    portNameToId.size === outputPorts.length;
+  // Set of terminal IDs whose labels match output port names
+  const terminalPortIds = portsMatchTerminals ? new Set(terminalIds) : new Set<string>();
 
   // Let bindings: exclude terminals and inline-able nodes (which are folded
   // directly into their single consumer's call expression).
   const letIds =
     (portsMatchTerminals
-      ? sorted.filter((id) => !portNameSet.has(id))
+      ? sorted.filter((id) => !terminalPortIds.has(id))
       : terminalIds.length === 1
       ? sorted.filter((id) => id !== terminalIds[0])
       : sorted).filter((id) => !isInlineable(id));
@@ -354,9 +384,22 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
   const returnRef = (id: string) => letIdSet.has(id) ? binding(id) : callExpr(id);
 
   // Return expression — map keys get their own lines for readability.
-  // Base indent depends on whether there is a let block (4 spaces) or not (2 spaces).
+  // Passthrough terminals (no data.fn, one incoming edge) emit as binding refs,
+  // not function calls: {:x1 x1} instead of {:x1 (x1 back-substitute)}.
+  function portExpr(id: string): string {
+    const node = nodeById.get(id)!;
+    // Passthrough terminals: created from `{:x1 x1}` map values where the
+    // symbol references a let-bound destructuring. Marked by outputPort == label.
+    const outputPort = node.data.outputPort as string | undefined;
+    if (outputPort === node.label && !node.data.fn) {
+      return binding(id);
+    }
+    return callExpr(id);
+  }
   const mapEntries: [string, string][] | null = portsMatchTerminals
-    ? outputPorts.map((p) => [`:${p.name}`, callExpr(p.name)] as [string, string])
+    ? outputPorts.map((p) =>
+      [`:${p.name}`, portExpr(portNameToId.get(p.name)!)] as [string, string]
+    )
     : terminalIds.length === 1
     ? null
     : terminalIds.map((id) => [`:${nodeById.get(id)!.label}`, returnRef(id)] as [string, string]);
@@ -367,8 +410,14 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
     return `(defn ${nameForm}${attrMap}\n  [${paramList}]\n  ${returnExpr})`;
   }
 
-  // Format let bindings: first on same line as `[`, rest indented to align
-  const bindingLines = letIds.map((id) => `${binding(id)} ${callExpr(id)}`);
+  // Format let bindings: first on same line as `[`, rest indented to align.
+  // Nodes with destructuredKeys emit {:keys [k1 k2]} instead of a simple binding name.
+  const bindingLines = letIds.map((id) => {
+    const node = nodeById.get(id)!;
+    const keys = node.data.destructuredKeys as string[] | undefined;
+    const binder = keys ? `{:keys [${keys.join(" ")}]}` : binding(id);
+    return `${binder} ${callExpr(id)}`;
+  });
 
   const indent = " ".repeat(8); // aligns under first binding name after `  (let [`
   const letBlock = bindingLines
@@ -395,47 +444,86 @@ function emitDefnForm(container: TreeNode, edges: Edge[]): string {
  * Edges between nodes that are not co-children of a composite are not
  * encoded (by design — edges require a containing defn/let scope).
  */
-export function graphToSpike(nodes: TreeNode[], edges: Edge[]): string {
+export function graphToSpike(
+  nodes: TreeNode[],
+  edges: Edge[],
+  imports?: string[],
+  /** When set, emit as a single defn body instead of flat top-level defs. */
+  container?: TreeNode,
+): string {
   const lines: string[] = [];
-  const emitted = new Set<string>();
+  if (imports && imports.length > 0) {
+    lines.push(`(require ${imports.join(" ")})`);
+  }
 
-  function emitNode(node: TreeNode): void {
-    if (emitted.has(node.id)) return;
-    emitted.add(node.id);
-
-    if (node.kind === "leaf") {
-      lines.push(`(def ${nameWithIdMeta(node)})`);
-      return;
-    }
-
-    // Determine which edges are local to this node's direct children
-    const childIds = new Set(node.children.map((c) => c.id));
+  // If a container is provided and it has edges among its children, emit as defn
+  if (container) {
+    const childIds = new Set(container.children.map((c) => c.id));
     const localEdges = edges.filter(
       (e) => childIds.has(e.fromId) && childIds.has(e.toId),
     );
-
-    // Emit composite children first (depth-first), each separated by a blank line
-    for (const child of node.children) {
-      if (child.kind === "composite") {
-        emitNode(child);
-        lines.push("");
-      }
-    }
-
     if (localEdges.length > 0) {
-      lines.push(emitDefnForm(node, localEdges));
-    } else {
-      const refs = node.children.map((c) => c.label).join(" ");
-      lines.push(`(def ${nameWithIdMeta(node)} [${refs}])`);
+      // Emit any composite children first (depth-first)
+      const emitted = new Set<string>();
+      for (const child of container.children) {
+        if (child.kind === "composite") {
+          emitNodeInto(child, edges, lines, emitted);
+          lines.push("");
+        }
+      }
+      lines.push(emitDefnForm(container, localEdges));
+      return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
     }
+    // Fall through to flat emission if no edges
   }
 
+  const emitted = new Set<string>();
   for (const node of nodes) {
-    emitNode(node);
+    emitNodeInto(node, edges, lines, emitted);
     lines.push("");
   }
 
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function emitNodeInto(
+  node: TreeNode,
+  edges: Edge[],
+  lines: string[],
+  emitted: Set<string>,
+): void {
+  if (emitted.has(node.id)) return;
+  emitted.add(node.id);
+
+  if (node.kind === "leaf" || (node.type === "ref" && node.children.length === 0)) {
+    if (node.type === "ref" && node.ref) {
+      lines.push(`(def ${nameWithIdMeta(node)} ${node.ref})`);
+    } else {
+      lines.push(`(def ${nameWithIdMeta(node)})`);
+    }
+    return;
+  }
+
+  // Determine which edges are local to this node's direct children
+  const childIds = new Set(node.children.map((c) => c.id));
+  const localEdges = edges.filter(
+    (e) => childIds.has(e.fromId) && childIds.has(e.toId),
+  );
+
+  // Emit composite children first (depth-first), each separated by a blank line
+  for (const child of node.children) {
+    if (child.kind === "composite") {
+      emitNodeInto(child, edges, lines, emitted);
+      lines.push("");
+    }
+  }
+
+  if (localEdges.length > 0) {
+    lines.push(emitDefnForm(node, localEdges));
+  } else {
+    const refs = node.children.map((c) => c.label).join(" ");
+    lines.push(`(def ${nameWithIdMeta(node)} [${refs}])`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -481,36 +569,75 @@ export function spikeToGraph(
       ports: Port[];
       nodeFunctions: Map<string, string>;
       nodeArgOrders: Map<string, string[]>;
+      nodeRefs: Map<string, string>;
+      nodeDestructuredKeys: Map<string, string[]>;
+      nodeOutputPorts: Map<string, string>;
     }
   >();
   // Label → explicit UUID pulled from `^{:id "..."}` reader metadata on the
   // def/defn name. When absent, the node falls back to label-as-id.
   const nameId = new Map<string, string>();
-  // Label → { uri, data } extracted from the name's reader metadata.
-  const nameMeta = new Map<string, { uri: string | undefined; data: Record<string, unknown> }>();
+  // Label → { uri, ref, data } extracted from the name's reader metadata.
+  const nameMeta = new Map<
+    string,
+    { uri: string | undefined; ref: string | undefined; data: Record<string, unknown> }
+  >();
+
+  // Names defined by prior def/defn forms, accumulated top-to-bottom so that
+  // scope-inferred references match Clojure's sequential evaluation model.
+  const definedNames = new Set<string>();
 
   for (const form of forms) {
     if (form.type !== "list" || form.items.length < 2) continue;
-    const [head, nameForm] = form.items;
-    if (head.type !== "symbol" || nameForm.type !== "symbol") continue;
+    const head = form.items[0];
+    if (head.type !== "symbol") continue;
+
+    // (require name1 name2 ...) — import declarations add names to scope
+    // without creating nodes. Used for transient imports in focused code views.
+    if (head.value === "require") {
+      for (const arg of form.items.slice(1)) {
+        if (arg.type === "symbol") {
+          definedNames.add(arg.value);
+        }
+      }
+      continue;
+    }
+
+    const nameForm = form.items[1];
+    if (nameForm.type !== "symbol") continue;
     const name = nameForm.value;
     const uuid = extractIdMeta(nameForm);
     if (uuid) nameId.set(name, uuid);
     const meta = extractNameMeta(nameForm);
-    if (meta.uri || Object.keys(meta.data).length > 0) {
+    if (meta.uri || meta.ref || Object.keys(meta.data).length > 0) {
       nameMeta.set(name, meta);
     }
 
     if (head.value === "def") {
-      // (def name [child ...]) or bare (def name) for leaf nodes
+      // (def name symbol) → reference node
+      // (def name [child ...]) → composite node
+      // (def name) → leaf node
       const bodyForm = form.items[2]; // undefined for bare (def name)
-      const childNames: string[] = [];
-      if (bodyForm && bodyForm.type === "vector") {
-        for (const item of bodyForm.items) {
-          if (item.type === "symbol") childNames.push(item.value);
+      if (bodyForm && bodyForm.type === "symbol") {
+        // Reference node: (def use-square square)
+        const refTarget = bodyForm.value;
+        const existingMeta = nameMeta.get(name);
+        nameMeta.set(name, {
+          uri: existingMeta?.uri,
+          ref: existingMeta?.ref ?? refTarget,
+          data: existingMeta?.data ?? {},
+        });
+        defs.set(name, []);
+      } else {
+        const childNames: string[] = [];
+        if (bodyForm && bodyForm.type === "vector") {
+          for (const item of bodyForm.items) {
+            if (item.type === "symbol") childNames.push(item.value);
+          }
         }
+        defs.set(name, childNames);
       }
-      defs.set(name, childNames);
+      definedNames.add(name);
     } else if (head.value === "defn") {
       // (defn name [params] (let [...] body))
       // Also handles attr-map position: (defn name {:ports ...} [params] body)
@@ -578,7 +705,21 @@ export function spikeToGraph(
         letParts = [{ type: "vector", items: [] }, bodyForm];
       }
 
-      const result = parseLetForm(letParts, paramNames);
+      // Derive output ports from map return keys when no explicit {:ports ...} attr-map.
+      // A map return like {:u (cbrt ...) :v (cbrt ...)} naturally defines output ports.
+      if (outputPorts.length === 0) {
+        const bodyExpr = letParts[1];
+        if (bodyExpr?.type === "map") {
+          for (const [k] of bodyExpr.entries) {
+            if (k.type === "keyword") {
+              outputPorts.push({ name: k.value, direction: "out" });
+            }
+          }
+        }
+      }
+
+      definedNames.add(name);
+      const result = parseLetForm(letParts, paramNames, definedNames);
       if (result.errors.length > 0) errors.push(...result.errors);
       defns.set(name, { ...result, ports: [...inputPorts, ...outputPorts] });
     }
@@ -593,11 +734,26 @@ export function spikeToGraph(
   const allEdges: Edge[] = [];
 
   for (
-    const [name, { nodes: childLabels, edges: rawEdges, ports, nodeFunctions, nodeArgOrders }]
-      of defns
+    const [
+      name,
+      {
+        nodes: childLabels,
+        edges: rawEdges,
+        ports,
+        nodeFunctions,
+        nodeArgOrders,
+        nodeRefs,
+        nodeDestructuredKeys,
+        nodeOutputPorts,
+      },
+    ] of defns
   ) {
+    // Namespace child IDs with parent defn name to avoid collisions between
+    // children of different defns that share the same label (e.g. param "a").
+    const defnId = nameId.get(name) ?? name;
+    const childId = (label: string) => `${defnId}/${label}`;
     const children: TreeNode[] = childLabels.map((label) => ({
-      id: label,
+      id: childId(label),
       label,
       kind: "leaf" as const,
       children: [],
@@ -608,12 +764,22 @@ export function spikeToGraph(
         // argOrder: preserved arg list (symbolic labels + literal reprs) so the
         // emitter can reconstruct the exact call including literal values.
         ...(nodeArgOrders.has(label) ? { argOrder: nodeArgOrders.get(label)! } : {}),
+        // destructuredKeys: binding names from {:keys [p q]} destructuring.
+        // The emitter uses this to reconstruct destructuring syntax.
+        ...(nodeDestructuredKeys.has(label)
+          ? { destructuredKeys: nodeDestructuredKeys.get(label)! }
+          : {}),
+        // outputPort: when a map-key terminal collides with a param name, the
+        // node gets a conjunctive label but must map back to the output port name.
+        ...(nodeOutputPorts.has(label) ? { outputPort: nodeOutputPorts.get(label)! } : {}),
       },
+      // Scope-inferred ref: call-position function was defined by a prior def/defn
+      ...(nodeRefs.has(label) ? { type: "ref" as const, ref: nodeRefs.get(label)! } : {}),
       version: 1,
     }));
     const meta = nameMeta.get(name);
     builtDefn.set(name, {
-      id: nameId.get(name) ?? name,
+      id: defnId,
       label: name,
       kind: "composite",
       children,
@@ -624,9 +790,9 @@ export function spikeToGraph(
     });
     for (const pe of rawEdges) {
       allEdges.push({
-        id: `${pe.from}-${pe.to}`,
-        fromId: pe.from,
-        toId: pe.to,
+        id: `${defnId}/${pe.from}-${pe.to}`,
+        fromId: childId(pe.from),
+        toId: childId(pe.to),
         label: pe.label,
         data: pe.data,
         version: 1,
@@ -661,6 +827,7 @@ export function spikeToGraph(
     const node: TreeNode = {
       id: nameId.get(name) ?? name,
       label: name,
+      ...(meta?.ref ? { type: "ref" as const, ref: meta.ref } : {}),
       kind: children.length > 0 ? "composite" : "leaf",
       children,
       data: meta?.data ?? {},
@@ -678,8 +845,12 @@ export function spikeToGraph(
   for (const children of defs.values()) {
     for (const c of children) allChildLabels.add(c);
   }
-  for (const { nodes } of defns.values()) {
-    for (const n of nodes) allChildLabels.add(n);
+  for (const { nodes, nodeRefs } of defns.values()) {
+    for (const n of nodes) {
+      // Scope-inferred ref nodes reference an external definition — they should
+      // NOT suppress that definition from appearing as a root node.
+      if (!nodeRefs.has(n)) allChildLabels.add(n);
+    }
   }
 
   const defRoots = [...defs.keys()]
@@ -714,12 +885,16 @@ interface ParsedEdge {
 function parseLetForm(
   letParts: SExp[],
   paramNames: string[] = [],
+  definedNames: Set<string> = new Set(),
 ): {
   nodes: string[];
   edges: ParsedEdge[];
   errors: string[];
   nodeFunctions: Map<string, string>;
   nodeArgOrders: Map<string, string[]>;
+  nodeRefs: Map<string, string>;
+  nodeDestructuredKeys: Map<string, string[]>;
+  nodeOutputPorts: Map<string, string>;
 } {
   const errors: string[] = [];
   const nodeLabels = new Set<string>();
@@ -729,10 +904,31 @@ function parseLetForm(
   // Maps node label → ordered arg list (symbolic labels + literal reprs).
   // Stored for let-bound nodes and conjunctive-named inline nodes.
   const nodeArgOrders = new Map<string, string[]>();
+  // Maps node label → ref target when the call-position function name is a prior definition.
+  const nodeRefs = new Map<string, string>();
+  // Maps binding name → output port name for destructured bindings.
+  // When a destructured binding is used as an arg, the edge gets outputPort metadata.
+  const bindingPorts = new Map<string, string>();
+  // Maps node label → list of destructured binding key names.
+  // Used by the emitter to reconstruct {:keys [...]} syntax.
+  const nodeDestructuredKeys = new Map<string, string[]>();
+  // Maps node label → output port name for map-key terminals that collide with
+  // params. E.g. in `(defn normalise [a b] {:b (divide b a)})`, the divide node
+  // gets label "divide" but outputPort "b" so the emitter can reconstruct {:b (divide ...)}.
+  const nodeOutputPorts = new Map<string, string>();
 
   if (letParts.length < 1 || letParts[0].type !== "vector") {
     errors.push("let: expected binding vector");
-    return { nodes: [], edges: [], errors, nodeFunctions, nodeArgOrders: new Map() };
+    return {
+      nodes: [],
+      edges: [],
+      errors,
+      nodeFunctions,
+      nodeArgOrders: new Map(),
+      nodeRefs: new Map(),
+      nodeDestructuredKeys: new Map(),
+      nodeOutputPorts: new Map(),
+    };
   }
 
   const bindingVec = letParts[0].items;
@@ -789,6 +985,7 @@ function parseLetForm(
     // Nested calls are recursively expanded, creating their own nodes and edges.
     const resolvedArgs: Array<{
       label: string | null;
+      port?: string;
       literal: string | null;
       edgeMeta: { label: string; data: Record<string, unknown> };
     }> = [];
@@ -800,29 +997,56 @@ function parseLetForm(
       } else if (arg.type === "string") {
         resolvedArgs.push({ label: null, literal: JSON.stringify(arg.value), edgeMeta });
       } else {
-        const srcLabel = resolveArg(arg);
-        resolvedArgs.push({ label: srcLabel, literal: null, edgeMeta });
+        const resolved = resolveArg(arg);
+        resolvedArgs.push({
+          label: resolved?.label ?? null,
+          port: resolved?.port,
+          literal: null,
+          edgeMeta,
+        });
       }
     }
 
     // Determine node label. When no nameOverride is given and the function name
-    // already exists as a node, generate a conjunctive name (fn-arg1-arg2) to
-    // avoid collapsing distinct inline calls into a single node. The conjunctive
-    // name becomes the node's identity and data.fn stores the real function name.
+    // already exists as a node OR is a prior definition (would shadow), generate
+    // a disambiguated name to avoid collapsing distinct inline calls into a single
+    // node and to prevent shadowing outer definitions.
+    //
+    // Strategy: use base function names of args (via nodeFunctions), deduplicate,
+    // and append a serial suffix only if still not unique.
     let effectiveOverride = nameOverride;
-    if (effectiveOverride === undefined && nodeLabels.has(funcLabel)) {
-      const parts = resolvedArgs
-        .map((a) => a.label ?? a.literal)
+    if (
+      effectiveOverride === undefined && (nodeLabels.has(funcLabel) || definedNames.has(funcLabel))
+    ) {
+      const baseParts = resolvedArgs
+        .map((a) => {
+          const raw = a.label ?? a.literal;
+          if (raw === null) return null;
+          // Use the base function name if this arg is a generated node
+          return nodeFunctions.get(raw) ?? raw;
+        })
         .filter((x): x is string => x !== null);
-      if (parts.length > 0) {
-        effectiveOverride = `${funcLabel}-${parts.join("-")}`;
+      // Deduplicate while preserving order
+      const unique = [...new Set(baseParts)];
+      let candidate = unique.length > 0 ? `${funcLabel}-${unique.join("-")}` : funcLabel;
+      // Serial suffix for remaining collisions
+      if (nodeLabels.has(candidate)) {
+        let n = 2;
+        while (nodeLabels.has(`${candidate}-${n}`)) n++;
+        candidate = `${candidate}-${n}`;
       }
+      effectiveOverride = candidate;
     }
 
     const nodeLabel = effectiveOverride ?? funcLabel;
     nodeLabels.add(nodeLabel);
     if (effectiveOverride && effectiveOverride !== funcLabel) {
       nodeFunctions.set(nodeLabel, funcLabel);
+    }
+    // Scope-inferred ref: if the function name was defined by a prior def/defn,
+    // mark this node as a reference to that definition.
+    if (definedNames.has(funcLabel)) {
+      nodeRefs.set(nodeLabel, funcLabel);
     }
 
     // Second pass: build argList and add edges from resolved args to this node.
@@ -841,31 +1065,63 @@ function parseLetForm(
             data: a.edgeMeta.data,
           });
         }
-        argList.push(a.label);
+        // Use port name in argOrder when available (destructured binding)
+        argList.push(a.port ?? a.label);
       }
     }
 
-    if (effectiveOverride !== undefined) {
+    // Store argOrder when the node has a name override (let-bound or conjunctive),
+    // or when any arg uses a destructured port (so emitter can reconstruct port names).
+    const hasPortArgs = resolvedArgs.some((a) => a.port !== undefined);
+    if (effectiveOverride !== undefined || hasPortArgs) {
       nodeArgOrders.set(nodeLabel, argList);
     }
     return nodeLabel;
   }
 
   // Resolve an argument SExp to the node label it refers to:
-  //   - known binding symbol → the label bound to it
+  //   - known binding symbol → the label bound to it (+ port if destructured)
   //   - nested call → recursively expand and return its outermost label
   //   - anything else (literal, keyword, unknown symbol) → null
-  function resolveArg(arg: SExp): string | null {
+  function resolveArg(arg: SExp): { label: string; port?: string } | null {
     if (arg.type === "symbol" && bindingToLabel.has(arg.value)) {
-      return bindingToLabel.get(arg.value)!;
+      const label = bindingToLabel.get(arg.value)!;
+      const port = bindingPorts.get(arg.value);
+      return { label, port };
     }
-    if (arg.type === "list") return expandCall(arg);
+    if (arg.type === "list") {
+      const l = expandCall(arg);
+      return l ? { label: l } : null;
+    }
     return null;
   }
 
   for (let i = 0; i + 1 < bindingVec.length; i += 2) {
     const bname = bindingVec[i];
     const callExpr = bindingVec[i + 1];
+
+    if (bname.type === "map") {
+      // Destructuring binding: {:keys [p q]} (call ...)
+      // Expand the call, then register each destructured key as a binding
+      // that maps to the same node label but with a port annotation.
+      const keysEntry = bname.entries.find(([k]) => k.type === "keyword" && k.value === "keys");
+      if (keysEntry && keysEntry[1].type === "vector") {
+        const nodeLabel = expandCall(callExpr);
+        if (nodeLabel !== null) {
+          const keys: string[] = [];
+          for (const keyItem of keysEntry[1].items) {
+            if (keyItem.type === "symbol") {
+              bindingToLabel.set(keyItem.value, nodeLabel);
+              bindingPorts.set(keyItem.value, keyItem.value);
+              keys.push(keyItem.value);
+            }
+          }
+          nodeDestructuredKeys.set(nodeLabel, keys);
+        }
+      }
+      continue;
+    }
+
     if (bname.type !== "symbol") continue;
 
     // Pass the binding variable name as the node identity: (let [neg-b (negate b)] ...)
@@ -884,14 +1140,43 @@ function parseLetForm(
       // Map body: {:k (call ...) ...} — expand each call using the map key as
       // the node's identity. This preserves distinct terminal nodes even when
       // the same function (e.g. `divide`) is called multiple times.
+      // When a map key collides with a param name, skip the override so
+      // expandCall chooses a conjunctive name, and record the port mapping.
       for (const [key, val] of body.entries) {
+        const portName = key.type === "keyword" ? key.value : undefined;
         if (val.type === "list") {
-          const nameOverride = key.type === "keyword" ? key.value : undefined;
-          expandCall(val, nameOverride);
+          const collides = portName !== undefined && nodeLabels.has(portName);
+          const nameOverride = collides ? undefined : portName;
+          const resultLabel = expandCall(val, nameOverride);
+          if (resultLabel && portName && collides) {
+            nodeOutputPorts.set(resultLabel, portName);
+          }
+        } else if (val.type === "symbol" && portName) {
+          // Passthrough: {:x1 x1} — the symbol references a binding.
+          // Create the port-named node with an edge from the source node.
+          const sourceLabel = bindingToLabel.get(val.value);
+          if (sourceLabel && !nodeLabels.has(portName)) {
+            nodeLabels.add(portName);
+            nodeOutputPorts.set(portName, portName); // marks as passthrough terminal
+            const edgeKey = `${sourceLabel}->${portName}`;
+            if (!seenEdges.has(edgeKey)) {
+              seenEdges.add(edgeKey);
+              edges.push({ from: sourceLabel, to: portName, label: "", data: {} });
+            }
+          }
         }
       }
     }
   }
 
-  return { nodes: [...nodeLabels], edges, errors, nodeFunctions, nodeArgOrders };
+  return {
+    nodes: [...nodeLabels],
+    edges,
+    errors,
+    nodeFunctions,
+    nodeArgOrders,
+    nodeRefs,
+    nodeDestructuredKeys,
+    nodeOutputPorts,
+  };
 }
