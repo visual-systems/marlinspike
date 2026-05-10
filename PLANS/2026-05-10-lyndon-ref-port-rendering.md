@@ -12,9 +12,9 @@ ports, making dataflow visible at a glance.
 ## Goal
 
 1. Collapsed ref nodes show the target function's input/output ports (resolved at render time).
-2. ~~Edges connect to specific port positions on collapsed nodes.~~ — Deferred: the force layout
-   doesn't account for port positions, so routing edges to fixed port locations creates worse visual
-   results (crossing, wrong-direction edges) than boundary routing on complex graphs.
+2. Port-aware layout algorithm (PORT) that positions nodes for left-to-right dataflow, making
+   port-aware edge routing viable.
+3. Edges connect to specific port positions on collapsed nodes (gated on PORT algorithm).
 
 ## Approach
 
@@ -46,25 +46,80 @@ layout algorithm (e.g. left-to-right topogrid) to work well.
 - [x] Update entity-references plan (close ports-on-refs open question)
 - [x] Update DESIGN.md
 
+### Step 6: LTR topogrid functions (`topo-grid.ts`)
+
+Add left-to-right variants of the existing top-to-bottom topogrid. Same `buildLayerAssignment`,
+but layers map to x-axis (columns) and within-layer ordering maps to y-axis.
+
+- [x] Add `topoGridLayoutLTR` (uniform size, for initNodes)
+- [x] Add `topoGridLayoutSizedLTR` (per-node sizes, for tick convergence)
+- [x] Add tests in `topo-grid_test.ts` (6 tests)
+
+### Step 7: Create PORT algorithm (`algorithms/PORT.ts`)
+
+New layout algorithm: LTR topogrid init + FIELD-style tick (SDF + directional field + anchor forces).
+
+- `preservesPositions: false` — deterministic LTR init on each syncLayout
+- `initNodes` → `topoGridLayoutLTR`
+- `tick` → `tickSdfLevel` + directional field force + `applyAnchorForces` (same as FIELD)
+- Config extends `FieldConfig` with LTR spacing params
+
+- [x] Create `PORT.ts` with `createPORT` factory and `DEFAULT_PORT_CONFIG`
+
+### Step 8: Register PORT
+
+- [x] Add `"PORT"` to `AlgorithmId` in `types.ts`
+- [x] Export from `index.ts`
+- [x] Add PORT case to algorithm instantiation in `canvas.tsx`
+
+### Step 9: Ref pseudo-edges in `stepLayout` (`canvas.tsx`)
+
+Inject transient pseudo-edges for ref→target relationships so disconnected ref subgraphs are
+pulled together by the layout. Gated on `algorithm.id === "PORT"`.
+
+- [x] Add ref pseudo-edge injection in `stepLayout` (child + root level ticks)
+
+### Step 10: Restore port-aware edge routing (gated on PORT)
+
+Restore reverted edge routing code (`portSurfacePoint`, `resolveEdgePorts`, `nodePortPositions`),
+gated on `algorithm.id === "PORT"`. Non-PORT algorithms fall back to boundary routing.
+
+- [x] Restore port-aware edge routing, gated on PORT algorithm
+
+### Step 11: Tests and verification
+
+- [x] Unit tests for LTR topogrid (6 tests)
+- [x] Update plan file as work progresses
+
 ## Key files
 
 | File                                   | Change                                          |
 | -------------------------------------- | ----------------------------------------------- |
 | `src/ui/lib/port-layout.ts`            | `resolveNodePorts` helper                       |
 | `src/ui/lib/port-layout_test.ts`       | 7 unit tests for port resolution                |
-| `src/ui/components/canvas.tsx`         | Effective ports map for resolved port rendering |
+| `src/ui/components/canvas.tsx`         | Effective ports map, PORT instantiation, ref pseudo-edges, port-aware routing |
 | `src/ui/stories/reference.stories.tsx` | RefWithPorts + RefPortEdgeRouting stories       |
+| `src/ui/lib/topo-grid.ts`             | `topoGridLayoutLTR`, `topoGridLayoutSizedLTR`  |
+| `src/ui/lib/algorithms/PORT.ts`       | New PORT algorithm module                       |
+| `src/ui/lib/algorithms/types.ts`      | Add `"PORT"` to `AlgorithmId`                   |
+| `src/ui/lib/algorithms/index.ts`      | Export PORT                                     |
 
 ## Open Questions
 
-- **Port-aware edge routing** — Needs a port-aware layout algorithm. The current force layout
-  doesn't position nodes to minimise port-edge crossings. A left-to-right topogrid or Sugiyama-style
-  layout would make port routing viable.
-- **Port count display limits** — Many ports on a small circle (r=26) may crowd. Probably fine for
-  typical function arities (2-4 ports), but 7+ ports on cubic-roots functions look busy.
+- **Config tuning** — LTR defaults (field strength, spring length, anchor ramp) need visual
+  tuning once the algorithm runs. Start with FIELD defaults and adjust.
+- **Arc edge routing** — Deferred. Only straight edges get port-aware routing.
+- **Ref target resolution in stepLayout** — Refs store target label, not ID. Need label→id
+  lookup against sibling TreeNodes.
+- **Port count display limits** — Many ports on a small circle (r=26) may crowd. Probably fine
+  for typical function arities (2-4 ports), but 7+ ports on cubic-roots functions look busy.
 
 ## Verification
 
-- [x] `NO_COLOR=1 deno task ci` passes (403 tests, 0 failures)
+- [x] `NO_COLOR=1 deno task ci` passes (409 tests, 0 failures)
 - [ ] Stories render at `/stories` — ref nodes show target's ports
+- [ ] PORT algorithm: sources on left, sinks on right
+- [ ] Edges connect to port positions on ref nodes (PORT only)
+- [ ] Disconnected ref subgraphs pulled together by pseudo-edges
+- [ ] Non-PORT algorithms unchanged
 - [ ] Existing non-ref rendering unchanged
