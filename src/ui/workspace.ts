@@ -472,7 +472,13 @@ export function getFocusedRootNodes(ws: WorkspaceState): TreeNode[] {
   if (ws.focusId == null) {
     return ws.treeNodes;
   }
-  return findNode(ws.treeNodes, ws.focusId)?.children ?? [];
+  const node = findNode(ws.treeNodes, ws.focusId);
+  if (!node) {
+    console.warn(
+      `[getFocusedRootNodes] focusId "${ws.focusId}" not found in tree — returning []`,
+    );
+  }
+  return node?.children ?? [];
 }
 
 /** Get the active workspace's root node ID. */
@@ -754,6 +760,24 @@ export function defaultState(): WorkspaceState {
     workflows: ["Explore", "Design", "Build"],
     activeWorkflow: "Explore",
   };
+}
+
+/** Workspace state with a guaranteed focus target — returned by `storyState`. */
+export type FocusedWorkspaceState = WorkspaceState & { focusId: string };
+
+/** Create a workspace state with children placed inside the workspace root.
+ *  Returns a `FocusedWorkspaceState` so callers can use `ws.focusId` without
+ *  null-assertions — if the workspace root can't be found, it throws eagerly
+ *  rather than silently producing an empty canvas. */
+export function storyState(children: TreeNode[]): FocusedWorkspaceState {
+  const ws = defaultState();
+  if (!ws.focusId) throw new Error("storyState: defaultState has no focusId");
+  const wsRoot = findNode(ws.treeNodes, ws.focusId);
+  if (!wsRoot) {
+    throw new Error(`storyState: workspace root ${ws.focusId} not found in tree`);
+  }
+  wsRoot.children = children;
+  return ws as FocusedWorkspaceState;
 }
 
 // ---------------------------------------------------------------------------

@@ -9,8 +9,8 @@ import {
 } from "../../graph/builtin_constraints.ts";
 import {
   defaultConstraintsPanel,
-  defaultState,
   makeNode,
+  storyState,
   type Updater,
   type WorkspaceState,
 } from "../workspace.ts";
@@ -29,56 +29,85 @@ function StoryWrapper({ initial }: { initial: WorkspaceState }) {
 }
 
 export function Default() {
-  const ws = defaultState();
-  ws.canvasExpandedNodes = [];
+  const ws = storyState([
+    makeNode("auth", "auth-service", "leaf", []),
+    makeNode("frontend", "frontend", "leaf", []),
+    makeNode("billing", "billing", "leaf", []),
+  ]);
   return <StoryWrapper initial={ws} />;
 }
 
 export function WithExpanded() {
-  const ws = defaultState();
-  ws.canvasExpandedNodes = ["spike://acme/backend"];
+  const ws = storyState([
+    makeNode("backend", "backend", "composite", [
+      makeNode("auth", "auth-service", "leaf", []),
+      makeNode("frontend", "frontend", "leaf", []),
+    ]),
+    makeNode("infra", "infra", "leaf", []),
+  ]);
+  ws.canvasExpandedNodes = [ws.focusId, "backend"];
   return <StoryWrapper initial={ws} />;
 }
 
 export function DeepExpanded() {
-  const ws = defaultState();
-  ws.canvasExpandedNodes = ["spike://acme/backend", "spike://acme/backend/auth-service"];
+  const ws = storyState([
+    makeNode("backend", "backend", "composite", [
+      makeNode("auth", "auth-service", "composite", [
+        makeNode("token", "token-validator", "leaf", []),
+        makeNode("session", "session-store", "leaf", []),
+      ]),
+      makeNode("frontend", "frontend", "leaf", []),
+    ]),
+  ]);
+  ws.canvasExpandedNodes = [ws.focusId, "backend", "auth"];
   return <StoryWrapper initial={ws} />;
 }
 
 export function WithEdgesAndSelection() {
-  const ws = defaultState();
-  const fromId = "spike://acme/backend/auth-service";
-  const toId = "spike://acme/backend/frontend";
-  ws.edges = [{ id: "edge-1", fromId, toId, label: "depends on", data: {}, version: 1 }];
-  ws.canvasExpandedNodes = ["spike://acme/backend"];
-  ws.panels[0].selected = { type: "node", id: fromId };
+  const ws = storyState([
+    makeNode("backend", "backend", "composite", [
+      makeNode("auth", "auth-service", "leaf", []),
+      makeNode("frontend", "frontend", "leaf", []),
+    ]),
+  ]);
+  ws.edges = [{
+    id: "edge-1",
+    fromId: "auth",
+    toId: "frontend",
+    label: "depends on",
+    data: {},
+    version: 1,
+  }];
+  ws.canvasExpandedNodes = [ws.focusId, "backend"];
+  ws.panels[0].selected = { type: "node", id: "auth" };
   return <StoryWrapper initial={ws} />;
 }
 
 export function BidirectionalEdges() {
-  const ws = defaultState();
-  const fromId = "spike://acme/backend/auth-service";
-  const toId = "spike://acme/backend/frontend";
+  const ws = storyState([
+    makeNode("backend", "backend", "composite", [
+      makeNode("auth", "auth-service", "leaf", []),
+      makeNode("frontend", "frontend", "leaf", []),
+    ]),
+  ]);
   ws.edges = [
-    { id: "edge-1", fromId, toId, label: "calls", data: {}, version: 1 },
-    { id: "edge-2", fromId: toId, toId: fromId, label: "responds", data: {}, version: 1 },
+    { id: "edge-1", fromId: "auth", toId: "frontend", label: "calls", data: {}, version: 1 },
+    { id: "edge-2", fromId: "frontend", toId: "auth", label: "responds", data: {}, version: 1 },
   ];
-  ws.canvasExpandedNodes = ["spike://acme/backend"];
+  ws.canvasExpandedNodes = [ws.focusId, "backend"];
   return <StoryWrapper initial={ws} />;
 }
 
 export function EdgeConfigurations() {
-  const ws = defaultState();
   // Six isolated nodes: pairs for each edge configuration
-  ws.treeNodes = [
+  const ws = storyState([
     makeNode("a1", "sender", "leaf", []),
     makeNode("b1", "receiver", "leaf", []),
     makeNode("a2", "ping", "leaf", []),
     makeNode("b2", "pong", "leaf", []),
     makeNode("a3", "writer", "leaf", []),
     makeNode("b3", "store", "leaf", []),
-  ];
+  ]);
   ws.edges = [
     // Single directed edge: a1 -> b1
     { id: "e1", fromId: "a1", toId: "b1", label: "a→b", data: {}, version: 1 },
@@ -89,22 +118,22 @@ export function EdgeConfigurations() {
     { id: "e4", fromId: "a3", toId: "b3", label: "write", data: {}, version: 1 },
     { id: "e5", fromId: "a3", toId: "b3", label: "flush", data: {}, version: 1 },
   ];
-  ws.canvasExpandedNodes = [];
   return <StoryWrapper initial={ws} />;
 }
 
 export function EdgeAddition() {
-  const ws = defaultState();
-  ws.canvasExpandedNodes = [];
-  ws.edges = [];
+  const ws = storyState([
+    makeNode("a", "node-a", "leaf", []),
+    makeNode("b", "node-b", "leaf", []),
+    makeNode("c", "node-c", "leaf", []),
+  ]);
   return <StoryWrapper initial={ws} />;
 }
 
 export function ExpandedEdges() {
   // group-a must be a child (not root-level) to get a rendered bounding-box rect.
   // Root-level expanded nodes float freely without a box.
-  const ws = defaultState();
-  ws.treeNodes = [
+  const ws = storyState([
     makeNode("root", "platform", "composite", [
       makeNode("group-a", "frontend", "composite", [
         makeNode("ui", "UI", "leaf", []),
@@ -112,19 +141,18 @@ export function ExpandedEdges() {
       ]),
       makeNode("svc", "auth-service", "leaf", []),
     ]),
-  ];
+  ]);
   ws.edges = [
     { id: "e1", fromId: "group-a", toId: "svc", label: "calls", data: {}, version: 1 },
     { id: "e2", fromId: "svc", toId: "group-a", label: "responds", data: {}, version: 1 },
     { id: "e3", fromId: "group-a", toId: "svc", label: "events", data: {}, version: 1 },
   ];
-  ws.canvasExpandedNodes = ["root", "group-a"];
+  ws.canvasExpandedNodes = [ws.focusId, "root", "group-a"];
   return <StoryWrapper initial={ws} />;
 }
 
 export function BigGraph() {
-  const ws = defaultState();
-  ws.treeNodes = [
+  const ws = storyState([
     makeNode("root", "platform", "composite", [
       makeNode("svc-a", "auth", "composite", [
         makeNode("svc-a-1", "token-validator", "leaf", []),
@@ -141,24 +169,23 @@ export function BigGraph() {
       ]),
       makeNode("svc-d", "storage", "leaf", []),
     ]),
-  ];
+  ]);
   ws.edges = [
     { id: "e1", fromId: "svc-a", toId: "svc-b", label: "", data: {}, version: 1 },
     { id: "e2", fromId: "svc-c", toId: "svc-a", label: "", data: {}, version: 1 },
     { id: "e3", fromId: "svc-b", toId: "svc-d", label: "", data: {}, version: 1 },
   ];
-  ws.canvasExpandedNodes = ["root", "svc-a", "svc-b"];
+  ws.canvasExpandedNodes = [ws.focusId, "root", "svc-a", "svc-b"];
   return <StoryWrapper initial={ws} />;
 }
 
 /** Node pre-selected with a failing constraint attached — tests clicking the constraint
  *  label in the canvas inspector to navigate to the constraint inspector. */
 export function ConstraintInspection() {
-  const ws = defaultState();
-  ws.treeNodes = [
+  const ws = storyState([
     makeNode("node-a", "auth-service", "leaf", []),
     makeNode("node-b", "", "leaf", []),
-  ];
+  ]);
   ws.constraints = [{ ...LABEL_REQUIRED_CONSTRAINT }];
   ws.constraintApplications = [
     { id: "app-1", constraintId: LABEL_REQUIRED_CONSTRAINT.id, entityId: "node-a", version: 1 },
@@ -199,8 +226,7 @@ export function ConstraintInspection() {
 export function Diagnostics() {
   // node-no-label: leaf node with empty label — violates LABEL_REQUIRED → error badge
   // node-big-group: composite node with 6 children — violates MAX_GROUP_SIZE → warning badge
-  const ws = defaultState();
-  ws.treeNodes = [
+  const ws = storyState([
     makeNode("root", "platform", "composite", [
       makeNode("node-no-label", "", "leaf", []),
       makeNode("node-big-group", "big-group", "composite", [
@@ -212,7 +238,7 @@ export function Diagnostics() {
         makeNode("c6", "child-6", "leaf", []),
       ]),
     ]),
-  ];
+  ]);
   ws.constraints = [LABEL_REQUIRED_CONSTRAINT, MAX_GROUP_SIZE_CONSTRAINT];
   ws.constraintApplications = [
     {
@@ -228,7 +254,7 @@ export function Diagnostics() {
       version: 1,
     },
   ];
-  ws.canvasExpandedNodes = ["root", "node-big-group"];
+  ws.canvasExpandedNodes = [ws.focusId, "root", "node-big-group"];
 
   const [state, setState] = useState<WorkspaceState>(ws);
   const update: Updater = (fn) => setState((prev) => fn(prev));

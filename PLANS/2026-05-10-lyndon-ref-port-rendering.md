@@ -91,6 +91,19 @@ gated on `algorithm.id === "PORT"`. Non-PORT algorithms fall back to boundary ro
 - [x] Unit tests for LTR topogrid (6 tests)
 - [x] Update plan file as work progresses
 
+### Diversion: Fix broken stories
+
+Canvas and tree-panel stories were rendering empty — broken since the workspace/profile tree
+refactor (`3ddafa0`). `defaultState()` creates a workspace root with no children, and
+`getFocusedRootNodes` returns `focusNode.children` → `[]`. Stories that referenced hardcoded
+`"spike://acme/..."` IDs or set `ws.treeNodes` directly without clearing `focusId` got nothing.
+
+- [x] Add `storyState(children)` helper to `workspace.ts` — places nodes inside workspace root
+- [x] Return `FocusedWorkspaceState` (narrowed type: `focusId: string`) — eliminates `!` assertions
+- [x] Throws eagerly if workspace root missing — catches bugs at story construction, not render
+- [x] Add warning in `getFocusedRootNodes` when `focusId` points to missing node
+- [x] Fix all canvas.stories.tsx and tree-panel.stories.tsx to use `storyState()`
+
 ## Key files
 
 | File                                   | Change                                          |

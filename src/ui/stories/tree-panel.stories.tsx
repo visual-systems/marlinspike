@@ -2,7 +2,7 @@
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useState } from "@hono/hono/jsx/dom";
 import { TreePanel } from "../components/tree-panel.tsx";
-import { defaultState, makeNode, type Updater, type WorkspaceState } from "../workspace.ts";
+import { makeNode, storyState, type Updater, type WorkspaceState } from "../workspace.ts";
 
 export const meta = { title: "Tree Panel" };
 
@@ -19,31 +19,50 @@ function StoryWrapper({ initial }: { initial: WorkspaceState }) {
 }
 
 export function Default() {
-  return <StoryWrapper initial={defaultState()} />;
+  const ws = storyState([
+    makeNode("backend", "backend", "composite", [
+      makeNode("auth", "auth-service", "leaf", []),
+      makeNode("frontend", "frontend", "leaf", []),
+    ]),
+    makeNode("infra", "infra", "leaf", []),
+  ]);
+  return <StoryWrapper initial={ws} />;
 }
 
 export function WithNodeSelected() {
-  const ws = defaultState();
-  const nodeId = "spike://acme/backend/auth-service";
-  ws.panels[0].selected = { type: "node", id: nodeId };
-  ws.panels[0].expandedNodes = ["spike://acme/backend"];
+  const ws = storyState([
+    makeNode("backend", "backend", "composite", [
+      makeNode("auth", "auth-service", "leaf", []),
+      makeNode("frontend", "frontend", "leaf", []),
+    ]),
+  ]);
+  ws.panels[0].selected = { type: "node", id: "auth" };
+  ws.panels[0].expandedNodes = ["backend"];
   return <StoryWrapper initial={ws} />;
 }
 
 export function WithEdgeSelected() {
-  const ws = defaultState();
-  const fromId = "spike://acme/backend/auth-service";
-  const toId = "spike://acme/backend/frontend";
-  const edgeId = "edge-1";
-  ws.edges = [{ id: edgeId, fromId, toId, label: "depends on", data: {}, version: 1 }];
-  ws.panels[0].selected = { type: "edge", id: edgeId };
-  ws.panels[0].expandedNodes = ["spike://acme/backend"];
+  const ws = storyState([
+    makeNode("backend", "backend", "composite", [
+      makeNode("auth", "auth-service", "leaf", []),
+      makeNode("frontend", "frontend", "leaf", []),
+    ]),
+  ]);
+  ws.edges = [{
+    id: "edge-1",
+    fromId: "auth",
+    toId: "frontend",
+    label: "depends on",
+    data: {},
+    version: 1,
+  }];
+  ws.panels[0].selected = { type: "edge", id: "edge-1" };
+  ws.panels[0].expandedNodes = ["backend"];
   return <StoryWrapper initial={ws} />;
 }
 
 export function DeepTree() {
-  const ws = defaultState();
-  ws.treeNodes = [
+  const ws = storyState([
     makeNode("root", "platform", "composite", [
       makeNode("a", "services", "composite", [
         makeNode("a1", "auth", "composite", [
@@ -60,7 +79,7 @@ export function DeepTree() {
         makeNode("b2", "storage", "leaf", []),
       ]),
     ]),
-  ];
+  ]);
   ws.panels[0].expandedNodes = ["root", "a", "a1", "a2", "b"];
   return <StoryWrapper initial={ws} />;
 }
