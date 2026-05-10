@@ -1,6 +1,6 @@
 import { assertEquals } from "@std/assert";
-import { circlePortPositions, rectPortPositions } from "./port-layout.ts";
-import type { Port } from "../workspace.ts";
+import { circlePortPositions, rectPortPositions, resolveNodePorts } from "./port-layout.ts";
+import type { Port, TreeNode } from "../workspace.ts";
 
 // ---------------------------------------------------------------------------
 // circlePortPositions
@@ -111,4 +111,72 @@ Deno.test("rectPortPositions: type is preserved", () => {
   const ports: Port[] = [{ name: "req", direction: "in", type: "http.request" }];
   const result = rectPortPositions(ports, 50, 50, 22);
   assertEquals(result[0].type, "http.request");
+});
+
+// ---------------------------------------------------------------------------
+// resolveNodePorts
+// ---------------------------------------------------------------------------
+
+function mkNode(
+  label: string,
+  opts?: { ports?: Port[]; type?: "ref"; ref?: string; children?: TreeNode[] },
+): TreeNode {
+  return {
+    id: label,
+    label,
+    kind: "composite",
+    children: opts?.children ?? [],
+    ...(opts?.ports ? { ports: opts.ports } : {}),
+    ...(opts?.type ? { type: opts.type } : {}),
+    ...(opts?.ref ? { ref: opts.ref } : {}),
+    data: {},
+    version: 1,
+  };
+}
+
+Deno.test("resolveNodePorts: node with own ports returns them", () => {
+  const ports: Port[] = [{ name: "a", direction: "in" }];
+  const node = mkNode("f", { ports });
+  assertEquals(resolveNodePorts(node, []), ports);
+});
+
+Deno.test("resolveNodePorts: ref node resolves target ports", () => {
+  const targetPorts: Port[] = [
+    { name: "x", direction: "in" },
+    { name: "y", direction: "out" },
+  ];
+  const target = mkNode("divide", { ports: targetPorts });
+  const ref = mkNode("use-divide", { type: "ref", ref: "divide" });
+  assertEquals(resolveNodePorts(ref, [target]), targetPorts);
+});
+
+Deno.test("resolveNodePorts: ref node with no target returns empty", () => {
+  const ref = mkNode("use-divide", { type: "ref", ref: "divide" });
+  assertEquals(resolveNodePorts(ref, []), []);
+});
+
+Deno.test("resolveNodePorts: ref target without ports returns empty", () => {
+  const target = mkNode("divide");
+  const ref = mkNode("use-divide", { type: "ref", ref: "divide" });
+  assertEquals(resolveNodePorts(ref, [target]), []);
+});
+
+Deno.test("resolveNodePorts: non-ref node without ports returns empty", () => {
+  assertEquals(resolveNodePorts(mkNode("leaf"), []), []);
+});
+
+Deno.test("resolveNodePorts: ref resolves target nested in tree", () => {
+  const targetPorts: Port[] = [{ name: "a", direction: "in" }];
+  const nested = mkNode("divide", { ports: targetPorts });
+  const parent = mkNode("math", { children: [nested] });
+  const ref = mkNode("use-divide", { type: "ref", ref: "divide" });
+  assertEquals(resolveNodePorts(ref, [parent]), targetPorts);
+});
+
+Deno.test("resolveNodePorts: ref with own ports uses own ports", () => {
+  const ownPorts: Port[] = [{ name: "custom", direction: "in" }];
+  const targetPorts: Port[] = [{ name: "x", direction: "in" }];
+  const target = mkNode("divide", { ports: targetPorts });
+  const ref = mkNode("use-divide", { type: "ref", ref: "divide", ports: ownPorts });
+  assertEquals(resolveNodePorts(ref, [target]), ownPorts);
 });

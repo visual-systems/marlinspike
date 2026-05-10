@@ -456,6 +456,16 @@ Port nodes are pinned to their port positions in the layout. Output ports are ma
 `data.outputPort` when present, falling back to label match), then input ports — this prevents
 conflicts when an input param and output port share the same name.
 
+**Port resolution for ref nodes**: Collapsed ref nodes that lack their own ports resolve the
+target's ports at render time via `resolveNodePorts()`. This makes the target function's data
+interface visible directly on the ref node — input ports on the left, output ports on the right.
+
+**Port-aware edge routing**: For straight edges, when a collapsed node has ports, edges connect to
+specific port positions rather than the generic node boundary. Source ports are determined by
+`edge.data.outputPort` or label matching. Destination ports are mapped via `data.argOrder` — the
+position of the source label in the argument list maps to the corresponding input port index. Arc
+edges currently fall back to boundary clipping.
+
 #### Focused code view
 
 When the text view is focused on a `defn` composite (a node with input ports), the emitter produces

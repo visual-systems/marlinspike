@@ -5,7 +5,7 @@
 // Convention: input ports on the left, output ports on the right.
 // ---------------------------------------------------------------------------
 
-import type { Port } from "../workspace.ts";
+import { isRef, type Port, type TreeNode } from "../workspace.ts";
 
 // ---------------------------------------------------------------------------
 // PortPosition — the computed position of a single port on a node boundary
@@ -23,6 +23,28 @@ export interface PortPosition {
   nx: number;
   /** Outward-facing normal Y */
   ny: number;
+}
+
+// ---------------------------------------------------------------------------
+// Port resolution — resolve effective ports for a node
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the effective ports for a node. If the node has its own ports, those
+ * are returned. For ref nodes without ports, the target's ports are resolved.
+ */
+export function resolveNodePorts(
+  node: TreeNode,
+  treeNodes: TreeNode[],
+): Port[] {
+  if (node.ports && node.ports.length > 0) return node.ports;
+  if (isRef(node) && node.ref) {
+    const target = treeNodes.flatMap(function flat(n: TreeNode): TreeNode[] {
+      return [n, ...n.children.flatMap(flat)];
+    }).find((n) => n.label === node.ref);
+    return target?.ports ?? [];
+  }
+  return [];
 }
 
 // ---------------------------------------------------------------------------

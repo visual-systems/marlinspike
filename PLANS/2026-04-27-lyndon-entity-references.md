@@ -1,15 +1,13 @@
 # Entity References
 
-**Branch:** lyndon/entity-references
-**Date:** 2026-04-27
-**Branch Preview:** <!-- replace me -->
+**Branch:** lyndon/entity-references **Date:** 2026-04-27 **Branch Preview:** <!-- replace me -->
 
 ## Context
 
 Marlinspike has no way to **reference** an existing entity as a reusable instance. A function like
 `(defn square [x] (* x x))` should be definable once and referenceable multiple times. This branch
-adds the `ref` concept to the type system, explores visual treatments via stories, and documents
-the design in DESIGN.md.
+adds the `ref` concept to the type system, explores visual treatments via stories, and documents the
+design in DESIGN.md.
 
 **Scope:** Type changes + stories + documentation + codec/schema + canvas/inspector rendering.
 
@@ -61,8 +59,8 @@ import declarations, and destructuring-as-ports.
 - [x] **VisualTreatments** — side-by-side visual exploration
 - [x] **BrokenReference** — broken and remote ref visual treatment
 - [x] **ReferenceEditing** — inspector view for editing ref targets
-- [x] **CubicRoots** — real-world example: shared math primitives referenced across
-      four pipeline steps with full internal dataflow edges
+- [x] **CubicRoots** — real-world example: shared math primitives referenced across four pipeline
+      steps with full internal dataflow edges
 
 ### Step 6: Round-trip gallery fixture
 
@@ -74,9 +72,10 @@ import declarations, and destructuring-as-ports.
 - [x] New "Entity References" section under Data Model
 - [x] Add to Phase 2 roadmap
 - [x] Update "Notions Not Yet Explored" re: class/template system
-- [x] Proposed design: scope-inferred references, node identity from let-bindings,
-      destructuring as port-level edges, import declarations, normalising round-trip
-- [x] Updated graph-concept mapping table (references, imports, unresolved symbols, port-level edges)
+- [x] Proposed design: scope-inferred references, node identity from let-bindings, destructuring as
+      port-level edges, import declarations, normalising round-trip
+- [x] Updated graph-concept mapping table (references, imports, unresolved symbols, port-level
+      edges)
 
 ### Step 8: CI
 
@@ -84,20 +83,20 @@ import declarations, and destructuring-as-ports.
 
 ## Key files
 
-| File | Change |
-|------|--------|
-| `src/ui/workspace.ts` | `type`/`ref` on TreeNode, `makeRefNode`, `isRef`, parseNode, nodeHash |
-| `src/ui/db/schema.ts` | `type` and `ref` field definitions |
-| `src/ui/db/operations.ts` | `type`/`ref` in FlatNode, flattenTree, buildTree, saveTreeNode |
-| `src/code/spike-clojure.ts` | Emit/parse `:ref` metadata + idiomatic `(def name target)` syntax |
-| `src/code/workspace-codec.ts` | Preserve `ref`/`type` in mergeTrees |
-| `src/code/spike-clojure-fixtures.ts` | `refNode()` builder + cubic-roots-with-refs fixture |
-| `src/ui/components/canvas.tsx` | Dashed stroke/fill for ref nodes, target label, expand guard |
-| `src/ui/components/inspector.tsx` | Reference section with target link / broken indicator |
+| File                                   | Change                                                                                   |
+| -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `src/ui/workspace.ts`                  | `type`/`ref` on TreeNode, `makeRefNode`, `isRef`, parseNode, nodeHash                    |
+| `src/ui/db/schema.ts`                  | `type` and `ref` field definitions                                                       |
+| `src/ui/db/operations.ts`              | `type`/`ref` in FlatNode, flattenTree, buildTree, saveTreeNode                           |
+| `src/code/spike-clojure.ts`            | Emit/parse `:ref` metadata + idiomatic `(def name target)` syntax                        |
+| `src/code/workspace-codec.ts`          | Preserve `ref`/`type` in mergeTrees                                                      |
+| `src/code/spike-clojure-fixtures.ts`   | `refNode()` builder + cubic-roots-with-refs fixture                                      |
+| `src/ui/components/canvas.tsx`         | Dashed stroke/fill for ref nodes, target label, expand guard                             |
+| `src/ui/components/inspector.tsx`      | Reference section with target link / broken indicator                                    |
 | `src/ui/stories/reference.stories.tsx` | 10 visual stories incl. CubicRoots, ScopeInferredRefs, Destructuring, ImportDeclarations |
-| `src/ui/stories/examples.stories.tsx` | CubicRootsWithRefs story (standalone parse-and-render) |
-| `src/ui/stories/index.ts` | Register new story group |
-| `DESIGN.md` | Entity References section with proposed design, Phase 2 roadmap, Notions update |
+| `src/ui/stories/examples.stories.tsx`  | CubicRootsWithRefs story (standalone parse-and-render)                                   |
+| `src/ui/stories/index.ts`              | Register new story group                                                                 |
+| `DESIGN.md`                            | Entity References section with proposed design, Phase 2 roadmap, Notions update          |
 
 ## Proposed design (documented in DESIGN.md)
 
@@ -129,8 +128,8 @@ Map bodies and `{:keys}` patterns map to port connections on edges, with `output
 ### Normalising round-trip
 
 The round-trip becomes normalising rather than idempotent: `parse(emit(parse(clj)))` stabilises
-after one pass. The emitter reconstructs semantically equivalent Clojure from port edges and
-edge data.
+after one pass. The emitter reconstructs semantically equivalent Clojure from port edges and edge
+data.
 
 ## Phase 2: Scope-inferred references and destructuring
 
@@ -179,7 +178,8 @@ incrementally — each step is independently useful and testable.
 - [x] Add **ScopeInferredRefs** story — parser-driven refs with dashed/purple visual treatment
 - [x] Add **Destructuring** story — `{:keys [p q]}` binding parsed and displayed
 - [x] Add **ImportDeclarations** story — require preamble with inferred refs
-- [x] CubicRoots story retained as-is (manually constructed; scope-inferred refs are a parser feature)
+- [x] CubicRoots story retained as-is (manually constructed; scope-inferred refs are a parser
+      feature)
 
 ### Step 15: Canvas and codec polish
 
@@ -196,7 +196,8 @@ incrementally — each step is independently useful and testable.
 - [x] Passthrough map terminals (`{:x1 x1}`) create nodes with edges to output ports
 - [x] Canvas pins `data.outputPort` nodes to port positions
 - [x] Double-click ref targeting composite navigates focus to target ("Go to" in inspector)
-- [x] Reserve dashed outlines for explicit aliases, broken/imported refs, URI refs (not scope-inferred)
+- [x] Reserve dashed outlines for explicit aliases, broken/imported refs, URI refs (not
+      scope-inferred)
 
 ## Open Questions
 
@@ -204,25 +205,25 @@ incrementally — each step is independently useful and testable.
   `type: "ref"` node replaces `data.function`, and a new `type: "inline"` or `type: "foreign"` node
   type replaces `data.script`. Flagged for future exploration.
 - **Ref expansion / resolution** — When a ref node is expanded, should it show the target's
-  children? Currently prevented (empty ref nodes can't expand). Future work: resolve the target
-  and render its subtree inline, with visual indication that the content is delegated.
-- **Import mechanism details** — Does `require` map to composite node boundaries (namespaces)?
-  How does it interact with the workspace tree hierarchy?
+  children? Currently prevented (empty ref nodes can't expand). Future work: resolve the target and
+  render its subtree inline, with visual indication that the content is delegated.
+- **Import mechanism details** — Does `require` map to composite node boundaries (namespaces)? How
+  does it interact with the workspace tree hierarchy?
 - **Reference graph as a visual layer** — References form their own graph (distinct from dataflow
   edges). Several options to explore:
-  - *Overlay edges*: Visualise references as a special edge type (e.g. dotted/purple) overlaid on
+  - _Overlay edges_: Visualise references as a special edge type (e.g. dotted/purple) overlaid on
     the regular canvas layout. Lightweight — no new data structures, just a rendering pass.
-  - *Read-only reference graph view*: A separate layout mode where the graph is arranged by
-    reference topology rather than containment/dataflow. Useful for understanding reuse patterns
-    and dependency structure at a glance.
-  - *Materialised reference edges*: Maintain reference relationships as actual `Edge` records
-    (with a `type: "ref"` or similar marker). Less correct-by-construction than node-level
-    `type: "ref"` fields, but enables indexed queries for layout, traversal, impact analysis, etc.
-    Trade-off: two sources of truth for "is this a reference?" that could diverge.
-  - *Cross-focus references*: References that transcend the current focus boundary. Today, focus
+  - _Read-only reference graph view_: A separate layout mode where the graph is arranged by
+    reference topology rather than containment/dataflow. Useful for understanding reuse patterns and
+    dependency structure at a glance.
+  - _Materialised reference edges_: Maintain reference relationships as actual `Edge` records (with
+    a `type: "ref"` or similar marker). Less correct-by-construction than node-level `type: "ref"`
+    fields, but enables indexed queries for layout, traversal, impact analysis, etc. Trade-off: two
+    sources of truth for "is this a reference?" that could diverge.
+  - _Cross-focus references_: References that transcend the current focus boundary. Today, focus
     clips the visible graph — but references to ancestors/siblings are still semantically present.
-    Could show ghost nodes or dimmed edges for out-of-scope ref targets, or allow navigation
-    ("jump to definition") that shifts focus.
+    Could show ghost nodes or dimmed edges for out-of-scope ref targets, or allow navigation ("jump
+    to definition") that shifts focus.
 - **Redundancy between `data.fn` and `ref`** — When a node has `type: "ref"` and `ref: "divide"`,
   `data.fn` stores the same function name. Could `data.fn` be inferred from `ref` (or vice versa)?
   Removing the duplication simplifies the data model but means the emitter must know about refs.
@@ -234,11 +235,8 @@ incrementally — each step is independently useful and testable.
   graph-relative imports from hypothetical external/remote imports.
 - **Topogrid layout direction** — Topogrid doesn't work correctly with ports. Consider making it
   left-to-right by default to match the port-based dataflow direction.
-- **Ports on ref nodes** — Ref nodes targeting composites with ports should render the target's
-  ports on the ref node itself, with edges routed to port positions. This would make dataflow
-  through referenced functions visible without navigating into the target — the primary visual
-  benefit of a port-based system. Requires: resolving target ports at render time, drawing port
-  dots/labels on the ref bounding box, and routing edges to port positions. Branch separately.
+- ~~**Ports on ref nodes**~~ — Resolved in `lyndon/ref-port-rendering`: ref nodes resolve and
+  display target's ports, and edges route to specific port positions on collapsed nodes.
 - ~~**Focused code view for defn internals**~~ — Resolved: `emitWorkspace` now passes the focused
   container to `graphToSpike` which emits as `(defn ...)` body when the container has input ports.
 - ~~**Unconnected nodes in code view**~~ — Resolved by the focused defn code view fix above.
