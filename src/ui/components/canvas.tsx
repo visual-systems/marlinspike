@@ -23,12 +23,7 @@ import type { DiagnosticMap } from "../../graph/diagnostics.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { SmallBtn } from "./widgets.tsx";
 import { type BBox, boundingBox, centerNodes, type ForceNode } from "../lib/force.ts";
-import {
-  circlePortPositions,
-  type PortPosition,
-  rectPortPositions,
-  resolveNodePorts,
-} from "../lib/port-layout.ts";
+import { circlePortPositions, rectPortPositions, resolveNodePorts } from "../lib/port-layout.ts";
 import { lineClosestPoint, lineSdfDist } from "../lib/sdf-force.ts";
 import { topoCharge } from "../lib/topo-charge.ts";
 import { NodePorts } from "./port-rendering.tsx";
@@ -2274,79 +2269,6 @@ function renderLevel(
           groupCount.set(key, (groupCount.get(key) ?? 0) + 1);
         }
 
-        // Port-aware edge routing: pre-compute port positions and edge-to-port mappings.
-        const nodeById = new Map(nodes.map((n) => [n.id, n]));
-        const nodePortPositions = new Map<string, PortPosition[]>();
-        for (const [nodeId, ports] of effectivePortsMap) {
-          const pos = posMap.get(nodeId);
-          if (!pos) continue;
-          const isRect = pos.shape === "rect";
-          nodePortPositions.set(
-            nodeId,
-            isRect
-              ? rectPortPositions(ports, LEAF_R, RECT_HALF_H, 0)
-              : circlePortPositions(ports, LEAF_R),
-          );
-        }
-
-        function portSurfacePoint(
-          node: { x: number; y: number },
-          portPositions: PortPosition[] | undefined,
-          portName: string | undefined,
-          gap: number,
-        ): { x: number; y: number } | undefined {
-          if (!portPositions || !portName) return undefined;
-          const pp = portPositions.find((p) => p.portName === portName);
-          if (!pp) return undefined;
-          return {
-            x: node.x + pp.x + pp.nx * gap,
-            y: node.y + pp.y + pp.ny * gap,
-          };
-        }
-
-        function resolveEdgePorts(
-          edge: Edge,
-        ): { srcPort?: string; dstPort?: string } {
-          let srcPort: string | undefined;
-          let dstPort: string | undefined;
-
-          // Source port: node's data.outputPort or label matching an output port
-          const srcNode = nodeById.get(edge.fromId);
-          const srcPorts = effectivePortsMap.get(edge.fromId);
-          if (srcNode && srcPorts) {
-            const op = srcNode.data.outputPort as string | undefined;
-            if (op) {
-              srcPort = op;
-            } else {
-              const outPort = srcPorts.find((p) =>
-                p.direction === "out" && p.name === srcNode.label
-              );
-              if (outPort) srcPort = outPort.name;
-            }
-          }
-
-          // Destination port: match source label against argOrder → input port index
-          const dstNode = nodeById.get(edge.toId);
-          const dstPorts = effectivePortsMap.get(edge.toId);
-          if (dstNode && dstPorts && srcNode) {
-            const inPorts = dstPorts.filter((p) => p.direction === "in" || p.direction === "inout");
-            const argOrder = dstNode.data.argOrder as string[] | undefined;
-            if (argOrder) {
-              const argIdx = argOrder.indexOf(srcNode.label);
-              if (argIdx >= 0 && argIdx < inPorts.length) {
-                dstPort = inPorts[argIdx].name;
-              }
-            }
-            if (!dstPort) {
-              // Fallback: match source label to input port name
-              const match = inPorts.find((p) => p.name === srcNode.label);
-              if (match) dstPort = match.name;
-            }
-          }
-
-          return { srcPort, dstPort };
-        }
-
         // Pre-compute path data for each edge so we can do two render passes:
         // pass 1 — all paths (so no arc draws over another edge's label),
         // pass 2 — all labels on top.
@@ -2432,11 +2354,8 @@ function renderLevel(
               (src.y - edgeArcC.y) * (dst.x - edgeArcC.x);
             sweep = crossZ > 0 ? 1 : 0;
           } else {
-            const { srcPort, dstPort } = resolveEdgePorts(edge);
-            src = portSurfacePoint(pa, nodePortPositions.get(edge.fromId), srcPort, 5) ??
-              surfacePoint(pa, pb, 5);
-            dst = portSurfacePoint(pb, nodePortPositions.get(edge.toId), dstPort, 15) ??
-              surfacePoint(pb, pa, 5 + 10);
+            src = surfacePoint(pa, pb, 5);
+            dst = surfacePoint(pb, pa, 5 + 10);
           }
 
           // For straight edges, check if we need to bend around an obstructing node

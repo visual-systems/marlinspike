@@ -12,9 +12,9 @@ ports, making dataflow visible at a glance.
 ## Goal
 
 1. Collapsed ref nodes show the target function's input/output ports (resolved at render time).
-2. Edges connect to specific port positions on collapsed nodes, not the generic node boundary.
-3. Port-aware routing applies to all collapsed nodes with ports (not just refs), but refs are the
-   primary beneficiary since they gain ports from their target.
+2. ~~Edges connect to specific port positions on collapsed nodes.~~ — Deferred: the force layout
+   doesn't account for port positions, so routing edges to fixed port locations creates worse visual
+   results (crossing, wrong-direction edges) than boundary routing on complex graphs.
 
 ## Approach
 
@@ -28,14 +28,12 @@ ports, making dataflow visible at a glance.
 - [x] Build `effectivePortsMap` in `renderLevel` using `resolveNodePorts`
 - [x] Use resolved ports for collapsed node port rendering (replaces `node.ports` check)
 
-### Step 3: Port-aware edge routing (`canvas.tsx`)
+### Step 3: Port-aware edge routing (`canvas.tsx`) — REVERTED
 
-- [x] Pre-compute `nodePortPositions` map from `effectivePortsMap`
-- [x] Add `resolveEdgePorts(edge)` — maps each edge to source/destination port names
-  - Source port: `edge.data.outputPort` or label match against output ports
-  - Dest port: position of source label in `data.argOrder` → maps to input port index
-- [x] Add `portSurfacePoint(node, portPositions, portName, gap)` — returns port boundary position
-- [x] Use port positions for straight edges (arc edges keep boundary clipping for now)
+Port-aware edge routing was implemented and tested but reverted after visual testing on complex
+graphs (cubic-roots). The force layout places nodes without regard to port positions, so routing
+edges to fixed port locations creates crossing and wrong-direction edges. This needs a port-aware
+layout algorithm (e.g. left-to-right topogrid) to work well.
 
 ### Step 4: Stories (`reference.stories.tsx`)
 
@@ -45,28 +43,28 @@ ports, making dataflow visible at a glance.
 ### Step 5: Plan and docs
 
 - [x] Update plan file
-- [ ] Update entity-references plan (close ports-on-refs open question)
-- [ ] Update DESIGN.md if needed
+- [x] Update entity-references plan (close ports-on-refs open question)
+- [x] Update DESIGN.md
 
 ## Key files
 
-| File                                   | Change                                       |
-| -------------------------------------- | -------------------------------------------- |
-| `src/ui/lib/port-layout.ts`            | `resolveNodePorts` helper                    |
-| `src/ui/lib/port-layout_test.ts`       | 7 unit tests for port resolution             |
-| `src/ui/components/canvas.tsx`         | Effective ports map, port-aware edge routing |
-| `src/ui/stories/reference.stories.tsx` | RefWithPorts + RefPortEdgeRouting stories    |
+| File                                   | Change                                          |
+| -------------------------------------- | ----------------------------------------------- |
+| `src/ui/lib/port-layout.ts`            | `resolveNodePorts` helper                       |
+| `src/ui/lib/port-layout_test.ts`       | 7 unit tests for port resolution                |
+| `src/ui/components/canvas.tsx`         | Effective ports map for resolved port rendering |
+| `src/ui/stories/reference.stories.tsx` | RefWithPorts + RefPortEdgeRouting stories       |
 
 ## Open Questions
 
-- **Arc edge routing to ports** — Deferred. Arc clipping math is designed for boundary intersection,
-  not specific points. Port-aware arc routing needs a different approach.
+- **Port-aware edge routing** — Needs a port-aware layout algorithm. The current force layout
+  doesn't position nodes to minimise port-edge crossings. A left-to-right topogrid or Sugiyama-style
+  layout would make port routing viable.
 - **Port count display limits** — Many ports on a small circle (r=26) may crowd. Probably fine for
-  typical function arities (2-4 ports).
+  typical function arities (2-4 ports), but 7+ ports on cubic-roots functions look busy.
 
 ## Verification
 
 - [x] `NO_COLOR=1 deno task ci` passes (403 tests, 0 failures)
 - [ ] Stories render at `/stories` — ref nodes show target's ports
-- [ ] Edges visibly connect to port positions (not generic boundary)
 - [ ] Existing non-ref rendering unchanged

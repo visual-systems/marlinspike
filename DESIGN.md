@@ -460,11 +460,10 @@ conflicts when an input param and output port share the same name.
 target's ports at render time via `resolveNodePorts()`. This makes the target function's data
 interface visible directly on the ref node — input ports on the left, output ports on the right.
 
-**Port-aware edge routing**: For straight edges, when a collapsed node has ports, edges connect to
-specific port positions rather than the generic node boundary. Source ports are determined by
-`edge.data.outputPort` or label matching. Destination ports are mapped via `data.argOrder` — the
-position of the source label in the argument list maps to the corresponding input port index. Arc
-edges currently fall back to boundary clipping.
+**Port-aware edge routing** (future): Routing edges to specific port positions was prototyped but
+reverted — the force layout doesn't account for port positions, so fixed port attachment points
+create worse edge crossings than boundary routing on complex graphs. This needs a port-aware layout
+algorithm (e.g. left-to-right topogrid or Sugiyama-style) to work well.
 
 #### Focused code view
 
