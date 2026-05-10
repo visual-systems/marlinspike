@@ -4,9 +4,12 @@ import { useState } from "@hono/hono/jsx/dom";
 import { Canvas } from "../components/canvas.tsx";
 import {
   defaultState,
+  type Edge,
   isRef,
   makeNode,
   makeRefNode,
+  type Port,
+  type TreeNode,
   type Updater,
   type WorkspaceState,
 } from "../workspace.ts";
@@ -203,6 +206,109 @@ export function ReferenceEditing() {
             {String(isRef(ws.treeNodes[0].children[2]))})
           </li>
         </ul>
+      </div>
+      <StoryWrapper initial={ws} />
+    </div>
+  );
+}
+
+/** Ref node shows its target's ports — divide(x, y) → result. */
+export function RefWithPorts() {
+  const ws = defaultState();
+  ws.focusId = null;
+
+  // Target function with ports
+  const divideNode: TreeNode = {
+    ...makeNode("divide", "divide", "composite", [
+      leaf("x"),
+      leaf("y"),
+    ]),
+    ports: [
+      { name: "x", direction: "in" },
+      { name: "y", direction: "in" },
+      { name: "result", direction: "out" },
+    ],
+  };
+
+  // Ref node — should display divide's ports
+  const refNode = ref("use-divide", "divide", "divide");
+
+  ws.treeNodes = [
+    makeNode("root", "workspace", "composite", [divideNode, refNode]),
+  ];
+
+  ws.focusId = "root";
+
+  return (
+    <div>
+      <div style="padding:8px 12px; color:#aaa; font-size:12px;">
+        The <em>divide</em>{" "}
+        function defines input ports (x, y) and output port (result). The ref node{" "}
+        <em>use-divide</em> should resolve and display those same ports.
+      </div>
+      <StoryWrapper initial={ws} />
+    </div>
+  );
+}
+
+/** Edges connect to specific port positions on ref nodes. */
+export function RefPortEdgeRouting() {
+  const ws = defaultState();
+  ws.focusId = null;
+
+  const inPort = (name: string): Port => ({ name, direction: "in" });
+  const outPort = (name: string): Port => ({ name, direction: "out" });
+
+  // Target function with ports
+  const divideNode: TreeNode = {
+    ...makeNode("divide", "divide", "composite", [leaf("a"), leaf("b")]),
+    ports: [inPort("a"), inPort("b"), outPort("result")],
+  };
+
+  // Inside a pipeline: two inputs feed into a ref call
+  const paramA: TreeNode = makeNode("param-a", "a", "leaf", []);
+  const paramB: TreeNode = makeNode("param-b", "b", "leaf", []);
+  const callDivide: TreeNode = {
+    ...ref("call-divide", "divide", "divide"),
+    data: { fn: "divide", argOrder: ["a", "b"] },
+  };
+
+  const pipelineNode: TreeNode = {
+    ...makeNode("pipeline", "pipeline", "composite", [
+      paramA,
+      paramB,
+      callDivide,
+    ]),
+    ports: [inPort("a"), inPort("b"), outPort("result")],
+  };
+
+  const e = (id: string, from: string, to: string): Edge => ({
+    id,
+    fromId: from,
+    toId: to,
+    label: "",
+    data: {},
+    version: 1,
+  });
+
+  ws.treeNodes = [
+    makeNode("root", "workspace", "composite", [divideNode, pipelineNode]),
+  ];
+
+  ws.focusId = "pipeline";
+  ws.edges = [
+    e("e1", "param-a", "call-divide"),
+    e("e2", "param-b", "call-divide"),
+  ];
+  ws.canvasExpandedNodes = [];
+
+  return (
+    <div>
+      <div style="padding:8px 12px; color:#aaa; font-size:12px;">
+        Inside <em>pipeline</em>, edges from <em>a</em> and <em>b</em>{" "}
+        should route to the corresponding input ports on the <em>divide</em>{" "}
+        ref node. The ref node should show divide's ports (two inputs on the left, one output on the
+        right).
       </div>
       <StoryWrapper initial={ws} />
     </div>

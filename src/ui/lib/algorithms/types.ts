@@ -37,4 +37,4 @@ export interface LayoutAlgorithm {
 // Algorithm ID type — the string persisted in WorkspaceState
 // ---------------------------------------------------------------------------
 
-export type AlgorithmId = "JANK" | "TOPOGRID" | "SDF" | "FIELD";
+export type AlgorithmId = "JANK" | "TOPOGRID" | "SDF" | "FIELD" | "PORT";

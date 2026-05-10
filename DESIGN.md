@@ -456,6 +456,15 @@ Port nodes are pinned to their port positions in the layout. Output ports are ma
 `data.outputPort` when present, falling back to label match), then input ports — this prevents
 conflicts when an input param and output port share the same name.
 
+**Port resolution for ref nodes**: Collapsed ref nodes that lack their own ports resolve the
+target's ports at render time via `resolveNodePorts()`. This makes the target function's data
+interface visible directly on the ref node — input ports on the left, output ports on the right.
+
+**Port-aware edge routing** (future): Routing edges to specific port positions was prototyped but
+reverted — the force layout doesn't account for port positions, so fixed port attachment points
+create worse edge crossings than boundary routing on complex graphs. This needs a port-aware layout
+algorithm (e.g. left-to-right topogrid or Sugiyama-style) to work well.
+
 #### Focused code view
 
 When the text view is focused on a `defn` composite (a node with input ports), the emitter produces

@@ -147,3 +147,87 @@ export function topoGridLayoutSized(
     return { ...n, x: pos.x, y: pos.y };
   });
 }
+
+// ---------------------------------------------------------------------------
+// topoGridLayoutLTR — uniform node size, left-to-right
+// Layer index → x (columns), within-layer index → y (rows).
+// hSpacing / vSpacing are centre-to-centre distances.
+// ---------------------------------------------------------------------------
+
+export function topoGridLayoutLTR(
+  nodeIds: string[],
+  edges: { a: string; b: string }[],
+  leafW: number,
+  leafH: number,
+  hSpacing: number,
+  vSpacing: number,
+): ForceNode[] {
+  if (nodeIds.length === 0) return [];
+
+  const { sortedLayers } = buildLayerAssignment(nodeIds, edges);
+
+  const positions = new Map<string, { x: number; y: number }>();
+  sortedLayers.forEach(([, ids], colIdx) => {
+    const x = colIdx * hSpacing;
+    const totalH = (ids.length - 1) * vSpacing;
+    ids.forEach((id, row) => {
+      positions.set(id, { x, y: row * vSpacing - totalH / 2 });
+    });
+  });
+
+  return nodeIds.map((id): ForceNode => {
+    const pos = positions.get(id) ?? { x: 0, y: 0 };
+    return { id, x: pos.x, y: pos.y, vx: 0, vy: 0, pinned: false, w: leafW, h: leafH };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// topoGridLayoutSizedLTR — per-node sizes, left-to-right
+// Layer index → x (columns), within-layer index → y (rows).
+// hGap / vGap are surface-to-surface gaps between node bounding boxes.
+// ---------------------------------------------------------------------------
+
+export function topoGridLayoutSizedLTR(
+  nodes: ForceNode[],
+  edges: { a: string; b: string }[],
+  hGap: number,
+  vGap: number,
+): ForceNode[] {
+  if (nodes.length === 0) return nodes;
+
+  const ids = nodes.map((n) => n.id);
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+
+  const { sortedLayers } = buildLayerAssignment(ids, edges);
+
+  // Precompute max width per layer (column) for horizontal accumulation
+  const maxWPerLayer = sortedLayers.map(([, layerIds]) =>
+    Math.max(...layerIds.map((id) => nodeById.get(id)!.w))
+  );
+
+  // Centre x of each layer, accumulated from left
+  const layerCenterX: number[] = [0];
+  for (let i = 1; i < sortedLayers.length; i++) {
+    layerCenterX.push(
+      layerCenterX[i - 1] + maxWPerLayer[i - 1] / 2 + hGap + maxWPerLayer[i] / 2,
+    );
+  }
+
+  // Compute positions
+  const positions = new Map<string, { x: number; y: number }>();
+  sortedLayers.forEach(([, layerIds], colIdx) => {
+    const x = layerCenterX[colIdx];
+    const heights = layerIds.map((id) => nodeById.get(id)!.h);
+    const totalH = heights.reduce((s, h) => s + h, 0) + (layerIds.length - 1) * vGap;
+    let curY = -totalH / 2;
+    layerIds.forEach((id, i) => {
+      positions.set(id, { x, y: curY + heights[i] / 2 });
+      curY += heights[i] + vGap;
+    });
+  });
+
+  return nodes.map((n) => {
+    const pos = positions.get(n.id) ?? { x: n.x, y: n.y };
+    return { ...n, x: pos.x, y: pos.y };
+  });
+}
