@@ -130,9 +130,9 @@ refactor (`3ddafa0`). `defaultState()` creates a workspace root with no children
 ## Verification
 
 - [x] `NO_COLOR=1 deno task ci` passes (409 tests, 0 failures)
-- [ ] Stories render at `/stories` — ref nodes show target's ports
-- [ ] PORT algorithm: sources on left, sinks on right
-- [ ] Edges connect to port positions on ref nodes (PORT only)
-- [ ] Disconnected ref subgraphs pulled together by pseudo-edges
-- [ ] Non-PORT algorithms unchanged
-- [ ] Existing non-ref rendering unchanged
+- [x] Stories render at `/stories` — ref nodes show target's ports
+- [x] PORT algorithm: sources on left, sinks on right
+- [x] Edges connect to port positions on ref nodes (PORT only)
+- [x] Disconnected ref subgraphs pulled together by pseudo-edges
+- [x] Non-PORT algorithms unchanged
+- [x] Existing non-ref rendering unchanged
