@@ -220,6 +220,61 @@ Then the existing mechanisms become:
 - **Ref type:** Judgment with a rendering consequence (existential — based on scope resolution)
 - **Active schema:** A set of judgment bindings activated together (the monoid)
 
+#### JSON Schema as a predicate language
+
+JSON Schema is already doing compositional predicate logic — `allOf` (intersection), `anyOf` (union), `oneOf` (discriminated union), `not` (negation). It doesn't compete with judgments; it's a **predicate language** within the judgment system.
+
+Currently, JSON Schema appears in two roles:
+1. **ConstraintDataSchema** — validates the constraint's own configuration (edited in constraint inspector)
+2. **EntityDataSchema** — validates entity `.data` fields AND drives UI form generation (edited in entity inspector)
+
+That second role is already two consequences from one predicate — validation AND form generation — it's just implicit. The judgment system makes this explicit:
+
+```
+Judgment {
+  predicate:    JSON Schema (structural/value validation)
+  consequences: [
+    diagnostic     → "field X is required"
+    form generation → render UI controls from schema
+    type assignment → entity conforms to schema
+    propagation    → activate further judgments on conforming entities
+  ]
+  mode: sketch | enforce
+}
+```
+
+**What the judgment wrapper adds to JSON Schema:**
+
+| Capability | JSON Schema alone | + Judgment system |
+|---|---|---|
+| Validate data shape | Yes | Yes |
+| Generate UI forms | Yes (rjsf) | Yes — form generation is a consequence type |
+| Modal enforcement | No — pass/fail only | Sketch: warnings. Enforce: block. |
+| Cross-entity predicates | No — validates one value in isolation | "This port's type must match the connected port's type" |
+| Multiple consequences | No — only valid/invalid | Same schema drives validation + forms + type assignment |
+| Compose with non-schema judgments | No | JSON Schema predicates compose with topology/relational judgments |
+| Context-dependent schemas | Limited (`$ref` is structural) | "maxItems equals the parent node's fanOut property" — dependent typing |
+
+**What's preserved:**
+- Reusable schemas from the JSON Schema ecosystem — import as-is
+- Form derivation via rjsf or equivalent — the inspector continues to work
+- Data validation via ajv or similar — no change to the validation path
+- Well-understood syntax — JSON Schema remains the default way to express structural predicates
+
+**What's gained:**
+- A JSON Schema predicate can produce multiple consequences (validate + render form + assign type) from a single declaration
+- The same schema can be sketch-mode (soft warnings) in one context and enforce-mode (hard errors) in another
+- JSON Schema predicates compose with topology judgments ("if this subgraph is a pipeline, validate that each node's output schema matches the next node's input schema")
+- Context-dependent schemas become possible: a schema field's constraints can reference values on sibling or parent entities, bridging JSON Schema into dependent typing territory
+
+**Predicate language pluralism:** JSON Schema is the default predicate language, but the judgment system doesn't require it. Other predicate languages could coexist:
+- JSON Schema for structural/value validation (data shapes)
+- SurrealQL queries for relational predicates (cross-entity, topology)
+- JavaScript functions for complex/imperative predicates (the existing `js-script` constraint type)
+- Future: a declarative constraint DSL for domain-specific predicates
+
+Each predicate language has strengths; the judgment system unifies their consequences.
+
 #### Relationship to established type theory
 
 This model is essentially a **refinement type system with effects**:
