@@ -353,22 +353,56 @@ Each kernel strengthens the others, but none *requires* the others to function. 
 
 ### The "Extract and Continue" strategy, refined
 
-The kernel framing clarifies what extraction means: **each kernel becomes a package with its own interface, tests, and documentation.** The Marlinspike IDE becomes a composition of these packages plus UI glue.
+The kernel framing clarifies what extraction means: **each kernel becomes a module with its own interface, tests, and documentation.** The Marlinspike IDE becomes a composition of these modules plus UI glue.
 
-Extraction order should follow dependency:
-1. **Graph model + ports** (1, 2) — no dependencies, foundation for everything
-2. **Constraint algebra** (4) — depends on graph model
-3. **Layout engine** (5) — depends on graph model (for containment)
-4. **Codec framework** (3) — depends on graph model; Spike-Clojure is the first implementation
-5. **Operations layer** (6) — depends on graph model; SurrealDB is the first backend
+### Package granularity criteria
+
+Two perspectives determine whether something should be a separate package:
+
+1. **Can it be used on its own by other people?** Not just within the Marlinspike ecosystem — does it solve a general problem?
+2. **Will having it as a module enforce that it is only interacted with through its interface?** Does the boundary prevent coupling and maintain clean modular design?
+
+Applied to the kernels:
+
+| Kernel | (1) Standalone value? | (2) Enforces boundary? | Decision |
+|---|---|---|---|
+| **Graph model + Ports** (1, 2) | Yes — generic rose-tree with typed ports | Yes — separates semantic model from UI/persistence | **Package** (publishable). Ports merge into graph — they're the interface layer of the same data model. |
+| **Codec framework** (3) | Yes — bidirectional codec pattern is broadly useful | Yes — prevents UI from reaching into parser internals | **Package** (publishable). Spike-Clojure is first impl. |
+| **Judgment system** (7, subsumes 4) | Yes — "composable predicates with pluggable consequences" is very general | Yes — prevents ad-hoc validation scattered through UI | **Package** (publishable). JSON Schema as default predicate language. |
+| **Hierarchical layout** (5) | Yes — pure geometry, zero DOM deps | Yes — forces layout to not depend on rendering | **Package** (publishable). |
+| **Operations layer** (6) | No — Marlinspike-specific CRUD over SurrealDB | Yes — separates persistence from UI state management | **Internal module** (not published, but enforces boundary). |
+| **Constraint algebra** (4) | Subsumed by judgment system | — | **Merged** into judgment system. |
+| **Port encapsulation** (2) | Tightly coupled to graph model | — | **Merged** into graph model package. |
+
+This gives four publishable packages, one internal module, and two merges:
+
+```
+packages/
+  graph/        ← kernels 1 + 2 (rose-tree + ports)
+  layout/       ← kernel 5 (hierarchical force layout)
+  codec/        ← kernel 3 (bidirectional codec framework)
+  judgment/     ← kernel 7 (predicate system, subsumes 4)
+src/
+  db/           ← kernel 6 (operations layer, internal module)
+  ui/           ← IDE glue (canvas, panels, interaction)
+```
+
+### Extraction order
+
+Follow dependency + value:
+1. **Graph model + ports** — no dependencies, foundation for everything
+2. **Layout engine** — depends on graph model (for containment structure)
+3. **Judgment system** — depends on graph model (for entity types); JSON Schema predicates come free
+4. **Codec framework** — depends on graph model; Spike-Clojure is the first implementation
+5. **Operations layer** — depends on graph model; internal module, extracted for boundary discipline
 
 ### Prototype vs. refactor?
 
 The kernel framing resolves this tension: **extract kernels (refactor), then build features on them (prototype).** Each extraction is small and focused. Each feature built on an extracted kernel validates the extraction.
 
-### New repo vs. branch?
+### Repo strategy
 
-Stay in this repo. Use Deno workspaces: `packages/{kernel-name}/` alongside `src/`. Split to separate repos only if a kernel gains its own community/lifecycle.
+Stay in this repo. Use Deno workspaces for `packages/`. Split to a separate repo only if a package gains its own community/lifecycle — and even then, start here first.
 
 ---
 
@@ -453,15 +487,15 @@ Best demo targets are ones that exercise multiple kernels:
 2. **Extract layout engine** (kernel 5) into `packages/layout/`
 
 ### Medium-term (next 3-5 branches)
-3. **Extract operations layer** (kernel 6) out of `src/ui/`
-4. **Build CLI** using embedded SurrealDB + extracted operations
-5. **Wire live queries** in IDE for real-time sync
-6. **Build module graph demo** — validate the extracted kernels against a real use case
+3. **Extract judgment system** (kernel 7, subsumes 4) into `packages/judgment/`
+4. **Extract operations layer** (kernel 6) into `src/db/` (internal module)
+5. **Build CLI** using embedded SurrealDB + extracted operations
+6. **Wire live queries** in IDE for real-time sync
+7. **Build module graph demo** — validate the extracted packages against a real use case
 
 ### Longer-term
-7. **Extract codec framework** (kernel 3) — generalize the Spike-Clojure pattern
-8. **Add DOT/Mermaid codecs**
-9. **Extract constraint algebra** (kernel 4) into a standalone package
+8. **Extract codec framework** (kernel 3) into `packages/codec/` — generalize the Spike-Clojure pattern
+9. **Add DOT/Mermaid codecs**
 10. **MCP server** as a DB client
 11. **LSP for constraints**
 12. **Auth model + remote sync**
@@ -470,9 +504,8 @@ Best demo targets are ones that exercise multiple kernels:
 
 ## Open Questions
 
-- [ ] Is the module graph visualizer the right first demo, or should we target something that exercises ports + constraints more heavily?
+- [ ] Is the module graph visualizer the right first demo, or should we target something that exercises ports + judgments more heavily?
 - [ ] How much of canvas.tsx can be preserved when layout is extracted, vs. needs rewriting?
-- [ ] What's the right granularity for packages — one per kernel, or coarser?
 - [ ] Should the codec interface target Graph (semantic) or TreeNode (UI) as its intermediate representation?
 - [ ] What's the minimum viable "graph drawing tool" — just better creation UX, or full styling/export?
 
