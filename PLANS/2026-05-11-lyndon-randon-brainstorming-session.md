@@ -166,6 +166,7 @@ Where:
   - **Relational:** "this edge connects compatible port types" — constraint checking
   - **Classificatory:** "this implementation is tagged 'production'" — tag matching
   - **Existential:** "this symbol resolves to a prior definition in scope" — reference resolution
+  - **Topological:** "this subgraph has cyclomatic complexity ≤ 10" / "this subtree forms a DAG" / "fan-out from this node > 3" — predicates over graph shape, not individual entity properties
 - **consequence** is what happens when the predicate holds or fails:
   - **Diagnostic** (error/warning/info) — validation
   - **Type assignment** — structural/nominal typing
@@ -173,6 +174,7 @@ Where:
   - **Selection** — implementation activation
   - **Rendering** — visual hints (dashed borders, colors, icons)
   - **Schema propagation** — entity inherits additional predicates
+  - **Algorithm selection** — topology determines which layout/solver strategy to use
 
 #### Why this unification matters
 
@@ -183,6 +185,8 @@ Where:
 **3. The plugin protocol generalizes.** Currently, constraint plugins register evaluator functions. If all judgments use the same protocol, you get pluggable types, pluggable tags, and pluggable hints — not just pluggable constraints.
 
 **4. Context-dependence becomes first-class.** Reference resolution already depends on scope (Γ). Port compatibility depends on the graph structure. If all judgments explicitly take a context, dependent typing falls out naturally — "this value is valid given the values of its siblings" is just a judgment with a relational predicate.
+
+**5. Topology judgments bridge validation and layout.** Cyclomatic complexity, fan-out, DAG-ness, connectivity, path length — these are all predicates over the *shape* of a subgraph. They can produce diagnostics ("complexity too high"), but they can also produce **algorithm selection** ("this subtree is a linear chain, use sequential layout" / "this subtree is a DAG, use hierarchical layout" / "this subtree has cycles, use force-directed"). Layout strategy becomes a *consequence* of graph analysis, not a manual choice. This is the missing link between the constraint system and the layout engine.
 
 #### What this looks like concretely
 
@@ -284,7 +288,7 @@ The synthesis is what makes Marlinspike more than the sum of parts:
 - **(3) + (7):** Type hints in text (`^Type`) are syntactic sugar for judgment bindings on the graph
 - **(4) ⊂ (7):** The constraint algebra is a special case of the judgment system (diagnostic consequences only)
 - **(5) + (6):** Layout state can be persisted and synced separately from semantic state
-- **(7) + (5):** Rendering-consequence judgments drive visual presentation; layout is geometry, judgments are semantics
+- **(7) + (5):** Rendering-consequence judgments drive visual presentation; topology judgments drive algorithm selection — layout strategy becomes a computed consequence, not a manual choice
 
 Each kernel strengthens the others, but none *requires* the others to function. Kernel 7 subsumes kernel 4 — the constraint algebra becomes one consequence type within the judgment system, rather than a separate mechanism.
 
@@ -359,19 +363,22 @@ header.height == content-height
 - **Constraint algebra (4):** Composable, modal constraints across component boundaries. Sketch mode = rough layout with soft constraints (design time). Enforce mode = pixel-perfect (production). Constraints from different components compose without conflict — the monoid structure guarantees this.
 - **Hierarchical layout (5):** The DOM is a rose-tree. Bottom-up settlement is literally how intrinsic sizing wants to work — leaves determine their size, parents resize to fit, forces propagate up. The engine already does this for graphs; applying it to DOM elements is a change of vocabulary, not architecture.
 - **Port encapsulation (2):** Component "slots" are ports. A component declares its layout interface — what it needs from its parent (minimum width, aspect ratio) and what it provides to children (available space, alignment anchors) — without exposing internal layout decisions. This is the missing concept in CSS: components can't declare layout contracts.
+- **Topology judgments (7):** The DOM subtree's *shape* can drive layout strategy automatically. A linear chain of elements → sequential flow. A grid-like structure (uniform children) → grid layout. A tree with high fan-out → wrap or overflow. The system *observes* the topology and *selects* the algorithm — rather than the developer manually choosing `display: flex` vs `display: grid`. This is layout as a computed consequence of structure, not a manually assigned property. Topology judgments can also flag complexity ("this component tree is too deeply nested — consider flattening") or detect patterns ("this subtree has the shape of a navigation bar — apply nav layout heuristics").
 
 **Prior art and why it hasn't landed:**
 - **Cassowary / Apple Auto Layout:** Constraint solver, works well, but never adapted for the web's document flow model
 - **GSS (Grid Style Sheets):** Cassowary for CSS, abandoned — too academic, no incremental adoption path
 - **Subform layout:** Explored constraint-based layout for UI design tools, never shipped
+- None of these had topology analysis — they all required manual algorithm selection
 
 **What would make this attempt different:**
 - **Incremental adoption:** Works alongside CSS, not instead of it. Opt elements into constraint layout, leave the rest alone.
 - **Modal:** Soft constraints for sketching, hard constraints for production — same model as Marlinspike's validation modes
 - **Hierarchical solver:** Not a flat constraint system — respects the DOM tree, solves per-level like the force layout engine
 - **Composable across components:** The port/interface model means components can participate in parent layout without leaking internals
+- **Topology-driven algorithm selection:** The system analyzes the subtree shape and picks the best layout strategy. You declare constraints on *what* you want; the topology determines *how* it's achieved. Manual override is always available, but the default is intelligent.
 
-**Kernel validation:** This project would stress-test the constraint algebra and hierarchical layout kernels in a high-performance, real-world context (60fps browser rendering). Any performance or composability issues would surface here before they matter in the graph IDE.
+**Kernel validation:** This project would stress-test the constraint algebra, topology judgments, and hierarchical layout kernels in a high-performance, real-world context (60fps browser rendering). Any performance or composability issues would surface here before they matter in the graph IDE.
 
 ### Real-world demos
 
