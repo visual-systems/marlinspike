@@ -23,47 +23,20 @@ import type { Edge, TreeNode } from "@marlinspike/graph";
 export const meta = { title: "Package: @marlinspike/graph" };
 
 // ---------------------------------------------------------------------------
-// Styles
+// Styles (Hono JSX DOM uses CSS strings, not style objects)
 // ---------------------------------------------------------------------------
 
-const pre: Record<string, string> = {
-  background: "#0f0f22",
-  padding: "12px",
-  borderRadius: "4px",
-  fontSize: "12px",
-  lineHeight: "1.5",
-  overflow: "auto",
-  maxHeight: "400px",
-  whiteSpace: "pre-wrap",
-  fontFamily: "monospace",
-};
+const PRE =
+  "background:#0f0f22; padding:12px; border-radius:4px; font-size:12px; line-height:1.5; overflow:auto; max-height:400px; white-space:pre-wrap; font-family:monospace;";
 
-const section: Record<string, string> = {
-  marginBottom: "24px",
-};
+const SECTION = "margin-bottom:24px;";
 
-const heading: Record<string, string> = {
-  fontSize: "14px",
-  fontWeight: "bold",
-  marginBottom: "8px",
-  color: "#a0a0d0",
-};
+const HEADING = "font-size:14px; font-weight:bold; margin-bottom:8px; color:#a0a0d0;";
 
-const label: Record<string, string> = {
-  fontSize: "11px",
-  color: "#888",
-  marginBottom: "4px",
-};
+const LABEL = "font-size:11px; color:#888; margin-bottom:4px;";
 
-const btn: Record<string, string> = {
-  background: "#2a2a4a",
-  color: "#e0e0e0",
-  border: "1px solid #3a3a5a",
-  borderRadius: "4px",
-  padding: "4px 10px",
-  cursor: "pointer",
-  fontSize: "12px",
-};
+const BTN =
+  "background:#2a2a4a; color:#e0e0e0; border:1px solid #3a3a5a; border-radius:4px; padding:4px 10px; cursor:pointer; font-size:12px;";
 
 // ---------------------------------------------------------------------------
 // Sample data
@@ -123,12 +96,12 @@ export function TreeStructure() {
   });
 
   return (
-    <div style={section}>
-      <div style={heading}>Rose-tree structure via walk()</div>
-      <div style={label}>
+    <div style={SECTION}>
+      <div style={HEADING}>Rose-tree structure via walk()</div>
+      <div style={LABEL}>
         + = composite, - = leaf, ports shown in brackets, refs shown with arrow
       </div>
-      <pre style={pre}>{lines.join("\n")}</pre>
+      <pre style={PRE}>{lines.join("\n")}</pre>
     </div>
   );
 }
@@ -147,9 +120,9 @@ export function TraversalQueries() {
   const scoped = edgesInScope(pipeline, edges);
 
   return (
-    <div style={section}>
-      <div style={heading}>Traversal & query results</div>
-      <pre style={pre}>
+    <div style={SECTION}>
+      <div style={HEADING}>Traversal & query results</div>
+      <pre style={PRE}>
         {[
           `findNode("validate"):     ${found?.label} (kind: ${found?.kind})`,
           `findParentOf("validate"): ${parent?.label}`,
@@ -199,27 +172,27 @@ export function MutationDemo() {
   });
 
   return (
-    <div style={section}>
-      <div style={heading}>Immutable mutations</div>
-      <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
-        <button type="button" style={btn} onClick={rename}>
+    <div style={SECTION}>
+      <div style={HEADING}>Immutable mutations</div>
+      <div style="display:flex; gap:8px; margin-bottom:8px;">
+        <button type="button" style={BTN} onClick={rename}>
           Rename Validate
         </button>
-        <button type="button" style={btn} onClick={remove}>
+        <button type="button" style={BTN} onClick={remove}>
           Remove Transform
         </button>
-        <button type="button" style={btn} onClick={reset}>
+        <button type="button" style={BTN} onClick={reset}>
           Reset
         </button>
       </div>
-      <div style={{ display: "flex", gap: "16px" }}>
-        <div style={{ flex: 1 }}>
-          <div style={label}>Current tree (with nodeHash)</div>
-          <pre style={pre}>{lines.join("\n")}</pre>
+      <div style="display:flex; gap:16px;">
+        <div style="flex:1;">
+          <div style={LABEL}>Current tree (with nodeHash)</div>
+          <pre style={PRE}>{lines.join("\n")}</pre>
         </div>
-        <div style={{ flex: 1 }}>
-          <div style={label}>Mutation log</div>
-          <pre style={pre}>{log.length ? log.join("\n") : "(no mutations yet)"}</pre>
+        <div style="flex:1;">
+          <div style={LABEL}>Mutation log</div>
+          <pre style={PRE}>{log.length ? log.join("\n") : "(no mutations yet)"}</pre>
         </div>
       </div>
     </div>
@@ -234,12 +207,12 @@ export function FlattenRoundTrip() {
   const match = JSON.stringify(tree) === JSON.stringify(rebuilt);
 
   return (
-    <div style={section}>
-      <div style={heading}>Flatten / Build round-trip</div>
-      <div style={{ display: "flex", gap: "16px" }}>
-        <div style={{ flex: 1 }}>
-          <div style={label}>flattenTree() {"->"} {flat.length} rows</div>
-          <pre style={pre}>
+    <div style={SECTION}>
+      <div style={HEADING}>Flatten / Build round-trip</div>
+      <div style="display:flex; gap:16px;">
+        <div style="flex:1;">
+          <div style={LABEL}>flattenTree() {"->"} {flat.length} rows</div>
+          <pre style={PRE}>
             {flat
               .map(
                 (f) =>
@@ -248,11 +221,11 @@ export function FlattenRoundTrip() {
               .join("\n")}
           </pre>
         </div>
-        <div style={{ flex: 1 }}>
-          <div style={label}>
+        <div style="flex:1;">
+          <div style={LABEL}>
             buildTree() round-trip: {match ? "MATCH" : "MISMATCH"}
           </div>
-          <pre style={pre}>
+          <pre style={PRE}>
             {JSON.stringify(rebuilt, null, 2).slice(0, 800)}
             {JSON.stringify(rebuilt, null, 2).length > 800 ? "\n..." : ""}
           </pre>
