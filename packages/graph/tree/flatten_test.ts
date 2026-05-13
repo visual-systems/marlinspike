@@ -2,6 +2,7 @@ import { assertEquals } from "@std/assert";
 import type { TreeNode } from "./types.ts";
 import type { FlatNode } from "./flatten.ts";
 import { buildTree, flattenTree } from "./flatten.ts";
+import { makeNode, makeRefNode, makeRootNode } from "./factory.ts";
 
 function sampleTree(): TreeNode[] {
   return [
@@ -89,6 +90,21 @@ Deno.test("buildTree — round-trips from flattenTree", () => {
 
 Deno.test("buildTree — handles empty input", () => {
   assertEquals(buildTree([]), []);
+});
+
+Deno.test("buildTree — round-trip with factory-created nodes is JSON-identical", () => {
+  const httpIn = makeNode("http-in", "HTTP In", "leaf", []);
+  httpIn.ports = [{ name: "request", direction: "out", type: "http.request" }];
+
+  const validate = makeNode("validate", "Validate", "leaf", []);
+  const transform = makeNode("transform", "Transform", "leaf", []);
+
+  const pipeline = makeNode("pipeline", "Pipeline", "composite", [httpIn, validate, transform]);
+  const logger = makeRefNode("logger-ref", "Logger", "logger-service");
+  const tree = [makeRootNode("root", [pipeline, logger], "API Service")];
+
+  const rebuilt = buildTree(flattenTree(tree));
+  assertEquals(rebuilt, tree);
 });
 
 Deno.test("buildTree — handles flat input with multiple roots", () => {

@@ -56,18 +56,21 @@ export function buildTree(flat: FlatNode[]): TreeNode[] {
 
   function build(parentId: string | null): TreeNode[] {
     const rows = childrenOf.get(parentId) ?? [];
-    return rows.map((row) => ({
-      id: row.id,
-      label: row.label,
-      ...(row.uri !== undefined ? { uri: row.uri } : {}),
-      ...(row.type ? { type: row.type } : {}),
-      ...(row.ref ? { ref: row.ref } : {}),
-      kind: row.kind,
-      children: build(row.id),
-      ...(row.ports !== undefined ? { ports: row.ports } : {}),
-      data: row.data,
-      version: row.version,
-    }));
+    return rows.map((row) => {
+      const node: TreeNode = {
+        id: row.id,
+        label: row.label,
+        kind: row.kind,
+        children: build(row.id),
+        data: row.data,
+        version: row.version,
+      };
+      if (row.uri !== undefined) node.uri = row.uri;
+      if (row.type) node.type = row.type;
+      if (row.ref) node.ref = row.ref;
+      if (row.ports !== undefined) node.ports = row.ports;
+      return node;
+    });
   }
 
   return build(null);

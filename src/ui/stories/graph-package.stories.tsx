@@ -453,7 +453,27 @@ export function FlattenRoundTrip() {
   const flat = flattenTree(tree);
   const rebuilt = buildTree(flat);
 
-  const match = JSON.stringify(tree) === JSON.stringify(rebuilt);
+  // Deep structural comparison (key-order-independent)
+  const deepEqual = (a: unknown, b: unknown): boolean => {
+    if (a === b) return true;
+    if (typeof a !== typeof b || a === null || b === null) return false;
+    if (Array.isArray(a)) {
+      return Array.isArray(b) && a.length === b.length && a.every((v, i) => deepEqual(v, b[i]));
+    }
+    if (typeof a === "object") {
+      const ka = Object.keys(a as Record<string, unknown>);
+      const kb = Object.keys(b as Record<string, unknown>);
+      return ka.length === kb.length &&
+        ka.every((k) =>
+          deepEqual(
+            (a as Record<string, unknown>)[k],
+            (b as Record<string, unknown>)[k],
+          )
+        );
+    }
+    return false;
+  };
+  const match = deepEqual(tree, rebuilt);
 
   return (
     <div style={SECTION}>

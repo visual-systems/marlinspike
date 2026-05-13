@@ -12,7 +12,7 @@ export function makeNode(
   children: TreeNode[],
   uri?: string,
 ): TreeNode {
-  return { id, label, kind, children, data: {}, version: 1, uri };
+  return { id, label, ...(uri !== undefined ? { uri } : {}), kind, children, data: {}, version: 1 };
 }
 
 /** Create a reference node that points to another entity. */
