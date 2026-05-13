@@ -36,6 +36,7 @@
     "exclude": ["dist/", "spikes/"]
   },
   "imports": {
+    "@marlinspike/graph": "./packages/graph/mod.ts",
     "@cfworker/json-schema": "npm:@cfworker/json-schema@^2.0.1",
     "@deno/emit": "jsr:@deno/emit@^0.46.0",
     "@hono/hono": "jsr:@hono/hono",
