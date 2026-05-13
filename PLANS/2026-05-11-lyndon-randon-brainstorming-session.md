@@ -482,23 +482,53 @@ Best demo targets are ones that exercise multiple kernels:
 
 ## Suggested Sequencing
 
-### Near-term (next 1-2 branches)
-1. **Extract graph model + ports** (kernels 1, 2) into `packages/graph/`
-2. **Extract layout engine** (kernel 5) into `packages/layout/`
+### Execution approach
 
-### Medium-term (next 3-5 branches)
-3. **Extract judgment system** (kernel 7, subsumes 4) into `packages/judgment/`
-4. **Extract operations layer** (kernel 6) into `src/db/` (internal module)
-5. **Build CLI** using embedded SurrealDB + extracted operations
-6. **Wire live queries** in IDE for real-time sync
-7. **Build module graph demo** — validate the extracted packages against a real use case
+Each extraction gets its own `/branch` session with a dedicated plan file. This brainstorming doc is the reference for *why* — the kernel invariants, design rationale, and how things compose. Each branch's plan file focuses on the *how* — specific files to move, interfaces to define, tests to write.
 
-### Longer-term
-8. **Extract codec framework** (kernel 3) into `packages/codec/` — generalize the Spike-Clojure pattern
-9. **Add DOT/Mermaid codecs**
-10. **MCP server** as a DB client
-11. **LSP for constraints**
-12. **Auth model + remote sync**
+**Dependency graph determines the order:**
+
+```
+                 packages/graph  (kernels 1+2)
+                  ▲    ▲     ▲
+                 /     |      \
+  packages/layout(5)  packages/judgment(7)  packages/codec(3)
+                        ▲
+                        |
+                   src/db (6, internal)
+```
+
+Graph extraction must land first — everything depends on it. After that, layout, judgment, and codec are independent of each other and can run in parallel.
+
+**Phase 1 — Sequential (blocking dependency)**
+| Branch | Depends on | Notes |
+|---|---|---|
+| `lyndon/extract-graph` | — | Must land first. Foundation for all other packages. |
+
+**Phase 2 — Parallel (independent after Phase 1)**
+| Branch | Depends on | Notes |
+|---|---|---|
+| `lyndon/extract-layout` | graph | Pure geometry, zero DOM deps. |
+| `lyndon/extract-judgment` | graph | Subsumes constraint algebra. JSON Schema as default predicate language. |
+| `lyndon/extract-codec` | graph | Generalize Spike-Clojure pattern. |
+
+These three can be worked on in any order or in parallel — they share the graph dependency but not each other. Each is its own branch off main (after graph merges).
+
+**Phase 3 — Build on extracted packages**
+| Branch | Depends on | Notes |
+|---|---|---|
+| `lyndon/extract-operations` | graph | Internal module. Separates persistence from UI. |
+| `lyndon/build-cli` | graph, operations | First non-IDE tool. Embedded SurrealDB. |
+| `lyndon/live-sync` | operations | Wire up live queries for real-time multi-tool sync. |
+| `lyndon/module-graph-demo` | graph, layout, codec | Validate extracted packages against a real use case. |
+
+**Phase 4 — Longer-term**
+| Branch | Depends on | Notes |
+|---|---|---|
+| `lyndon/dot-mermaid-codecs` | codec | Additional codec implementations. |
+| `lyndon/mcp-server` | graph, operations | AI-driven graph construction via SurrealDB. |
+| `lyndon/constraint-lsp` | judgment | External validation checkers. |
+| `lyndon/auth-remote-sync` | operations, live-sync | Multi-user, scoped permissions. |
 
 ---
 
