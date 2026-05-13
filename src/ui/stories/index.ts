@@ -12,3 +12,4 @@ export * as CodePanelStories from "./code-panel.stories.tsx";
 export * as PortStories from "./port.stories.tsx";
 export * as ProfilesStories from "./profiles.stories.tsx";
 export * as ReferenceStories from "./reference.stories.tsx";
+export * as GraphPackageStories from "./graph-package.stories.tsx";
