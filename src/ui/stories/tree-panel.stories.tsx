@@ -2,7 +2,8 @@
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useState } from "@hono/hono/jsx/dom";
 import { TreePanel } from "../components/tree-panel.tsx";
-import { makeNode, storyState, type Updater, type WorkspaceState } from "../workspace.ts";
+import { makeNode } from "@marlinspike/graph";
+import { storyState, type Updater, type WorkspaceState } from "../workspace.ts";
 
 export const meta = { title: "Tree Panel" };
 

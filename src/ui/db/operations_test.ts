@@ -67,8 +67,6 @@ Deno.test("flattenTree: nested composites", () => {
     parent: null,
     data: {},
     version: 1,
-    ports: undefined,
-    uri: undefined,
   });
   assertEquals(flat[1].parent, "a");
   assertEquals(flat[2].parent, "b");

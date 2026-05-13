@@ -6,12 +6,10 @@
 // the Constraint interface or any type union. Unknown types silently produce no diagnostics.
 
 import type { Diagnostic, DiagnosticMap } from "./diagnostics.ts";
+import { type Edge, findNode, type TreeNode } from "@marlinspike/graph";
 import {
   type Constraint,
   type ConstraintApplication,
-  type Edge,
-  findNode,
-  type TreeNode,
   type WorkspaceState,
 } from "../ui/workspace.ts";
 

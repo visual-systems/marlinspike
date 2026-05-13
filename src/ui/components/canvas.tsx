@@ -7,13 +7,15 @@ import {
   findNode,
   findParentOf,
   findPath,
+  isRef,
+  type Port,
+  type TreeNode,
+} from "@marlinspike/graph";
+import {
   getActiveTab,
   getFocusedRootNodes,
   getWorkspaceRootId,
-  isRef,
   type Panel,
-  type Port,
-  type TreeNode,
   type Updater,
   type WorkspaceState,
 } from "../workspace.ts";

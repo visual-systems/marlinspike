@@ -30,14 +30,10 @@
  * root node is updated in place.
  */
 
-import type { Edge, TreeNode, WorkspaceState } from "../ui/workspace.ts";
-import {
-  findNode,
-  getWorkspaceRoot,
-  getWorkspaceRootId,
-  makeRootNode,
-  updateNodeInTree,
-} from "../ui/workspace.ts";
+import type { Edge, TreeNode } from "@marlinspike/graph";
+import { findNode, makeRootNode, updateNodeInTree } from "@marlinspike/graph";
+import type { WorkspaceState } from "../ui/workspace.ts";
+import { getWorkspaceRoot, getWorkspaceRootId } from "../ui/workspace.ts";
 import { graphToSpike, spikeToGraph } from "./spike-clojure.ts";
 
 // ---------------------------------------------------------------------------

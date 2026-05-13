@@ -15,7 +15,7 @@ import { assertAlmostEquals, assertEquals, assertExists, assertNotEquals } from 
 import { graphToSpike, spikeToGraph } from "./spike-clojure.ts";
 import { evaluateSpike, numericEnv } from "./spike-clojure-eval.ts";
 import { FIXTURES } from "./spike-clojure-fixtures.ts";
-import type { Edge, TreeNode } from "../ui/workspace.ts";
+import type { Edge, TreeNode } from "@marlinspike/graph";
 
 // ---------------------------------------------------------------------------
 // Helpers
