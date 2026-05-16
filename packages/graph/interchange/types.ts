@@ -1,9 +1,12 @@
 /**
- * Base graph data model — see DESIGN.md §4.3
+ * Graph interchange format — see DESIGN.md §4.3
  *
- * The graph is a rose-tree of subgraphs. Every node is either a leaf (no subgraph)
- * or a composite (contains a subgraph referenced by URI). Nodes communicate only
+ * These types define the canonical serialization format for graphs.
+ * The graph is a rose-tree of subgraphs where nodes communicate only
  * via port nodes at the boundary of their parent subgraph.
+ *
+ * These types are distinct from the runtime TreeNode/Edge types used
+ * by the editor. Conversion between the two is handled by codec packages.
  */
 
 export type NodeKind = "node" | "port";

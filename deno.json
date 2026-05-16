@@ -1,4 +1,5 @@
 {
+  "workspace": ["packages/graph"],
   "tasks": {
     "dev": "deno run --watch --allow-net --allow-read --allow-env mod.tsx --dev",
     "start": "deno run --allow-net --allow-read --allow-env mod.tsx",
@@ -6,8 +7,8 @@
     "fmt": "deno fmt",
     "lint": "deno lint --fix",
     "test": "deno test --allow-read",
-    "check": "deno check mod.tsx src/graph/**/*.ts src/ui/App.tsx src/ui/StoriesShell.tsx src/ui/workspace.ts",
-    "ci": "deno fmt --check && deno lint && deno check mod.tsx src/graph/**/*.ts src/ui/App.tsx src/ui/StoriesShell.tsx src/ui/workspace.ts && deno check --config deno.client.json src/ui/client.tsx src/ui/stories/main.tsx && deno test --allow-read",
+    "check": "deno check mod.tsx src/graph/**/*.ts src/ui/App.tsx src/ui/StoriesShell.tsx src/ui/workspace.ts packages/graph/mod.ts",
+    "ci": "deno fmt --check && deno lint && deno check mod.tsx src/graph/**/*.ts src/ui/App.tsx src/ui/StoriesShell.tsx src/ui/workspace.ts packages/graph/mod.ts && deno check --config deno.client.json src/ui/client.tsx src/ui/stories/main.tsx && deno test --allow-read",
     "check-ui": "deno check --config deno.client.json src/ui/client.tsx src/ui/stories/main.tsx",
     "build": "deno run --allow-read --allow-write --allow-net --allow-env build.ts"
   },
@@ -22,7 +23,8 @@
     "indentWidth": 2,
     "include": [
       "mod.tsx",
-      "src/"
+      "src/",
+      "packages/"
     ]
   },
   "lint": {
@@ -34,6 +36,7 @@
     "exclude": ["dist/", "spikes/"]
   },
   "imports": {
+    "@marlinspike/graph": "./packages/graph/mod.ts",
     "@cfworker/json-schema": "npm:@cfworker/json-schema@^2.0.1",
     "@deno/emit": "jsr:@deno/emit@^0.46.0",
     "@hono/hono": "jsr:@hono/hono",

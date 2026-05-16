@@ -2,10 +2,10 @@
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useState } from "@hono/hono/jsx/dom";
 import { NodePorts } from "../components/port-rendering.tsx";
-import type { Port } from "../workspace.ts";
+import { makeNode, type Port } from "@marlinspike/graph";
 import { circlePortPositions, rectPortPositions } from "../lib/port-layout.ts";
 import { NodeInspector } from "../components/inspector.tsx";
-import { defaultState, makeNode, type Updater, type WorkspaceState } from "../workspace.ts";
+import { defaultState, type Updater, type WorkspaceState } from "../workspace.ts";
 
 export const meta = { title: "Ports" };
 

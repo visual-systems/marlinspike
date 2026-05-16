@@ -1,11 +1,11 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
+import { findNode } from "@marlinspike/graph";
 import {
   type Constraint,
   type ConstraintApplication,
   type ConstraintTarget,
-  findNode,
   getAppliedEntityIds,
   getConstraintsForEntity,
   type Panel,

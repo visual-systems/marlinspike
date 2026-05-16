@@ -5,6 +5,27 @@
 
 import type { AlgorithmId } from "./lib/algorithms/index.ts";
 
+// Re-export graph types and functions from @marlinspike/graph
+export type { Edge, Port, TreeNode } from "@marlinspike/graph";
+export {
+  collectSubtreeIds,
+  findNode,
+  findParentOf,
+  findPath,
+  findSiblings,
+  getEdgesIn,
+  getEdgesOut,
+  isRef,
+  makeNode,
+  makeRefNode,
+  makeRootNode,
+  nodeHash,
+  removeNodeFromTree,
+  updateNodeInTree,
+} from "@marlinspike/graph";
+import type { Edge, Port, TreeNode } from "@marlinspike/graph";
+import { collectSubtreeIds, findNode, makeRootNode } from "@marlinspike/graph";
+
 export const PANEL_TYPES = ["tree", "constraints", "code"] as const;
 export type PanelType = (typeof PANEL_TYPES)[number];
 
@@ -113,40 +134,7 @@ export interface WorkspaceState {
   entityDrafts: Record<string, string>;
 }
 
-export interface Port {
-  name: string;
-  direction: "in" | "out" | "inout";
-  type?: string; // schema type identifier, e.g. "float", "io.http.request-response"
-}
-
-export interface TreeNode {
-  id: string;
-  label: string;
-  uri?: string;
-  /** Node type discriminator. Absent or "standard" = regular node. "ref" = reference node. */
-  type?: "ref";
-  /** Target entity ID, label, or spike://UUID for reference nodes. */
-  ref?: string;
-  kind: "leaf" | "composite";
-  children: TreeNode[];
-  ports?: Port[]; // declared input/output ports; absent = no port contract
-  data: Record<string, unknown>;
-  version: number;
-}
-
-/** Type guard: is this node a reference? */
-export function isRef(node: TreeNode): boolean {
-  return node.type === "ref";
-}
-
-export interface Edge {
-  id: string;
-  fromId: string;
-  toId: string;
-  label: string;
-  data: Record<string, unknown>;
-  version: number;
-}
+// Port, TreeNode, isRef, Edge — re-exported from @marlinspike/graph above
 
 export interface ConnectedGraph {
   id: string;
@@ -196,21 +184,7 @@ export interface ListEditorConfig {
 // Workspace root node
 // ---------------------------------------------------------------------------
 
-/** Create a workspace root node with the given ID, label, and children. */
-export function makeRootNode(
-  id: string,
-  children: TreeNode[],
-  label = "Untitled",
-): TreeNode {
-  return {
-    id,
-    label,
-    kind: "composite",
-    children,
-    data: {},
-    version: 1,
-  };
-}
+// makeRootNode — re-exported from @marlinspike/graph above
 
 /** Get the workspace root node from a WorkspaceState (via the active tab's rootNodeId). */
 export function getWorkspaceRoot(ws: WorkspaceState): TreeNode | undefined {
@@ -361,56 +335,8 @@ export function getConnectionConfig(
 // Helpers
 // ---------------------------------------------------------------------------
 
-export function nodeHash(node: TreeNode): string {
-  const s = node.label + node.kind + (node.type ?? "") + (node.ref ?? "") +
-    JSON.stringify(node.data) + node.children.map((c) => c.id).join("");
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
-  return (h >>> 0).toString(16).padStart(8, "0");
-}
-
-export function findNode(nodes: TreeNode[], id: string): TreeNode | undefined {
-  for (const n of nodes) {
-    if (n.id === id) return n;
-    const f = findNode(n.children, id);
-    if (f) return f;
-  }
-  return undefined;
-}
-
-export function findParentOf(nodes: TreeNode[], nodeId: string): TreeNode | null {
-  for (const n of nodes) {
-    if (n.children.some((c) => c.id === nodeId)) return n;
-    const f = findParentOf(n.children, nodeId);
-    if (f) return f;
-  }
-  return null;
-}
-
-export function findSiblings(treeNodes: TreeNode[], nodeId: string): TreeNode[] {
-  const parent = findParentOf(treeNodes, nodeId);
-  return parent
-    ? parent.children.filter((c) => c.id !== nodeId)
-    : treeNodes.filter((n) => n.id !== nodeId);
-}
-
-export function getEdgesIn(edges: Edge[], nodeId: string): Edge[] {
-  return edges.filter((e) => e.toId === nodeId);
-}
-
-export function getEdgesOut(edges: Edge[], nodeId: string): Edge[] {
-  return edges.filter((e) => e.fromId === nodeId);
-}
-
-export function collectSubtreeIds(node: TreeNode): Set<string> {
-  const ids = new Set<string>();
-  const visit = (n: TreeNode): void => {
-    ids.add(n.id);
-    for (const c of n.children) visit(c);
-  };
-  visit(node);
-  return ids;
-}
+// nodeHash, findNode, findParentOf, findSiblings, getEdgesIn, getEdgesOut,
+// collectSubtreeIds — re-exported from @marlinspike/graph above
 
 /**
  * Validate that focusId is within the active workspace's subtree.
@@ -453,15 +379,7 @@ export function subgraphJson(
   );
 }
 
-/** Returns the path from root to targetId inclusive, or [] if not found. */
-export function findPath(nodes: TreeNode[], targetId: string): TreeNode[] {
-  for (const n of nodes) {
-    if (n.id === targetId) return [n];
-    const child = findPath(n.children, targetId);
-    if (child.length > 0) return [n, ...child];
-  }
-  return [];
-}
+// findPath — re-exported from @marlinspike/graph above
 
 /** Returns the root nodes for the current focus level.
  *  - focusId === null: returns treeNodes as-is (shows the workspace root on the canvas,
@@ -504,29 +422,7 @@ export function getActiveTab(ws: WorkspaceState): Tab {
 // Default data
 // ---------------------------------------------------------------------------
 
-export function makeNode(
-  id: string,
-  label: string,
-  kind: "leaf" | "composite",
-  children: TreeNode[],
-  uri?: string,
-): TreeNode {
-  return { id, label, kind, children, data: {}, version: 1, uri };
-}
-
-/** Create a reference node that points to another entity. */
-export function makeRefNode(id: string, label: string, ref: string): TreeNode {
-  return {
-    id,
-    label,
-    type: "ref",
-    ref,
-    kind: "composite",
-    children: [],
-    data: {},
-    version: 1,
-  };
-}
+// makeNode, makeRefNode — re-exported from @marlinspike/graph above
 
 export function defaultTreeNodes(rootNodeId: string): TreeNode[] {
   return ensureWorkspaceRoot([], rootNodeId).treeNodes;
@@ -1328,26 +1224,7 @@ export function withNodeMutation(
   return { ...ws, treeNodes: fn(ws.treeNodes) };
 }
 
-export function updateNodeInTree(
-  nodes: TreeNode[],
-  nodeId: string,
-  fn: (n: TreeNode) => TreeNode,
-): TreeNode[] {
-  return nodes.map((n) => {
-    if (n.id === nodeId) return fn(n);
-    return { ...n, children: updateNodeInTree(n.children, nodeId, fn) };
-  });
-}
-
-export function removeNodeFromTree(nodes: TreeNode[], nodeId: string): TreeNode[] {
-  return nodes
-    .filter((n) => n.id !== nodeId)
-    .map((n) => {
-      const children = removeNodeFromTree(n.children, nodeId);
-      const kind = children.length === 0 ? "leaf" as const : n.kind;
-      return { ...n, children, kind };
-    });
-}
+// updateNodeInTree, removeNodeFromTree — re-exported from @marlinspike/graph above
 
 export function withConstraintMutation(
   ws: WorkspaceState,

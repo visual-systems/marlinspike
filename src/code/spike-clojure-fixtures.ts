@@ -9,7 +9,7 @@
  * documented in the fixture's `shortcoming` field.
  */
 
-import type { Edge, Port, TreeNode } from "../ui/workspace.ts";
+import type { Edge, Port, TreeNode } from "@marlinspike/graph";
 import type { NumericFnEnv } from "./spike-clojure-eval.ts";
 
 // ---------------------------------------------------------------------------

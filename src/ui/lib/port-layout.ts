@@ -5,7 +5,7 @@
 // Convention: input ports on the left, output ports on the right.
 // ---------------------------------------------------------------------------
 
-import { isRef, type Port, type TreeNode } from "../workspace.ts";
+import { isRef, type Port, type TreeNode } from "@marlinspike/graph";
 
 // ---------------------------------------------------------------------------
 // PortPosition — the computed position of a single port on a node boundary

@@ -27,7 +27,7 @@
  *     `(multiply 4.0 (multiply a c))`) by generating unique node names.
  */
 
-import type { Edge, Port, TreeNode } from "../ui/workspace.ts";
+import type { Edge, Port, TreeNode } from "@marlinspike/graph";
 import type { SExp } from "../graph/base_lisp.ts";
 import { parse } from "../graph/base_lisp.ts";
 

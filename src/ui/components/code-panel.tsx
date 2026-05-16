@@ -1,13 +1,11 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
+import { findNode, findParentOf, updateNodeInTree } from "@marlinspike/graph";
 import {
-  findNode,
-  findParentOf,
   type Panel,
   PANEL_DEFAULT_WIDTH,
   PANEL_MIN_WIDTH,
-  updateNodeInTree,
   type Updater,
   withNodeMutation,
   withPanel,

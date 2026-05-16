@@ -1,14 +1,8 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useState } from "@hono/hono/jsx/dom";
-import {
-  collectSubtreeIds,
-  findNode,
-  findPath,
-  type TreeNode,
-  type Updater,
-  type WorkspaceState,
-} from "../workspace.ts";
+import { collectSubtreeIds, findNode, findPath, type TreeNode } from "@marlinspike/graph";
+import { type Updater, type WorkspaceState } from "../workspace.ts";
 
 export function FocusDropdown({ ws, update }: { ws: WorkspaceState; update: Updater }) {
   const [open, setOpen] = useState(false);
