@@ -14,7 +14,7 @@ import { renderContainer } from "./container.ts";
  * Produce render primitives for a single node.
  * Returns a group containing the shape and label (leaf) or a container group (expanded).
  */
-export function renderNode(node: CanvasNode, theme: CanvasTheme): RenderPrimitive {
+export function renderNode<S>(node: CanvasNode<S>, theme: CanvasTheme<S>): RenderPrimitive {
   // Expanded container: delegate to container renderer
   if (node.expanded && node.children && node.children.length > 0) {
     return renderContainer(node, theme);

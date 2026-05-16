@@ -2,13 +2,16 @@
  * Marlinspike dark theme — default visual style.
  *
  * Encodes the current Marlinspike IDE color palette as a CanvasTheme
- * implementation. All colors are extracted from canvas.tsx renderLevel.
+ * implementation. Uses only universal CanvasNode fields (selected,
+ * highlighted, dashed) — consumer-specific state is ignored.
+ *
+ * This theme works with any state type (CanvasTheme<unknown>).
  */
 
 import type { CanvasEdge, CanvasNode, CanvasPort } from "../scene/types.ts";
 import type { CanvasTheme, ContainerStyle, EdgeStyle, NodeStyle, PortStyle } from "./types.ts";
 
-function resolveNodeStyle(node: CanvasNode): NodeStyle {
+function resolveNodeStyle(node: CanvasNode<unknown>): NodeStyle {
   const { selected, highlighted, dashed } = node;
 
   // Fill
@@ -37,7 +40,6 @@ function resolveNodeStyle(node: CanvasNode): NodeStyle {
     labelFill,
     labelFont: "sans-serif",
     labelSize: 9,
-    opacity: node.data?.inactive ? 0.3 : undefined,
   };
 }
 
@@ -55,7 +57,7 @@ function resolveEdgeStyle(edge: CanvasEdge): EdgeStyle {
   };
 }
 
-function resolvePortStyle(port: CanvasPort, _node: CanvasNode): PortStyle {
+function resolvePortStyle(port: CanvasPort, _node: CanvasNode<unknown>): PortStyle {
   const isOut = port.direction === "out";
   return {
     fill: isOut ? "#cc8844" : "#6688cc",
@@ -64,7 +66,7 @@ function resolvePortStyle(port: CanvasPort, _node: CanvasNode): PortStyle {
   };
 }
 
-function resolveContainerStyle(node: CanvasNode): ContainerStyle {
+function resolveContainerStyle(node: CanvasNode<unknown>): ContainerStyle {
   const { selected, highlighted, dashed } = node;
 
   let fill = "#0f0f28";
@@ -92,8 +94,8 @@ function resolveContainerStyle(node: CanvasNode): ContainerStyle {
   };
 }
 
-/** The default Marlinspike dark theme. */
-export const marlinTheme: CanvasTheme = {
+/** The default Marlinspike dark theme. Works with any state type. */
+export const marlinTheme: CanvasTheme<unknown> = {
   node: resolveNodeStyle,
   edge: resolveEdgeStyle,
   port: resolvePortStyle,

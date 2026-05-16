@@ -32,9 +32,9 @@ export interface EdgeRenderData {
  * @param groupCount - Total edges in this edge's parallel-edge group
  * @param obstacleOffset - Pre-computed arc offset for obstacle avoidance (0 = straight)
  */
-export function computeEdgePath(
+export function computeEdgePath<S>(
   edge: CanvasEdge,
-  nodeMap: Map<string, CanvasNode>,
+  nodeMap: Map<string, CanvasNode<S>>,
   groupIndex: number,
   groupCount: number,
   obstacleOffset = 0,
@@ -116,7 +116,7 @@ export function computeEdgePath(
  * Produce render primitives for a pre-computed edge.
  * Returns a group containing the path, arrowhead, and optional label.
  */
-export function renderEdge(data: EdgeRenderData, theme: CanvasTheme): RenderPrimitive {
+export function renderEdge<S>(data: EdgeRenderData, theme: CanvasTheme<S>): RenderPrimitive {
   const style = theme.edge(data.edge);
   const children: RenderPrimitive[] = [];
 

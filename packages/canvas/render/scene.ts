@@ -19,10 +19,10 @@ import { computeEdgePath, groupEdges, renderEdge } from "./edge.ts";
  *
  * Rendering order: nodes first (background), then edge paths, then edge labels on top.
  */
-export function renderLevel(
-  nodes: CanvasNode[],
+export function renderLevel<S>(
+  nodes: CanvasNode<S>[],
   edges: CanvasEdge[],
-  theme: CanvasTheme,
+  theme: CanvasTheme<S>,
 ): RenderPrimitive[] {
   const children: RenderPrimitive[] = [];
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
@@ -85,7 +85,7 @@ export function renderLevel(
  * Supports both flat scenes and hierarchical scenes (nodes with children).
  * Multi-edge grouping is handled automatically at each level.
  */
-export function renderScene(scene: CanvasScene, theme: CanvasTheme): RenderGroup {
+export function renderScene<S>(scene: CanvasScene<S>, theme: CanvasTheme<S>): RenderGroup {
   const children = renderLevel(scene.nodes, scene.edges, theme);
   return { kind: "group", children };
 }

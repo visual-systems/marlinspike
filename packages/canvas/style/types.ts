@@ -4,6 +4,9 @@
  * Consumers implement CanvasTheme to control the appearance of nodes,
  * edges, and ports. Style resolvers receive the element being rendered
  * and return concrete visual properties.
+ *
+ * The `S` type parameter flows from CanvasNode<S> — theme resolvers
+ * receive the consumer's typed state without casting.
  */
 
 import type { CanvasEdge, CanvasNode, CanvasPort } from "../scene/types.ts";
@@ -50,30 +53,35 @@ export interface ContainerStyle {
 }
 
 /** Resolves visual style for a node based on its state. */
-export type NodeStyleResolver = (node: CanvasNode) => NodeStyle;
+export type NodeStyleResolver<S = unknown> = (node: CanvasNode<S>) => NodeStyle;
 
 /** Resolves visual style for an edge based on its state. */
 export type EdgeStyleResolver = (edge: CanvasEdge) => EdgeStyle;
 
 /** Resolves visual style for a port based on its state and parent node. */
-export type PortStyleResolver = (port: CanvasPort, node: CanvasNode) => PortStyle;
+export type PortStyleResolver<S = unknown> = (
+  port: CanvasPort,
+  node: CanvasNode<S>,
+) => PortStyle;
 
 /** Resolves visual style for an expanded container based on its state. */
-export type ContainerStyleResolver = (node: CanvasNode) => ContainerStyle;
+export type ContainerStyleResolver<S = unknown> = (
+  node: CanvasNode<S>,
+) => ContainerStyle;
 
 /** Additional primitives to render as decorations on a node (badges, indicators). */
-export type NodeDecorationsResolver = (
-  node: CanvasNode,
+export type NodeDecorationsResolver<S = unknown> = (
+  node: CanvasNode<S>,
 ) => import("../render/primitives.ts").RenderPrimitive[];
 
 /** A complete visual theme for the canvas. */
-export interface CanvasTheme {
-  node: NodeStyleResolver;
+export interface CanvasTheme<S = unknown> {
+  node: NodeStyleResolver<S>;
   edge: EdgeStyleResolver;
-  port: PortStyleResolver;
+  port: PortStyleResolver<S>;
   /** Optional resolver for expanded container nodes. Falls back to defaults if omitted. */
-  container?: ContainerStyleResolver;
+  container?: ContainerStyleResolver<S>;
   /** Optional extra primitives rendered after the node shape (badges, indicators, etc). */
-  decorations?: NodeDecorationsResolver;
+  decorations?: NodeDecorationsResolver<S>;
   background: string;
 }

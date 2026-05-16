@@ -5,6 +5,10 @@
  * Nodes carry shape, dimensions, optional port positions, and
  * optional children for hierarchical (nested container) rendering.
  * Edges reference nodes by ID.
+ *
+ * The `S` type parameter allows consumers to attach typed state
+ * to nodes for use in theme resolvers — the package itself never
+ * inspects this state, only passes it through.
  */
 
 /** A port on a canvas node — position relative to node center. */
@@ -23,7 +27,7 @@ export interface CanvasPort {
 }
 
 /** A positioned node in the canvas scene. */
-export interface CanvasNode {
+export interface CanvasNode<S = unknown> {
   id: string;
   x: number;
   y: number;
@@ -35,9 +39,10 @@ export interface CanvasNode {
   selected?: boolean;
   highlighted?: boolean;
   dashed?: boolean;
-  data?: Record<string, unknown>;
+  /** Consumer-specific state, typed per-consumer. Opaque to the package. */
+  state?: S;
   /** Child nodes rendered inside this container when expanded. */
-  children?: CanvasNode[];
+  children?: CanvasNode<S>[];
   /** If true and children exist, render as an expanded container rather than a leaf. */
   expanded?: boolean;
   /** Edges among children at this level (only relevant when expanded). */
@@ -54,8 +59,8 @@ export interface CanvasEdge {
   highlighted?: boolean;
 }
 
-/** A flat scene: positioned nodes + edges. */
-export interface CanvasScene {
-  nodes: CanvasNode[];
+/** A scene: positioned nodes + edges, optionally hierarchical. */
+export interface CanvasScene<S = unknown> {
+  nodes: CanvasNode<S>[];
   edges: CanvasEdge[];
 }

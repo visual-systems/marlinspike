@@ -2,8 +2,8 @@
  * Canvas adapter — maps workspace state to a CanvasScene for rendering
  * via @marlinspike/canvas.
  *
- * This bridges the IDE's workspace model (TreeNode[], LayoutMap, expandedSet,
- * diagnostics, interaction state) into the canvas package's pure data model.
+ * Uses the generic CanvasNode<MarlinNodeState> to carry IDE-specific
+ * visual state through to theme resolvers with full type safety.
  */
 
 import type { Edge, Port, TreeNode } from "@marlinspike/graph";
@@ -32,6 +32,29 @@ import type { DiagnosticMap } from "../../graph/diagnostics.ts";
 
 const LEAF_R = 26;
 const LABEL_H = 22;
+
+// ---------------------------------------------------------------------------
+// Consumer state type
+// ---------------------------------------------------------------------------
+
+/** IDE-specific visual state carried on each CanvasNode. */
+export interface MarlinNodeState {
+  levelId: string;
+  isRef: boolean;
+  isComposite: boolean;
+  hasChildren: boolean;
+  isInput: boolean;
+  isOutput: boolean;
+  isEdgeSource: boolean;
+  isCandidate: boolean;
+  isInactive: boolean;
+  isHovered: boolean;
+  hasError: boolean;
+  hasWarning: boolean;
+  childrenCount: number;
+  edgePortDots: Array<{ x: number; y: number; out: boolean }>;
+  refTarget?: string;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -103,10 +126,9 @@ function getEdgesAtLevel(edges: Edge[], nodeIds: string[]): { a: string; b: stri
  * Build a hierarchical CanvasScene from workspace state.
  *
  * Each expanded composite becomes a container node with children.
- * Visual state (diagnostics, ref, interaction mode, selection) is encoded
- * in `node.data` for theme resolution.
+ * Visual state is encoded in typed `node.state` for theme resolution.
  */
-export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene {
+export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNodeState> {
   const allLabels = collectAllLabels(opts.allTreeNodes);
 
   // Determine port role colors (input/output params of focused composite)
@@ -121,7 +143,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene {
   function buildLevel(
     treeNodes: TreeNode[],
     levelId: string,
-  ): { nodes: CanvasNode[]; edges: CanvasEdge[] } {
+  ): { nodes: CanvasNode<MarlinNodeState>[]; edges: CanvasEdge[] } {
     const level = opts.layout.get(levelId);
     if (!level) return { nodes: [], edges: [] };
 
@@ -147,19 +169,26 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene {
       const pb = posMap.get(edge.toId);
       if (!pa || !pb) continue;
       if (effectivePortsMap.has(edge.fromId)) {
-        // Cast ForceNode to CanvasNode shape for surfacePoint (only reads x,y,w,h,shape)
-        const bp = surfacePoint(pa as unknown as CanvasNode, pb as unknown as CanvasNode, 0);
+        const bp = surfacePoint(
+          pa as unknown as CanvasNode<unknown>,
+          pb as unknown as CanvasNode<unknown>,
+          0,
+        );
         if (!edgePortDots.has(edge.fromId)) edgePortDots.set(edge.fromId, []);
         edgePortDots.get(edge.fromId)!.push({ x: bp.x - pa.x, y: bp.y - pa.y, out: true });
       }
       if (effectivePortsMap.has(edge.toId)) {
-        const bp = surfacePoint(pb as unknown as CanvasNode, pa as unknown as CanvasNode, 0);
+        const bp = surfacePoint(
+          pb as unknown as CanvasNode<unknown>,
+          pa as unknown as CanvasNode<unknown>,
+          0,
+        );
         if (!edgePortDots.has(edge.toId)) edgePortDots.set(edge.toId, []);
         edgePortDots.get(edge.toId)!.push({ x: bp.x - pb.x, y: bp.y - pb.y, out: false });
       }
     }
 
-    const canvasNodes: CanvasNode[] = [];
+    const canvasNodes: CanvasNode<MarlinNodeState>[] = [];
 
     for (const node of treeNodes) {
       const pos = posMap.get(node.id);
@@ -206,7 +235,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene {
         }));
       }
 
-      const data: Record<string, unknown> = {
+      const state: MarlinNodeState = {
         levelId,
         isRef: isRefNode,
         isComposite,
@@ -244,7 +273,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene {
           children: childResult.nodes,
           edges: childResult.edges,
           ports,
-          data,
+          state,
         });
       } else {
         canvasNodes.push({
@@ -259,7 +288,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene {
           highlighted: isHighlighted,
           dashed: isDashed,
           ports,
-          data,
+          state,
         });
       }
     }
@@ -282,54 +311,44 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene {
 }
 
 // ---------------------------------------------------------------------------
-// Marlinspike IDE theme (full-fidelity color resolution)
+// Marlinspike IDE theme — typed state access, no casting
 // ---------------------------------------------------------------------------
 
-function resolveNodeStyle(node: CanvasNode): NodeStyle {
-  const d = (node.data ?? {}) as Record<string, unknown>;
+function resolveNodeStyle(node: CanvasNode<MarlinNodeState>): NodeStyle {
+  const s = node.state!;
   const { selected, highlighted } = node;
-  const isRefNode = d.isRef as boolean;
-  const isComposite = d.isComposite as boolean;
-  const isInput = d.isInput as boolean;
-  const isOutput = d.isOutput as boolean;
-  const isEdgeSource = d.isEdgeSource as boolean;
-  const isHovered = d.isHovered as boolean;
-  const isCandidate = d.isCandidate as boolean;
-  const isInactive = d.isInactive as boolean;
-  const hasError = d.hasError as boolean;
-  const hasWarning = d.hasWarning as boolean;
 
   // Fill
   let fill = "#111125";
-  if (isEdgeSource || isHovered) fill = "#1e2a4a";
-  else if (hasError) fill = "#2a1a1a";
+  if (s.isEdgeSource || s.isHovered) fill = "#1e2a4a";
+  else if (s.hasError) fill = "#2a1a1a";
   else if (selected) fill = "#1e2a4a";
-  else if (isRefNode) fill = "#141428";
-  else if (isComposite) fill = "#141430";
-  else if (isInput) fill = "#101828";
-  else if (isOutput) fill = "#181410";
+  else if (s.isRef) fill = "#141428";
+  else if (s.isComposite) fill = "#141430";
+  else if (s.isInput) fill = "#101828";
+  else if (s.isOutput) fill = "#181410";
 
   // Stroke
   let stroke = "#252545";
-  if (isEdgeSource) stroke = "#5070c0";
-  else if (isHovered) stroke = "#6080e0";
-  else if (hasError) stroke = "#c04040";
-  else if (hasWarning) stroke = "#c08020";
+  if (s.isEdgeSource) stroke = "#5070c0";
+  else if (s.isHovered) stroke = "#6080e0";
+  else if (s.hasError) stroke = "#c04040";
+  else if (s.hasWarning) stroke = "#c08020";
   else if (selected) stroke = "#5070c0";
-  else if (isCandidate) stroke = "#3050a0";
+  else if (s.isCandidate) stroke = "#3050a0";
   else if (highlighted) stroke = "#50c070";
-  else if (isRefNode) stroke = "#605080";
-  else if (isInput) stroke = "#4080c0";
-  else if (isOutput) stroke = "#c06040";
-  else if (isComposite) stroke = "#303060";
+  else if (s.isRef) stroke = "#605080";
+  else if (s.isInput) stroke = "#4080c0";
+  else if (s.isOutput) stroke = "#c06040";
+  else if (s.isComposite) stroke = "#303060";
 
   // Stroke width
   let strokeWidth = 1;
-  if (isEdgeSource || selected || isHovered) strokeWidth = 2;
-  else if (isCandidate || hasError || hasWarning || highlighted) strokeWidth = 1.5;
+  if (s.isEdgeSource || selected || s.isHovered) strokeWidth = 2;
+  else if (s.isCandidate || s.hasError || s.hasWarning || highlighted) strokeWidth = 1.5;
 
   // Label
-  const labelFill = selected ? "#a0b4e0" : isRefNode ? "#9080b0" : "#777799";
+  const labelFill = selected ? "#a0b4e0" : s.isRef ? "#9080b0" : "#777799";
 
   return {
     fill,
@@ -338,32 +357,29 @@ function resolveNodeStyle(node: CanvasNode): NodeStyle {
     labelFill,
     labelFont: "sans-serif",
     labelSize: 9,
-    opacity: isInactive ? 0.3 : undefined,
+    opacity: s.isInactive ? 0.3 : undefined,
   };
 }
 
-function resolveContainerStyle(node: CanvasNode): ContainerStyle {
-  const d = (node.data ?? {}) as Record<string, unknown>;
+function resolveContainerStyle(node: CanvasNode<MarlinNodeState>): ContainerStyle {
+  const s = node.state!;
   const { selected, highlighted, dashed } = node;
-  const isRefNode = d.isRef as boolean;
-  const hasError = d.hasError as boolean;
-  const hasWarning = d.hasWarning as boolean;
   const isHighlighted = highlighted ?? false;
 
-  let fill = isRefNode ? "#0f0f24" : "#0f0f28";
-  if (hasError) fill = "#1a0f0f";
+  let fill = s.isRef ? "#0f0f24" : "#0f0f28";
+  if (s.hasError) fill = "#1a0f0f";
 
   let stroke = "#1e1e44";
-  if (hasError) stroke = "#c04040";
-  else if (hasWarning) stroke = "#c08020";
+  if (s.hasError) stroke = "#c04040";
+  else if (s.hasWarning) stroke = "#c08020";
   else if (selected) stroke = "#4060b0";
   else if (isHighlighted) stroke = "#50c070";
-  else if (isRefNode) stroke = "#605080";
+  else if (s.isRef) stroke = "#605080";
 
   let strokeWidth = 1;
-  if (selected || hasError || hasWarning || isHighlighted) strokeWidth = 2;
+  if (selected || s.hasError || s.hasWarning || isHighlighted) strokeWidth = 2;
 
-  const labelFill = selected ? "#8090c0" : hasError ? "#c07070" : "#444466";
+  const labelFill = selected ? "#8090c0" : s.hasError ? "#c07070" : "#444466";
 
   return {
     fill,
@@ -390,7 +406,7 @@ function resolveEdgeStyle(edge: CanvasEdge): EdgeStyle {
   };
 }
 
-function resolvePortStyle(port: CanvasPort, _node: CanvasNode): PortStyle {
+function resolvePortStyle(port: CanvasPort, _node: CanvasNode<MarlinNodeState>): PortStyle {
   const isOut = port.direction === "out";
   return {
     fill: isOut ? "#cc8844" : "#6688cc",
@@ -400,22 +416,20 @@ function resolvePortStyle(port: CanvasPort, _node: CanvasNode): PortStyle {
 }
 
 /** Produce decorations: diagnostic badges, ref indicators, children count, port dots. */
-function resolveDecorations(node: CanvasNode): RenderPrimitive[] {
-  const d = (node.data ?? {}) as Record<string, unknown>;
+function resolveDecorations(node: CanvasNode<MarlinNodeState>): RenderPrimitive[] {
+  const s = node.state!;
   const prims: RenderPrimitive[] = [];
   const isRect = node.shape === "rect";
   const r = Math.min(node.w, node.h) / 2;
-  const hasChildren = d.hasChildren as boolean;
 
   // Children count badge
-  if (hasChildren && !node.expanded) {
-    const count = d.childrenCount as number;
-    if (count > 0) {
+  if (s.hasChildren && !node.expanded) {
+    if (s.childrenCount > 0) {
       prims.push({
         kind: "text",
         x: 0,
         y: 10,
-        text: `(${count})`,
+        text: `(${s.childrenCount})`,
         fill: node.selected ? "#6070a0" : "#3a3a60",
         fontSize: 8,
         anchor: "middle",
@@ -424,30 +438,27 @@ function resolveDecorations(node: CanvasNode): RenderPrimitive[] {
   }
 
   // Error/warning badge
-  const hasError = d.hasError as boolean;
-  const hasWarning = d.hasWarning as boolean;
-  if (hasError || hasWarning) {
+  if (s.hasError || s.hasWarning) {
     const badgeY = -(isRect ? LEAF_R * 0.7 - 2 : r - 2);
     prims.push({
       kind: "circle",
       cx: r - 2,
       cy: badgeY,
       r: 5,
-      fill: hasError ? "#c04040" : "#c08020",
+      fill: s.hasError ? "#c04040" : "#c08020",
       stroke: "#0d0d1e",
       strokeWidth: 1,
     });
   }
 
   // Ref indicator text
-  const refTarget = d.refTarget as string | undefined;
-  if (refTarget) {
+  if (s.refTarget) {
     const labelY = isRect ? LEAF_R * 0.7 + 9 : r + 9;
     prims.push({
       kind: "text",
       x: 0,
       y: labelY,
-      text: `\u2197 ${refTarget}`,
+      text: `\u2197 ${s.refTarget}`,
       fill: "#605080",
       fontSize: 7,
       anchor: "middle",
@@ -455,8 +466,7 @@ function resolveDecorations(node: CanvasNode): RenderPrimitive[] {
   }
 
   // Edge-derived port dots
-  const dots = (d.edgePortDots ?? []) as Array<{ x: number; y: number; out: boolean }>;
-  for (const dot of dots) {
+  for (const dot of s.edgePortDots) {
     prims.push({
       kind: "circle",
       cx: dot.x,
@@ -471,7 +481,11 @@ function resolveDecorations(node: CanvasNode): RenderPrimitive[] {
   return prims;
 }
 
-/** Metadata for a node in the scene, used for event handling. */
+// ---------------------------------------------------------------------------
+// Scene utilities
+// ---------------------------------------------------------------------------
+
+/** Metadata for a node in the scene, derived from typed state. */
 export interface NodeMeta {
   levelId: string;
   x: number;
@@ -482,17 +496,19 @@ export interface NodeMeta {
 }
 
 /** Build a flat map from node ID → metadata for event handling. */
-export function buildNodeMetaMap(scene: CanvasScene): Map<string, NodeMeta> {
+export function buildNodeMetaMap(
+  scene: CanvasScene<MarlinNodeState>,
+): Map<string, NodeMeta> {
   const map = new Map<string, NodeMeta>();
-  function walk(nodes: CanvasNode[]) {
+  function walk(nodes: CanvasNode<MarlinNodeState>[]) {
     for (const node of nodes) {
-      const d = (node.data ?? {}) as Record<string, unknown>;
+      const s = node.state!;
       map.set(node.id, {
-        levelId: (d.levelId as string) ?? "",
+        levelId: s.levelId,
         x: node.x,
         y: node.y,
-        isComposite: (d.isComposite as boolean) ?? false,
-        hasChildren: (d.hasChildren as boolean) ?? false,
+        isComposite: s.isComposite,
+        hasChildren: s.hasChildren,
         isExpanded: node.expanded ?? false,
       });
       if (node.children) walk(node.children);
@@ -502,8 +518,8 @@ export function buildNodeMetaMap(scene: CanvasScene): Map<string, NodeMeta> {
   return map;
 }
 
-/** Full Marlinspike IDE theme — resolves all visual states from node.data. */
-export const marlinIdeTheme: CanvasTheme = {
+/** Full Marlinspike IDE theme — typed state access, no casting. */
+export const marlinIdeTheme: CanvasTheme<MarlinNodeState> = {
   node: resolveNodeStyle,
   edge: resolveEdgeStyle,
   port: resolvePortStyle,

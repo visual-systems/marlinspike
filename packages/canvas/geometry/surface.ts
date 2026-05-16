@@ -19,7 +19,7 @@ export interface Point {
  * For circle nodes: clips at the circle radius.
  * For rect nodes: clips at the AABB boundary via ray intersection.
  */
-export function surfacePoint(from: CanvasNode, to: CanvasNode, gap = 0): Point {
+export function surfacePoint(from: CanvasNode<unknown>, to: CanvasNode<unknown>, gap = 0): Point {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const dist = Math.sqrt(dx * dx + dy * dy);

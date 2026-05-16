@@ -26,7 +26,7 @@ const DEFAULT_CONTAINER_STYLE: ContainerStyle = {
  * Render an expanded container node as a group containing a background rect,
  * label, and recursively rendered children.
  */
-export function renderContainer(node: CanvasNode, theme: CanvasTheme): RenderGroup {
+export function renderContainer<S>(node: CanvasNode<S>, theme: CanvasTheme<S>): RenderGroup {
   const style = theme.container ? theme.container(node) : DEFAULT_CONTAINER_STYLE;
   const halfW = node.w / 2;
   const halfH = node.h / 2;
