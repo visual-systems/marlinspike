@@ -32,13 +32,13 @@ A standalone `packages/canvas/` Deno workspace package (`@marlinspike/canvas`) t
 
 ### Phase A — Foundation: types + geometry (no existing file changes)
 
-- [ ] A1. Create `packages/canvas/` with `deno.json` (`@marlinspike/canvas`, version 0.1.0)
-- [ ] A2. Define scene graph types in `packages/canvas/scene/types.ts`:
+- [x] A1. Create `packages/canvas/` with `deno.json` (`@marlinspike/canvas`, version 0.1.0)
+- [x] A2. Define scene graph types in `packages/canvas/scene/types.ts`:
   - `CanvasNode { id, x, y, w, h, shape: "circle"|"rect", label, ports?: CanvasPort[], selected?, highlighted?, dashed?, data? }`
   - `CanvasEdge { id, fromId, toId, label?, selected?, highlighted? }`
   - `CanvasPort { name, direction: "in"|"out"|"inout", type?, x, y, nx, ny }` (positions relative to node center)
   - `CanvasScene { nodes: CanvasNode[], edges: CanvasEdge[] }`
-- [ ] A3. Define style interfaces in `packages/canvas/style/types.ts`:
+- [x] A3. Define style interfaces in `packages/canvas/style/types.ts`:
   - `NodeStyle { fill, stroke, strokeWidth, labelFill, labelFont, radius?, opacity? }`
   - `EdgeStyle { stroke, strokeWidth, arrowSize, labelFill, labelFont }`
   - `PortStyle { fill, stroke, radius }`
@@ -46,13 +46,13 @@ A standalone `packages/canvas/` Deno workspace package (`@marlinspike/canvas`) t
   - `EdgeStyleResolver(edge: CanvasEdge): EdgeStyle`
   - `PortStyleResolver(port: CanvasPort, node: CanvasNode): PortStyle`
   - `CanvasTheme { node: NodeStyleResolver, edge: EdgeStyleResolver, port: PortStyleResolver, background: string }`
-- [ ] A4. Extract geometry helpers into `packages/canvas/geometry/`:
+- [x] A4. Extract geometry helpers into `packages/canvas/geometry/`:
   - `surface.ts` — `surfacePoint(from, to, gap)` (from canvas.tsx:156-183)
   - `arc.ts` — `pathEndTangent`, `arcMidpoint`, `edgeArcOffset`, `arcClipPoint`, `arcClipRect` (from canvas.tsx:99-347)
   - `sdf.ts` — `sdfOf`, `surfaceToSurface`, `sdfGradient`, `lineSdfDist` (from sdf-force.ts, geometry primitives only — not force simulation)
   - `ports.ts` — `PortPosition`, `circlePortPositions`, `rectPortPositions` (from port-layout.ts, without `resolveNodePorts` which depends on @marlinspike/graph)
-- [ ] A5. Export barrel: `packages/canvas/mod.ts`
-- [ ] A6. Wire into workspace `deno.json` imports
+- [x] A5. Export barrel: `packages/canvas/mod.ts`
+- [x] A6. Wire into workspace `deno.json` imports
 
 #### Key files:
 - `src/ui/components/canvas.tsx:99-347` — geometry helpers to extract
@@ -63,7 +63,7 @@ A standalone `packages/canvas/` Deno workspace package (`@marlinspike/canvas`) t
 
 The render layer is **abstracted from any rendering target**. Instead of producing SVG-specific output, it produces a list of **render primitives** — abstract drawing commands that any backend can consume.
 
-- [ ] B1. Define render primitives in `packages/canvas/render/primitives.ts`:
+- [x] B1. Define render primitives in `packages/canvas/render/primitives.ts`:
   - `RenderCircle { kind: "circle", cx, cy, r, fill, stroke, strokeWidth, opacity?, dashed?, cursor? }`
   - `RenderRect { kind: "rect", x, y, w, h, rx?, fill, stroke, strokeWidth, opacity?, dashed?, cursor? }`
   - `RenderPath { kind: "path", d: string, stroke, strokeWidth, fill, cursor? }`
@@ -71,23 +71,23 @@ The render layer is **abstracted from any rendering target**. Instead of produci
   - `RenderText { kind: "text", x, y, text, fill, fontSize, fontFamily, anchor?, strokeOutline? }`
   - `RenderGroup { kind: "group", transform?, children: RenderPrimitive[], cursor?, id? }`
   - `RenderPrimitive = RenderCircle | RenderRect | RenderPath | RenderPolygon | RenderText | RenderGroup`
-- [ ] B2. Define `Renderer<T>` interface in `packages/canvas/render/renderer.ts`:
+- [x] B2. Define `Renderer<T>` interface in `packages/canvas/render/renderer.ts`:
   - `Renderer<T> { circle(p: RenderCircle): T, rect(p: RenderRect): T, path(p: RenderPath): T, polygon(p: RenderPolygon): T, text(p: RenderText): T, group(p: RenderGroup, children: T[]): T }`
   - This allows SVG, Canvas2D, WebGL, or test backends to interpret the same primitive tree
-- [ ] B3. Create `packages/canvas/style/marlin-theme.ts` — default dark theme implementing `CanvasTheme`, encoding current Marlinspike visual style (colors from canvas.tsx renderLevel)
-- [ ] B4. Create `packages/canvas/render/edge.ts`:
+- [x] B3. Create `packages/canvas/style/marlin-theme.ts` — default dark theme implementing `CanvasTheme`, encoding current Marlinspike visual style (colors from canvas.tsx renderLevel)
+- [x] B4. Create `packages/canvas/render/edge.ts`:
   - `renderEdge(scene, edge, theme): RenderPrimitive[]` — computes arc/straight path, clipping, arrowhead as primitives
   - Handles: multi-edge grouping (arc offset), obstacle avoidance, label placement
-- [ ] B5. Create `packages/canvas/render/node.ts`:
+- [x] B5. Create `packages/canvas/render/node.ts`:
   - `renderNode(node, theme): RenderPrimitive[]` — produces circle or rect + label as primitives
   - Handles: circle vs rect, selected/highlighted/dashed states, label positioning
-- [ ] B6. Create `packages/canvas/render/port.ts`:
+- [x] B6. Port rendering integrated into `renderNode` (ports rendered as children of node group):
   - `renderPort(port, node, theme): RenderPrimitive` — produces port dot as primitive
-- [ ] B7. Create `packages/canvas/render/scene.ts`:
+- [x] B7. Create `packages/canvas/render/scene.ts`:
   - `renderScene(scene, theme): RenderGroup` — pure function producing a primitive tree for a flat scene
   - Main entry point. Returns a `RenderGroup` containing all nodes, edges, ports
   - Edge rendering uses two-pass ordering (paths first, labels on top)
-- [ ] B8. Create `packages/canvas/render/svg.ts` — reference SVG `Renderer<string>` implementation:
+- [x] B8. Create `packages/canvas/render/svg.ts` — reference SVG `Renderer<string>` implementation:
   - Walks the primitive tree and produces SVG markup strings
   - Can also be used as a template for Canvas2D/WebGL implementations
 
@@ -99,12 +99,12 @@ The render layer is **abstracted from any rendering target**. Instead of produci
 
 ### Phase C — Tests (all headless, no DOM required)
 
-- [ ] C1. Geometry tests: surface clipping, arc math, SDF primitives, port positions
-- [ ] C2. Style tests: theme resolver returns expected values for different node states
-- [ ] C3. Render primitive tests: `renderNode` produces correct primitive types/positions, `renderEdge` produces path+arrowhead primitives, multi-edge arc grouping
-- [ ] C4. Scene render tests: `renderScene` with known scene → assert primitive tree structure (counts, positions, styles)
-- [ ] C5. SVG renderer tests: primitives → SVG string output contains expected elements
-- [ ] C6. Renderer interface test: trivial `Renderer<string[]>` that collects primitive kinds, verifying the interface contract
+- [x] C1. Geometry tests: surface clipping, arc math, SDF primitives, port positions
+- [x] C2. Style tests: theme resolver returns expected values for different node states
+- [x] C3. Render primitive tests: `renderNode` produces correct primitive types/positions, `renderEdge` produces path+arrowhead primitives, multi-edge arc grouping
+- [x] C4. Scene render tests: `renderScene` with known scene → assert primitive tree structure (counts, positions, styles)
+- [x] C5. SVG renderer tests: primitives → SVG string output contains expected elements
+- [x] C6. Renderer interface test: trivial `Renderer<string[]>` that collects primitive kinds, verifying the interface contract
 
 ### Phase D — Wire up consumers
 

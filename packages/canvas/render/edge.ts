@@ -5,7 +5,7 @@
  * arrowheads, and label placement.
  */
 
-import type { CanvasEdge } from "../scene/types.ts";
+import type { CanvasEdge, CanvasNode } from "../scene/types.ts";
 import type { CanvasTheme } from "../style/types.ts";
 import { arcClipPoint, arcClipRect, arcMidpoint, pathEndTangent } from "../geometry/arc.ts";
 import { type Point, surfacePoint } from "../geometry/surface.ts";

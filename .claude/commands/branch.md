@@ -59,6 +59,8 @@ Create the file `PLANS/{date}-{user-slug}-{branch-slug}.md` with the following s
 
 Enter plan mode (`EnterPlanMode`) and begin researching and constructing the plan for this branch, writing your findings into the plan file you just created. Treat the plan file as the single source of truth for this piece of work.
 
-When items are checked of or the plan progresses in a coherent step, prompt to make a commit.
+When items are checked off or the plan progresses in a coherent step, prompt to make a commit.
 
 As the plan is being developed and followed check off items from the `Approach` and `Verification` sections when appropriate. The end-goal of a `/branch` session should be to have a good plan and have all of the checklist items completed or reasons given why they won't be done now.
+
+**Important:** Keep the plan file up to date as work is carried out. When completing implementation steps, update the plan file (check off items, add notes about deviations or decisions) and include the plan update in each commit. The plan file should always reflect the current state of the work.
