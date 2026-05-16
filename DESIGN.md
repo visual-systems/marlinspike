@@ -95,6 +95,52 @@ top of the base graph format — not by building separate tools.
 
 ---
 
+## Modular Architecture
+
+The codebase is structured as a Deno workspace with extractable packages under `packages/`. Each
+package is a zero-dependency module that can be published independently (JSR / npm) and used outside
+the IDE context.
+
+### Design Principles
+
+- **Packages are pure data-structure libraries** — types and functions over them, no DOM/UI/runtime
+  concerns
+- **The IDE imports from packages** — never the reverse. `src/` depends on `packages/`, not the
+  other way around.
+- **Re-exports for backward compatibility** — `src/ui/workspace.ts` re-exports graph types from
+  `@marlinspike/graph` so existing internal consumers continue to work. New code imports from the
+  package directly.
+- **Integration via types and traversal** — packages provide types as the lingua franca and
+  traversal functions (like `walk`) as the integration surface for plugins/codecs/constraints.
+
+### Package: `@marlinspike/graph`
+
+**Status: Extracted** (see [PLANS/2026-05-13-lyndon-extract-graph.md](PLANS/2026-05-13-lyndon-extract-graph.md))
+
+The foundational package. Contains the rose-tree graph types (`TreeNode`, `Edge`, `Port`), pure tree
+operations (traversal, mutation, query), factory functions, and flat serialization for persistence.
+See [`packages/graph/README.md`](packages/graph/README.md) for the full API.
+
+Key integration points for downstream packages:
+- **`walk(nodes, visitor)`** — depth-first traversal with enter/leave callbacks. Codecs use it to
+  emit nodes, constraints use it to validate, layout uses it bottom-up via `leave`.
+- **`edgesInScope(parent, edges)`** — returns edges between a parent's direct children, encoding the
+  sibling-scoped communication invariant.
+- **`flattenTree` / `buildTree`** — storage-agnostic persistence round-trip.
+
+### Planned Extractions
+
+The brainstorm plan ([PLANS/2026-05-11-lyndon-randon-brainstorming-session.md](PLANS/2026-05-11-lyndon-randon-brainstorming-session.md))
+identifies additional extraction candidates, all depending on `@marlinspike/graph`:
+
+- **Judgment system** (constraints/validation) — constraint evaluation, diagnostic generation
+- **Codecs** (code↔graph) — Spike-Clojure and future language representations
+- **Layout** — force simulation, topological grid, and other layout algorithms
+
+These are not yet extracted. Their scope and boundaries will be defined in separate branch plans.
+
+---
+
 ## Data Model
 
 ### Graph as Rose-Tree
@@ -1266,6 +1312,7 @@ distributable.
 
 | Layer              | Candidate                             | Notes                                                           |
 | ------------------ | ------------------------------------- | --------------------------------------------------------------- |
+| Graph model        | `@marlinspike/graph` (Deno workspace) | Zero-dep package: types, traversal, mutation, persistence       |
 | Graph store        | SurrealDB (WASM, `mem://`)            | Per-tab databases; IndexedDB bridge (see Persistence Layer)     |
 | UI                 | TypeScript + Hono JSX DOM             | Server: Hono; client: Hono JSX DOM (not React)                  |
 | Canvas rendering   | Custom SVG                            | Full control; custom force layout algorithms                    |

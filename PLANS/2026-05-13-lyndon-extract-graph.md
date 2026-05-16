@@ -4,11 +4,15 @@
 **Date:** 2026-05-13
 **Branch Preview:** <!-- replace me -->
 
+## Status: COMPLETE
+
+All phases (A-E) implemented, all verification items pass. 456 tests (47 in package + 409 existing). Merged to main via PR.
+
 ## Context
 
-Marlinspike's brainstorm plan (PLANS/2026-05-11) identifies the rose-tree graph model + port encapsulation (kernels 1+2) as the foundation everything else depends on. Currently, the graph types (`TreeNode`, `Edge`, `Port`) and pure tree operations (`findNode`, `updateNodeInTree`, etc.) live inside `src/ui/workspace.ts` — a 1385-line file that mixes graph semantics with UI state management. The interchange format types in `src/graph/types.ts` are unused.
+Marlinspike's brainstorm plan (PLANS/2026-05-11) identified the rose-tree graph model + port encapsulation (kernels 1+2) as the foundation everything else depends on. The graph types (`TreeNode`, `Edge`, `Port`) and pure tree operations (`findNode`, `updateNodeInTree`, etc.) lived inside `src/ui/workspace.ts` — a 1385-line file mixing graph semantics with UI state management. The interchange format types in `src/graph/types.ts` were unused.
 
-This extraction creates `packages/graph/` as a standalone, zero-dependency Deno workspace package — the first step toward the modular architecture described in the brainstorm.
+This extraction created `packages/graph/` as a standalone, zero-dependency Deno workspace package — the first step toward the modular architecture described in the brainstorm.
 
 ## Goal
 
@@ -19,11 +23,11 @@ A publishable `@marlinspike/graph` package containing:
 - Flat serialization (`FlatNode`, `flattenTree`, `buildTree`) for any persistence backend
 - Interchange format types (from `src/graph/types.ts`) for serialization targets
 - README documenting the data model, core invariants, and API
-- Interactive demo at `/graph` route showing the package in action
+- Interactive demo stories under `/stories` showing the package in action
 - Full test coverage
 - All existing consumers updated to import from the package
 
-The package should work equally well in browser (current web IDE), CLI, server-side, and test contexts. Zero runtime dependencies.
+The package works equally well in browser (current web IDE), CLI, server-side, and test contexts. Zero runtime dependencies.
 
 ## Design Decisions
 
@@ -130,9 +134,8 @@ packages/graph/
     flatten_test.ts
   interchange/
     types.ts             # Node, Edge, Graph, etc. (serialization format from DESIGN.md §4.3)
-  demo/
-    graph-demo.tsx        # Client-side interactive demo
-    shell.tsx             # Server-side HTML shell
+
+Demo stories: src/ui/stories/graph-package.stories.tsx
 ```
 
 ## What stays in `src/ui/workspace.ts`
