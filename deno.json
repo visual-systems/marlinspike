@@ -1,5 +1,5 @@
 {
-  "workspace": ["packages/graph"],
+  "workspace": ["packages/graph", "packages/canvas"],
   "tasks": {
     "dev": "deno run --watch --allow-net --allow-read --allow-env mod.tsx --dev",
     "start": "deno run --allow-net --allow-read --allow-env mod.tsx",
@@ -37,6 +37,7 @@
   },
   "imports": {
     "@marlinspike/graph": "./packages/graph/mod.ts",
+    "@marlinspike/canvas": "./packages/canvas/mod.ts",
     "@cfworker/json-schema": "npm:@cfworker/json-schema@^2.0.1",
     "@deno/emit": "jsr:@deno/emit@^0.46.0",
     "@hono/hono": "jsr:@hono/hono",
