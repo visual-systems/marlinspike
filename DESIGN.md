@@ -128,10 +128,28 @@ Key integration points for downstream packages:
   sibling-scoped communication invariant.
 - **`flattenTree` / `buildTree`** — storage-agnostic persistence round-trip.
 
+### Package: `@marlinspike/canvas`
+
+**Status: Extracted** (see [PLANS/2026-05-16-lyndon-extract-canvas.md](PLANS/2026-05-16-lyndon-extract-canvas.md))
+
+Target-agnostic graph canvas rendering. Contains scene graph types (`CanvasNode`, `CanvasEdge`,
+`CanvasPort`, `CanvasScene`), geometry helpers (surface clipping, arc math, SDF primitives, port
+positions), pluggable style interfaces (`CanvasTheme`), and a render primitive system
+(`RenderPrimitive`, `Renderer<T>`) with a reference SVG renderer.
+
+Key design decisions:
+- **Render-target agnostic** — abstract `RenderPrimitive` tree + `Renderer<T>` interface.
+  SVG, Canvas2D, WebGL backends implement the same interface.
+- **Headless testable** — all tests inspect the primitive tree directly, no DOM needed.
+- **Scene as data** — `CanvasScene` is a plain immutable data structure. Rendering is a pure
+  function of scene + theme.
+- **IDE overlay compatible** — renders only the graph content layer. Chrome (toolbars, panels,
+  breadcrumbs) overlays in the consuming application's HTML layer.
+
 ### Planned Extractions
 
 The brainstorm plan ([PLANS/2026-05-11-lyndon-randon-brainstorming-session.md](PLANS/2026-05-11-lyndon-randon-brainstorming-session.md))
-identifies additional extraction candidates, all depending on `@marlinspike/graph`:
+identifies additional extraction candidates:
 
 - **Judgment system** (constraints/validation) — constraint evaluation, diagnostic generation
 - **Codecs** (code↔graph) — Spike-Clojure and future language representations

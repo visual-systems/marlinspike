@@ -21,7 +21,7 @@ jobs:
         run: deno lint
 
       - name: Type check
-        run: deno check mod.tsx src/graph/**/*.ts src/ui/App.tsx src/ui/StoriesShell.tsx src/ui/workspace.ts packages/graph/mod.ts
+        run: deno check mod.tsx src/graph/**/*.ts src/ui/App.tsx src/ui/StoriesShell.tsx src/ui/workspace.ts packages/graph/mod.ts packages/canvas/mod.ts
 
       - name: Type check UI
         run: deno check --config deno.client.json src/ui/client.tsx src/ui/stories/main.tsx
