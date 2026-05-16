@@ -6,6 +6,10 @@
 
 ## Context
 
+Follows from **D4** in the `extract-canvas` plan (`PLANS/2026-05-16-lyndon-extract-canvas.md`):
+
+> D4. _(deferred)_ Update `canvas.tsx` renderLevel to use canvas package's render data functions — requires hierarchical scene support
+
 `@marlinspike/canvas` currently renders flat scenes — all nodes at one level with no hierarchy. The IDE's `renderLevel` function (650 lines, canvas.tsx:1972-2622) handles recursive rendering of expanded composite nodes, interaction modes (select, add-node, add-edge), drag, selection, expand/collapse, and hover highlighting. This is all tightly coupled to the workspace model and can't be reused.
 
 Adding hierarchical scene support and a hooks-based interaction model to the canvas package would:
