@@ -1,9 +1,10 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
-import { useState } from "@hono/hono/jsx/dom";
+import { useRef, useState } from "@hono/hono/jsx/dom";
 import type { CanvasEdge, CanvasNode, CanvasPort, CanvasScene } from "@marlinspike/canvas";
 import {
   circlePortPositions,
+  hitTest,
   marlinTheme,
   renderScene,
   renderWith,
@@ -574,6 +575,153 @@ export function FigmaLite() {
         <pre style={PRE + " max-height:200px;"}>
           {JSON.stringify({ nodes, edges }, null, 2)}
         </pre>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Story: Hierarchical
+// ---------------------------------------------------------------------------
+
+export function Hierarchical() {
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(["group-a"]));
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const svgRef = useRef<HTMLDivElement>(null);
+
+  const W = 700;
+  const H = 450;
+
+  function buildScene(): CanvasScene {
+    return {
+      nodes: [
+        {
+          id: "group-a",
+          x: 200,
+          y: 200,
+          w: 250,
+          h: 180,
+          shape: "rect",
+          label: "Group A",
+          expanded: expandedIds.has("group-a"),
+          selected: selectedId === "group-a",
+          children: [
+            { id: "a1", x: -60, y: -20, w: 40, h: 40, shape: "circle", label: "A1" },
+            { id: "a2", x: 60, y: -20, w: 40, h: 40, shape: "circle", label: "A2" },
+            { id: "a3", x: 0, y: 50, w: 40, h: 40, shape: "circle", label: "A3" },
+          ],
+          edges: [
+            { id: "ea1", fromId: "a1", toId: "a2" },
+            { id: "ea2", fromId: "a2", toId: "a3" },
+          ],
+        },
+        {
+          id: "group-b",
+          x: 520,
+          y: 200,
+          w: 150,
+          h: 120,
+          shape: "rect",
+          label: "Group B",
+          expanded: expandedIds.has("group-b"),
+          selected: selectedId === "group-b",
+          children: [
+            { id: "b1", x: -25, y: 0, w: 40, h: 40, shape: "circle", label: "B1" },
+            { id: "b2", x: 25, y: 0, w: 40, h: 40, shape: "circle", label: "B2" },
+          ],
+          edges: [{ id: "eb1", fromId: "b1", toId: "b2" }],
+        },
+        {
+          id: "standalone",
+          x: 360,
+          y: 50,
+          w: 52,
+          h: 52,
+          shape: "circle",
+          label: "Solo",
+          selected: selectedId === "standalone",
+        },
+      ],
+      edges: [
+        { id: "e-top", fromId: "group-a", toId: "standalone" },
+        { id: "e-cross", fromId: "group-a", toId: "group-b" },
+      ],
+    };
+  }
+
+  const scene = buildScene();
+  const group = renderScene(scene, marlinTheme);
+  const [svgContent] = renderWith(svgRenderer, group);
+
+  function handleClick(e: MouseEvent) {
+    const el = svgRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const pos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const hit = hitTest(group, pos);
+    if (hit) {
+      setSelectedId(hit.id);
+    } else {
+      setSelectedId(null);
+    }
+  }
+
+  function handleDblClick(e: MouseEvent) {
+    const el = svgRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const pos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const hit = hitTest(group, pos);
+    if (hit && hit.doubleClickable) {
+      setExpandedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(hit.id)) next.delete(hit.id);
+        else next.add(hit.id);
+        return next;
+      });
+    }
+  }
+
+  return (
+    <div style="padding:16px; color:#c0c0e0; font-family:sans-serif;">
+      <div style={SECTION}>
+        <div style={HEADING}>Hierarchical Scene — Nested Containers</div>
+        <div style={DESCRIPTION}>
+          Demonstrates hierarchical rendering with{" "}
+          <span style={TAG}>@marlinspike/canvas</span>. Nodes can contain child nodes rendered
+          inside them. Uses <span style={TAG}>hitTest()</span> for click detection and{" "}
+          <span style={TAG}>InteractionHint</span> metadata for expand/collapse on double-click.
+        </div>
+
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <span style="font-size:11px; color:#666; padding-top:5px;">
+            Click to select. Double-click a group to expand/collapse.
+            {selectedId ? ` Selected: ${selectedId}` : ""}
+          </span>
+        </div>
+
+        <div
+          ref={svgRef}
+          onClick={handleClick}
+          onDblClick={handleDblClick}
+          style="cursor:pointer;"
+          dangerouslySetInnerHTML={{
+            __html:
+              `<svg width="${W}" height="${H}" style="background:${marlinTheme.background}; border-radius:4px; outline:1px solid #1e1e44;">${svgContent}</svg>`,
+          }}
+        />
+
+        <div style={CALLOUT}>
+          <strong>Interaction model:</strong> The render tree carries{" "}
+          <span style={TAG}>InteractionHint</span> metadata on each group.{" "}
+          <span style={TAG}>hitTest(root, point)</span>{" "}
+          resolves a screen coordinate to the deepest interactive element. Expand/collapse toggling
+          is handled by the consumer — the package just provides the spatial query.
+        </div>
+
+        <div style={SUBHEADING}>
+          Expanded: [{[...expandedIds].join(", ")}]
+        </div>
       </div>
     </div>
   );

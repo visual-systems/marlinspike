@@ -1,16 +1,25 @@
 /**
  * Node rendering — produces render primitives for a canvas node.
+ *
+ * If the node is expanded with children, delegates to renderContainer.
+ * Otherwise renders as a leaf (circle or rect with label and ports).
  */
 
 import type { CanvasNode } from "../scene/types.ts";
 import type { CanvasTheme } from "../style/types.ts";
 import type { RenderPrimitive } from "./primitives.ts";
+import { renderContainer } from "./container.ts";
 
 /**
  * Produce render primitives for a single node.
- * Returns a group containing the shape and label.
+ * Returns a group containing the shape and label (leaf) or a container group (expanded).
  */
 export function renderNode(node: CanvasNode, theme: CanvasTheme): RenderPrimitive {
+  // Expanded container: delegate to container renderer
+  if (node.expanded && node.children && node.children.length > 0) {
+    return renderContainer(node, theme);
+  }
+
   const style = theme.node(node);
   const children: RenderPrimitive[] = [];
 
@@ -71,11 +80,26 @@ export function renderNode(node: CanvasNode, theme: CanvasTheme): RenderPrimitiv
     }
   }
 
+  // Decorations (badges, indicators, etc.)
+  if (theme.decorations) {
+    children.push(...theme.decorations(node));
+  }
+
   return {
     kind: "group",
     transform: `translate(${node.x}, ${node.y})`,
+    tx: node.x,
+    ty: node.y,
     children,
     opacity: style.opacity,
     id: node.id,
+    interaction: {
+      id: node.id,
+      draggable: true,
+      clickable: true,
+      doubleClickable: true,
+      hoverable: true,
+      cursor: "pointer",
+    },
   };
 }

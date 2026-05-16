@@ -6,7 +6,7 @@
  */
 
 import type { CanvasEdge, CanvasNode, CanvasPort } from "../scene/types.ts";
-import type { CanvasTheme, EdgeStyle, NodeStyle, PortStyle } from "./types.ts";
+import type { CanvasTheme, ContainerStyle, EdgeStyle, NodeStyle, PortStyle } from "./types.ts";
 
 function resolveNodeStyle(node: CanvasNode): NodeStyle {
   const { selected, highlighted, dashed } = node;
@@ -64,10 +64,39 @@ function resolvePortStyle(port: CanvasPort, _node: CanvasNode): PortStyle {
   };
 }
 
+function resolveContainerStyle(node: CanvasNode): ContainerStyle {
+  const { selected, highlighted, dashed } = node;
+
+  let fill = "#0f0f28";
+  if (dashed) fill = "#0f0f24"; // ref-like containers
+
+  let stroke = "#1e1e44";
+  if (selected) stroke = "#4060b0";
+  else if (highlighted) stroke = "#50c070";
+  else if (dashed) stroke = "#605080";
+
+  let strokeWidth = 1;
+  if (selected || highlighted) strokeWidth = 2;
+
+  const labelFill = selected ? "#8090c0" : "#444466";
+
+  return {
+    fill,
+    stroke,
+    strokeWidth,
+    labelFill,
+    labelFont: "sans-serif",
+    labelSize: 11,
+    cornerRadius: 8,
+    strokeDash: dashed ? "6,3" : undefined,
+  };
+}
+
 /** The default Marlinspike dark theme. */
 export const marlinTheme: CanvasTheme = {
   node: resolveNodeStyle,
   edge: resolveEdgeStyle,
   port: resolvePortStyle,
+  container: resolveContainerStyle,
   background: "#0d0d1e",
 };

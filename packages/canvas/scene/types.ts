@@ -1,8 +1,9 @@
 /**
  * Scene graph types for canvas rendering.
  *
- * A CanvasScene is a flat collection of positioned nodes and edges.
- * Nodes carry shape, dimensions, and optional port positions.
+ * A CanvasScene is a collection of positioned nodes and edges.
+ * Nodes carry shape, dimensions, optional port positions, and
+ * optional children for hierarchical (nested container) rendering.
  * Edges reference nodes by ID.
  */
 
@@ -35,6 +36,12 @@ export interface CanvasNode {
   highlighted?: boolean;
   dashed?: boolean;
   data?: Record<string, unknown>;
+  /** Child nodes rendered inside this container when expanded. */
+  children?: CanvasNode[];
+  /** If true and children exist, render as an expanded container rather than a leaf. */
+  expanded?: boolean;
+  /** Edges among children at this level (only relevant when expanded). */
+  edges?: CanvasEdge[];
 }
 
 /** A directed edge between two nodes. */

@@ -1,35 +1,41 @@
 /**
  * Scene rendering — produces a complete render primitive tree from a CanvasScene.
  *
- * This is the main entry point for rendering. It takes a flat scene and theme,
+ * This is the main entry point for rendering. It takes a scene and theme,
  * and returns a RenderGroup containing all nodes and edges.
  */
 
-import type { CanvasScene } from "../scene/types.ts";
+import type { CanvasEdge, CanvasNode, CanvasScene } from "../scene/types.ts";
 import type { CanvasTheme } from "../style/types.ts";
 import type { RenderGroup, RenderPrimitive } from "./primitives.ts";
 import { renderNode } from "./node.ts";
 import { computeEdgePath, groupEdges, renderEdge } from "./edge.ts";
 
 /**
- * Render a flat CanvasScene into a render primitive tree.
+ * Render a list of nodes and edges at one level into primitives.
+ *
+ * This is the recursive workhorse — used by both `renderScene` (top level)
+ * and `renderContainer` (nested levels inside expanded nodes).
  *
  * Rendering order: nodes first (background), then edge paths, then edge labels on top.
- * Multi-edge grouping is handled automatically.
  */
-export function renderScene(scene: CanvasScene, theme: CanvasTheme): RenderGroup {
+export function renderLevel(
+  nodes: CanvasNode[],
+  edges: CanvasEdge[],
+  theme: CanvasTheme,
+): RenderPrimitive[] {
   const children: RenderPrimitive[] = [];
-  const nodeMap = new Map(scene.nodes.map((n) => [n.id, n]));
+  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
-  // Render nodes
-  for (const node of scene.nodes) {
+  // Render nodes (renderNode handles expanded→container delegation)
+  for (const node of nodes) {
     children.push(renderNode(node, theme));
   }
 
   // Compute edge paths with parallel-edge grouping
-  const { indexMap, countMap, keyMap } = groupEdges(scene.edges);
+  const { indexMap, countMap, keyMap } = groupEdges(edges);
   const edgePaths: ReturnType<typeof computeEdgePath>[] = [];
-  for (const edge of scene.edges) {
+  for (const edge of edges) {
     const key = keyMap.get(edge.id)!;
     const idx = indexMap.get(edge.id) ?? 0;
     const count = countMap.get(key) ?? 1;
@@ -44,7 +50,6 @@ export function renderScene(scene: CanvasScene, theme: CanvasTheme): RenderGroup
     if (!data) continue;
     const edgeGroup = renderEdge(data, theme);
     if (edgeGroup.kind === "group") {
-      // Split: non-text children go in pass 1, text children in pass 2
       const pathChildren: RenderPrimitive[] = [];
       const labelChildren: RenderPrimitive[] = [];
       for (const child of edgeGroup.children) {
@@ -55,7 +60,12 @@ export function renderScene(scene: CanvasScene, theme: CanvasTheme): RenderGroup
         }
       }
       if (pathChildren.length > 0) {
-        edgePathPrimitives.push({ kind: "group", children: pathChildren, id: edgeGroup.id });
+        edgePathPrimitives.push({
+          kind: "group",
+          children: pathChildren,
+          id: edgeGroup.id,
+          interaction: edgeGroup.interaction,
+        });
       }
       if (labelChildren.length > 0) {
         edgeLabelPrimitives.push(...labelChildren);
@@ -66,5 +76,16 @@ export function renderScene(scene: CanvasScene, theme: CanvasTheme): RenderGroup
   children.push(...edgePathPrimitives);
   children.push(...edgeLabelPrimitives);
 
+  return children;
+}
+
+/**
+ * Render a CanvasScene into a render primitive tree.
+ *
+ * Supports both flat scenes and hierarchical scenes (nodes with children).
+ * Multi-edge grouping is handled automatically at each level.
+ */
+export function renderScene(scene: CanvasScene, theme: CanvasTheme): RenderGroup {
+  const children = renderLevel(scene.nodes, scene.edges, theme);
   return { kind: "group", children };
 }

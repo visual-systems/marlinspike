@@ -6,6 +6,8 @@
  * Renderer<T> interface.
  */
 
+import type { InteractionHint } from "../interaction/types.ts";
+
 /** A circle primitive. */
 export interface RenderCircle {
   kind: "circle";
@@ -73,9 +75,15 @@ export interface RenderGroup {
   kind: "group";
   children: RenderPrimitive[];
   transform?: string;
+  /** Typed translation X offset (for hit-testing without parsing transform strings). */
+  tx?: number;
+  /** Typed translation Y offset (for hit-testing without parsing transform strings). */
+  ty?: number;
   cursor?: string;
   opacity?: number;
   id?: string;
+  /** Interaction metadata — declares what gestures this group responds to. */
+  interaction?: InteractionHint;
 }
 
 /** Union of all render primitives. */

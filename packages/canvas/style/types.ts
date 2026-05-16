@@ -36,6 +36,19 @@ export interface PortStyle {
   radius: number;
 }
 
+/** Visual properties for rendering an expanded container node. */
+export interface ContainerStyle {
+  fill: string;
+  stroke: string;
+  strokeWidth: number;
+  labelFill: string;
+  labelFont: string;
+  labelSize: number;
+  cornerRadius: number;
+  strokeDash?: string;
+  opacity?: number;
+}
+
 /** Resolves visual style for a node based on its state. */
 export type NodeStyleResolver = (node: CanvasNode) => NodeStyle;
 
@@ -45,10 +58,22 @@ export type EdgeStyleResolver = (edge: CanvasEdge) => EdgeStyle;
 /** Resolves visual style for a port based on its state and parent node. */
 export type PortStyleResolver = (port: CanvasPort, node: CanvasNode) => PortStyle;
 
+/** Resolves visual style for an expanded container based on its state. */
+export type ContainerStyleResolver = (node: CanvasNode) => ContainerStyle;
+
+/** Additional primitives to render as decorations on a node (badges, indicators). */
+export type NodeDecorationsResolver = (
+  node: CanvasNode,
+) => import("../render/primitives.ts").RenderPrimitive[];
+
 /** A complete visual theme for the canvas. */
 export interface CanvasTheme {
   node: NodeStyleResolver;
   edge: EdgeStyleResolver;
   port: PortStyleResolver;
+  /** Optional resolver for expanded container nodes. Falls back to defaults if omitted. */
+  container?: ContainerStyleResolver;
+  /** Optional extra primitives rendered after the node shape (badges, indicators, etc). */
+  decorations?: NodeDecorationsResolver;
   background: string;
 }

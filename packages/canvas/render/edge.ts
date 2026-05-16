@@ -175,7 +175,12 @@ export function renderEdge(data: EdgeRenderData, theme: CanvasTheme): RenderPrim
     });
   }
 
-  return { kind: "group", children, id: data.edge.id };
+  return {
+    kind: "group",
+    children,
+    id: data.edge.id,
+    interaction: { id: data.edge.id, clickable: true, hoverable: true, cursor: "pointer" },
+  };
 }
 
 /**
