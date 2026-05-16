@@ -13,3 +13,4 @@ export * as PortStories from "./port.stories.tsx";
 export * as ProfilesStories from "./profiles.stories.tsx";
 export * as ReferenceStories from "./reference.stories.tsx";
 export * as GraphPackageStories from "./graph-package.stories.tsx";
+export * as CanvasPackageStories from "./canvas-package.stories.tsx";

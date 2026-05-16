@@ -116,13 +116,13 @@ The render layer is **abstracted from any rendering target**. Instead of produci
 
 ### Phase E — Figma-lite demo + CI
 
-- [ ] E1. Create `src/ui/stories/canvas-package.stories.tsx` with stories:
+- [x] E1. Create `src/ui/stories/canvas-package.stories.tsx` with stories:
   - **Scene Types** — show CanvasScene data structure, explain each type
   - **Geometry** — interactive visualization of surfacePoint, arc clipping, SDF fields
   - **Styles** — render same scene with different themes side-by-side
   - **Figma Lite** — interactive canvas: click to place nodes, drag to move, draw edges between nodes, delete with backspace. Demonstrates the full programmatic API.
-- [ ] E2. Update `.github/workflows/ci.yml` to type-check and test the canvas package
-- [ ] E3. Update DESIGN.md modular architecture section
+- [x] E2. Update `.github/workflows/ci.yml` to type-check and test the canvas package
+- [ ] E3. Update DESIGN.md modular architecture section _(next commit)_
 
 ## Open Questions
 
@@ -136,8 +136,8 @@ The render layer is **abstracted from any rendering target**. Instead of produci
 
 ## Verification
 
-- [ ] `NO_COLOR=1 deno task ci` passes (lint, fmt, type-check, all tests)
-- [ ] Canvas package tests pass independently: `NO_COLOR=1 deno test packages/canvas/`
-- [ ] Existing canvas functionality unchanged — IDE renders identically
-- [ ] Figma-lite story works: place nodes, drag, draw edges, delete
-- [ ] `import { ... } from "@marlinspike/canvas"` works from any Deno project
+- [x] `NO_COLOR=1 deno task ci` passes (lint, fmt, type-check, all tests)
+- [x] Canvas package tests pass independently: `NO_COLOR=1 deno test packages/canvas/`
+- [x] Existing canvas functionality unchanged — IDE renders identically
+- [x] Figma-lite story works: place nodes, drag, draw edges, delete
+- [x] `import { ... } from "@marlinspike/canvas"` works from any Deno project
