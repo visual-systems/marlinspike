@@ -8,9 +8,32 @@
 //   - Line SDF for edge-clearance repulsion
 //   - Virtual bounding circles for inter-component cohesion
 //
+// Geometry primitives (sdfOf, surfaceToSurface, sdfGradient, lineSdfDist)
+// are provided by @marlinspike/canvas and re-exported here for backward compat.
 // ---------------------------------------------------------------------------
 
 import type { ForceNode } from "./force.ts";
+import {
+  isCircleShape as isCircleShape_,
+  lineSdfDist as lineSdfDist_,
+  sdfGradient as sdfGradient_,
+  sdfOf as sdfOf_,
+  surfaceToSurface as surfaceToSurface_,
+} from "@marlinspike/canvas";
+
+// Re-export geometry primitives (ForceNode is structurally compatible with SdfShape)
+export const isCircleNode = isCircleShape_ as (node: ForceNode, threshold: number) => boolean;
+export const sdfOf = sdfOf_ as (
+  node: ForceNode,
+  threshold: number,
+) => (px: number, py: number) => number;
+export const surfaceToSurface = surfaceToSurface_ as (
+  a: ForceNode,
+  b: ForceNode,
+  threshold: number,
+) => number;
+export const sdfGradient = sdfGradient_;
+export const lineSdfDist = lineSdfDist_;
 
 // ---------------------------------------------------------------------------
 // Config — physics parameters for tickSdfLevel
@@ -47,135 +70,6 @@ export interface SdfPhysicsConfig {
   // Shape detection
   /** Aspect ratio tolerance below which a node is treated as a circle */
   circleThreshold: number;
-}
-
-// ---------------------------------------------------------------------------
-// Shape detection
-// ---------------------------------------------------------------------------
-
-export function isCircleNode(node: ForceNode, threshold: number): boolean {
-  const mx = Math.max(node.w, node.h);
-  if (mx === 0) return true;
-  return Math.abs(node.w - node.h) / mx < threshold;
-}
-
-// ---------------------------------------------------------------------------
-// SDF primitives
-// ---------------------------------------------------------------------------
-
-/** Returns the SDF function for a node based on its shape. */
-export function sdfOf(
-  node: ForceNode,
-  threshold: number,
-): (px: number, py: number) => number {
-  if (isCircleNode(node, threshold)) {
-    const r = node.w / 2;
-    const { x: cx, y: cy } = node;
-    return (px, py) => {
-      const dx = px - cx;
-      const dy = py - cy;
-      return Math.sqrt(dx * dx + dy * dy) - r;
-    };
-  } else {
-    const hw = node.w / 2;
-    const hh = node.h / 2;
-    const { x: cx, y: cy } = node;
-    return (px, py) => {
-      const qx = Math.abs(px - cx) - hw;
-      const qy = Math.abs(py - cy) - hh;
-      return (
-        Math.sqrt(Math.max(qx, 0) ** 2 + Math.max(qy, 0) ** 2) +
-        Math.min(Math.max(qx, qy), 0)
-      );
-    };
-  }
-}
-
-/**
- * Maximum extent of a node's shape in direction (nx, ny).
- * Circle → radius. Rectangle → L1-projected half-extents.
- */
-function supportExtent(
-  node: ForceNode,
-  nx: number,
-  ny: number,
-  threshold: number,
-): number {
-  if (isCircleNode(node, threshold)) return node.w / 2;
-  return Math.abs(nx) * node.w / 2 + Math.abs(ny) * node.h / 2;
-}
-
-/**
- * Directional surface-to-surface distance between two nodes.
- *
- * Measures the gap (or overlap) along the center-to-center direction using
- * each node's support function. Negative when nodes overlap, zero when
- * surfaces touch, positive when separated.
- *
- * The "probe-centre" formula (sdfOf(a)(b.centre) + sdfOf(b)(a.centre)) / 2
- * returns positive values even when box edges cross but centres are still
- * outside each other — causing repulsion to never trigger and the spring to
- * pull overlapping groups even closer. This formula is correct in all cases.
- */
-export function surfaceToSurface(
-  a: ForceNode,
-  b: ForceNode,
-  threshold: number,
-): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist < 1e-9) {
-    return -(supportExtent(a, 1, 0, threshold) + supportExtent(b, 1, 0, threshold));
-  }
-  const nx = dx / dist;
-  const ny = dy / dist;
-  return dist - supportExtent(a, nx, ny, threshold) - supportExtent(b, nx, ny, threshold);
-}
-
-/**
- * Normalised SDF gradient at (px, py) via central finite differences.
- * Falls back to (1, 0) for degenerate cases.
- */
-export function sdfGradient(
-  sdfFn: (px: number, py: number) => number,
-  px: number,
-  py: number,
-  eps: number,
-): [number, number] {
-  const gx = (sdfFn(px + eps, py) - sdfFn(px - eps, py)) / (2 * eps);
-  const gy = (sdfFn(px, py + eps) - sdfFn(px, py - eps)) / (2 * eps);
-  const len = Math.sqrt(gx * gx + gy * gy);
-  if (len < 1e-9) return [1, 0];
-  return [gx / len, gy / len];
-}
-
-// ---------------------------------------------------------------------------
-// Line SDF — for edge-clearance forces and edge routing
-// ---------------------------------------------------------------------------
-
-/**
- * Distance from point (px, py) to the line segment (ax, ay)–(bx, by).
- * Always non-negative.
- */
-export function lineSdfDist(
-  px: number,
-  py: number,
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-): number {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const lenSq = dx * dx + dy * dy;
-  if (lenSq < 1e-9) {
-    return Math.sqrt((px - ax) ** 2 + (py - ay) ** 2);
-  }
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
-  const cx = ax + t * dx;
-  const cy = ay + t * dy;
-  return Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
 }
 
 /**

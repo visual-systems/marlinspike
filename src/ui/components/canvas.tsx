@@ -26,7 +26,7 @@ import { Dropdown } from "./dropdown.tsx";
 import { SmallBtn } from "./widgets.tsx";
 import { type BBox, boundingBox, centerNodes, type ForceNode } from "../lib/force.ts";
 import { rectPortPositions, resolveNodePorts } from "../lib/port-layout.ts";
-import { lineSdfDist } from "../lib/sdf-force.ts";
+import { lineSdfDist } from "@marlinspike/canvas";
 import { topoCharge } from "../lib/topo-charge.ts";
 import { NodePorts } from "./port-rendering.tsx";
 import {

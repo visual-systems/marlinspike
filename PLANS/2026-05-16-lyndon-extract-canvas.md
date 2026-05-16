@@ -108,11 +108,11 @@ The render layer is **abstracted from any rendering target**. Instead of produci
 
 ### Phase D — Wire up consumers
 
-- [ ] D1. Refactor `canvas.tsx` geometry helpers to import from `@marlinspike/canvas`
-- [ ] D2. Refactor `port-layout.ts` to import port geometry from `@marlinspike/canvas` (keep `resolveNodePorts` locally)
-- [ ] D3. Refactor `sdf-force.ts` to import SDF primitives from `@marlinspike/canvas` (keep force simulation locally)
-- [ ] D4. Update `canvas.tsx` renderLevel to use canvas package's render data functions where applicable
-- [ ] D5. Full CI pass (`deno task ci`)
+- [x] D1. Refactor `canvas.tsx` — `lineSdfDist` now imported from `@marlinspike/canvas`
+- [x] D2. Refactor `port-layout.ts` — delegates to `@marlinspike/canvas` geometry, adapts `CanvasPort` → `PortPosition`
+- [x] D3. Refactor `sdf-force.ts` — imports SDF primitives from `@marlinspike/canvas`, re-exports for backward compat
+- [ ] D4. _(deferred)_ Update `canvas.tsx` renderLevel to use canvas package's render data functions — requires hierarchical scene support
+- [x] D5. Full CI pass — 516 tests passing
 
 ### Phase E — Figma-lite demo + CI
 
