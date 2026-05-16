@@ -71,3 +71,45 @@ export {
 
 export type { PortDescriptor } from "./geometry/ports.ts";
 export { circlePortPositions, rectPortPositions } from "./geometry/ports.ts";
+
+// ---------------------------------------------------------------------------
+// Render primitives
+// ---------------------------------------------------------------------------
+
+export type {
+  RenderCircle,
+  RenderGroup,
+  RenderPath,
+  RenderPolygon,
+  RenderPrimitive,
+  RenderRect,
+  RenderText,
+} from "./render/primitives.ts";
+
+// ---------------------------------------------------------------------------
+// Renderer interface
+// ---------------------------------------------------------------------------
+
+export type { Renderer } from "./render/renderer.ts";
+export { renderWith } from "./render/renderer.ts";
+
+// ---------------------------------------------------------------------------
+// Render functions
+// ---------------------------------------------------------------------------
+
+export { renderNode } from "./render/node.ts";
+export { computeEdgePath, groupEdges, renderEdge } from "./render/edge.ts";
+export type { EdgeRenderData } from "./render/edge.ts";
+export { renderScene } from "./render/scene.ts";
+
+// ---------------------------------------------------------------------------
+// SVG renderer (reference implementation)
+// ---------------------------------------------------------------------------
+
+export { svgRenderer } from "./render/svg.ts";
+
+// ---------------------------------------------------------------------------
+// Default theme
+// ---------------------------------------------------------------------------
+
+export { marlinTheme } from "./style/marlin-theme.ts";
