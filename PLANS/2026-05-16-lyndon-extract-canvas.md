@@ -122,7 +122,7 @@ The render layer is **abstracted from any rendering target**. Instead of produci
   - **Styles** — render same scene with different themes side-by-side
   - **Figma Lite** — interactive canvas: click to place nodes, drag to move, draw edges between nodes, delete with backspace. Demonstrates the full programmatic API.
 - [x] E2. Update `.github/workflows/ci.yml` to type-check and test the canvas package
-- [ ] E3. Update DESIGN.md modular architecture section _(next commit)_
+- [x] E3. Update DESIGN.md modular architecture section
 
 ## Open Questions
 
