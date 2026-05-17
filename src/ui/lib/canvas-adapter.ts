@@ -481,43 +481,6 @@ function resolveDecorations(node: CanvasNode<MarlinNodeState>): RenderPrimitive[
   return prims;
 }
 
-// ---------------------------------------------------------------------------
-// Scene utilities
-// ---------------------------------------------------------------------------
-
-/** Metadata for a node in the scene, derived from typed state. */
-export interface NodeMeta {
-  levelId: string;
-  x: number;
-  y: number;
-  isComposite: boolean;
-  hasChildren: boolean;
-  isExpanded: boolean;
-}
-
-/** Build a flat map from node ID → metadata for event handling. */
-export function buildNodeMetaMap(
-  scene: CanvasScene<MarlinNodeState>,
-): Map<string, NodeMeta> {
-  const map = new Map<string, NodeMeta>();
-  function walk(nodes: CanvasNode<MarlinNodeState>[]) {
-    for (const node of nodes) {
-      const s = node.state!;
-      map.set(node.id, {
-        levelId: s.levelId,
-        x: node.x,
-        y: node.y,
-        isComposite: s.isComposite,
-        hasChildren: s.hasChildren,
-        isExpanded: node.expanded ?? false,
-      });
-      if (node.children) walk(node.children);
-    }
-  }
-  walk(scene.nodes);
-  return map;
-}
-
 /** Full Marlinspike IDE theme — typed state access, no casting. */
 export const marlinIdeTheme: CanvasTheme<MarlinNodeState> = {
   node: resolveNodeStyle,

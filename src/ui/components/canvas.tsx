@@ -26,14 +26,13 @@ import { SmallBtn } from "./widgets.tsx";
 import { type BBox, boundingBox, centerNodes, type ForceNode } from "../lib/force.ts";
 import { rectPortPositions } from "../lib/port-layout.ts";
 import { hitTest, renderScene, renderWith, svgRenderer } from "@marlinspike/canvas";
-import type { RenderGroup } from "@marlinspike/canvas";
+import type { CanvasNode, CanvasScene, RenderGroup } from "@marlinspike/canvas";
 import {
   buildCanvasScene,
-  buildNodeMetaMap,
   type BuildSceneOptions,
   type CanvasInteractionState,
   marlinIdeTheme,
-  type NodeMeta,
+  type MarlinNodeState,
 } from "../lib/canvas-adapter.ts";
 import { topoCharge } from "../lib/topo-charge.ts";
 import {
@@ -70,6 +69,25 @@ const GROUP_PADDING = 32;
 /** Height of the label strip at the top of an expanded group rect */
 const LABEL_H = 22;
 const DRAG_THRESHOLD_SQ = 16; // 4px
+
+// ---------------------------------------------------------------------------
+// Scene lookup
+// ---------------------------------------------------------------------------
+
+/** Find a node by ID in a hierarchical scene. */
+function findSceneNode<S>(
+  nodes: CanvasNode<S>[],
+  id: string,
+): CanvasNode<S> | undefined {
+  for (const n of nodes) {
+    if (n.id === id) return n;
+    if (n.children) {
+      const found = findSceneNode(n.children, id);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Geometry helpers (kept for renderRefEdges)
@@ -901,7 +919,7 @@ export function Canvas(
   const svgRef = useRef<SVGSVGElement | null>(null);
   const inspectorRef = useRef<HTMLDivElement | null>(null);
   const renderRootRef = useRef<RenderGroup | null>(null);
-  const nodeMetaMapRef = useRef<Map<string, NodeMeta> | null>(null);
+  const sceneRef = useRef<CanvasScene<MarlinNodeState> | null>(null);
   const [view, setView] = useState<View>({ scale: 1, tx: 400, ty: 300 });
   const focusedRootNodes = getFocusedRootNodes(ws);
   const focusNode = ws.focusId ? findNode(ws.treeNodes, ws.focusId) : null;
@@ -1312,12 +1330,12 @@ export function Canvas(
   function onSvgMouseDown(e: MouseEvent) {
     const canvasPos = clientToCanvas(e.clientX, e.clientY);
     const hit = hitTest(renderRootRef.current!, canvasPos);
-    const meta: NodeMeta | undefined = hit ? nodeMetaMapRef.current?.get(hit.id) : undefined;
+    const node = hit ? findSceneNode(sceneRef.current!.nodes, hit.id) : undefined;
 
     if (modeRef.current === "add-edge") {
-      if (hit && meta) {
+      if (hit && node) {
         // Clicked a node — use as edge source/target
-        onEdgeNodeClick(hit.id, meta.x, meta.y, meta.levelId);
+        onEdgeNodeClick(hit.id, node.x, node.y, node.state!.levelId);
       } else {
         // Background click: return to select mode
         setEdgeDraw(null);
@@ -1327,9 +1345,9 @@ export function Canvas(
       return;
     }
     if (modeRef.current === "add-node") {
-      if (meta && meta.isExpanded) {
+      if (node && node.expanded) {
         // Clicked inside expanded container — add child relative to container
-        addNode(hit!.id, canvasPos.x - meta.x, canvasPos.y - meta.y);
+        addNode(hit!.id, canvasPos.x - node.x, canvasPos.y - node.y);
       } else {
         addNode(null, canvasPos.x, canvasPos.y);
       }
@@ -1337,19 +1355,19 @@ export function Canvas(
     }
 
     // Select mode
-    if (hit && meta) {
+    if (hit && node) {
       // Start drag on node
       dragRef.current = {
         nodeId: hit.id,
-        levelId: meta.levelId,
+        levelId: node.state!.levelId,
         startClientX: e.clientX,
         startClientY: e.clientY,
-        origX: meta.x,
-        origY: meta.y,
+        origX: node.x,
+        origY: node.y,
         hasMoved: false,
         onClickFn: () => selectNode(hit.id),
       };
-    } else if (hit && !meta) {
+    } else if (hit && !node) {
       // Clicked an edge
       selectEdge(hit.id);
     } else {
@@ -1376,8 +1394,8 @@ export function Canvas(
       setMouseCanvas({ x: mx, y: my });
       // Hover detection for edge-draw candidates
       const hit = hitTest(renderRootRef.current!, { x: mx, y: my });
-      const meta = hit ? nodeMetaMapRef.current?.get(hit.id) : undefined;
-      setHoveredNodeId(meta ? hit!.id : null);
+      const node = hit ? findSceneNode(sceneRef.current!.nodes, hit.id) : undefined;
+      setHoveredNodeId(node ? hit!.id : null);
     }
   }
 
@@ -1385,11 +1403,11 @@ export function Canvas(
     const canvasPos = clientToCanvas(e.clientX, e.clientY);
     const hit = hitTest(renderRootRef.current!, canvasPos);
     if (!hit) return;
-    const meta = nodeMetaMapRef.current?.get(hit.id);
-    if (!meta) return;
-    if (meta.isExpanded) {
+    const node = findSceneNode(sceneRef.current!.nodes, hit.id);
+    if (!node) return;
+    if (node.expanded) {
       collapseNode(hit.id);
-    } else if (meta.isComposite) {
+    } else if (node.state?.isComposite) {
       expandNode(hit.id);
     }
   }
@@ -1513,10 +1531,9 @@ export function Canvas(
   const canvasScene = buildCanvasScene(sceneOpts);
   const renderRoot: RenderGroup = renderScene(canvasScene, marlinIdeTheme);
   const [svgContent] = renderWith(svgRenderer, renderRoot);
-  const nodeMetaMap = buildNodeMetaMap(canvasScene);
   // Update refs so event handlers can access current values
   renderRootRef.current = renderRoot;
-  nodeMetaMapRef.current = nodeMetaMap;
+  sceneRef.current = canvasScene;
 
   return (
     <div
