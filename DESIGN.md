@@ -130,21 +130,48 @@ Key integration points for downstream packages:
 
 ### Package: `@marlinspike/canvas`
 
-**Status: Extracted** (see [PLANS/2026-05-16-lyndon-extract-canvas.md](PLANS/2026-05-16-lyndon-extract-canvas.md))
+**Status: Extracted + interaction model** (see [PLANS/2026-05-16-lyndon-extract-canvas.md](PLANS/2026-05-16-lyndon-extract-canvas.md), [PLANS/2026-05-17-lyndon-canvas-interaction.md](PLANS/2026-05-17-lyndon-canvas-interaction.md))
 
-Target-agnostic graph canvas rendering. Contains scene graph types (`CanvasNode`, `CanvasEdge`,
-`CanvasPort`, `CanvasScene`), geometry helpers (surface clipping, arc math, SDF primitives, port
-positions), pluggable style interfaces (`CanvasTheme`), and a render primitive system
-(`RenderPrimitive`, `Renderer<T>`) with a reference SVG renderer.
+Target-agnostic graph canvas rendering with hierarchical scene support and an interaction model.
+
+**Core:**
+- **Scene graph** — `CanvasNode<S>`, `CanvasEdge`, `CanvasPort`, `CanvasScene<S>`. Nodes support
+  hierarchical nesting via `children`/`expanded`/`edges` for container rendering.
+- **Geometry** — surface clipping, arc math, SDF primitives, port positions.
+- **Style system** — `CanvasTheme<S>` with pluggable resolvers for nodes, edges, ports, containers,
+  and decorations. The generic `S` parameter lets consumers attach typed state to nodes that flows
+  through to theme resolvers without casting.
+- **Render primitives** — `RenderPrimitive` tree + `Renderer<T>` interface with reference SVG renderer.
+
+**Interaction:**
+- **Interaction hints** — `InteractionHint` metadata on render primitives declaring what gestures
+  each element responds to (draggable, clickable, hoverable, etc.).
+- **Hit-testing** — `hitTest(renderRoot, point)` walks the primitive tree with accumulated transforms
+  to find the deepest interactive element under a point. DOM-free.
+- **PointerHandler** — optional state machine (idle → pending → dragging) that manages drag thresholds,
+  hover tracking, and dispatches `CanvasInteraction` hooks. Accepts abstract points, no DOM dependency.
 
 Key design decisions:
 - **Render-target agnostic** — abstract `RenderPrimitive` tree + `Renderer<T>` interface.
   SVG, Canvas2D, WebGL backends implement the same interface.
 - **Headless testable** — all tests inspect the primitive tree directly, no DOM needed.
-- **Scene as data** — `CanvasScene` is a plain immutable data structure. Rendering is a pure
+- **Scene as data** — `CanvasScene<S>` is a plain immutable data structure. Rendering is a pure
   function of scene + theme.
+- **Generic consumer state** — `CanvasNode<S>` carries a typed `state?: S` field. The package never
+  inspects this state — it passes it through to theme resolvers. Simple consumers use the default
+  (`S = unknown`) and the package's `marlinTheme`. Complex consumers (like the IDE) define their own
+  state type and theme for full-fidelity visual control.
 - **IDE overlay compatible** — renders only the graph content layer. Chrome (toolbars, panels,
   breadcrumbs) overlays in the consuming application's HTML layer.
+
+**Planned extensions:**
+- **Edge style extensibility** — currently edge rendering (straight/arc, arrowhead) is hardcoded.
+  The style system should support pluggable edge endpoint styles (arrow, dot, none) and dash patterns,
+  allowing ref-edge overlays to render through the normal pipeline.
+- **Canvas-DOM package** — extract the SVG element management, view transform (pan/zoom), pointer
+  event wiring, and hit-test dispatch into a `@marlinspike/canvas-dom` (or `canvas-hono`) package.
+  This would let the IDE's canvas component be a thin wrapper: scene + theme + interaction hooks,
+  with all DOM plumbing handled by the package.
 
 ### Planned Extractions
 
@@ -153,7 +180,9 @@ identifies additional extraction candidates:
 
 - **Judgment system** (constraints/validation) — constraint evaluation, diagnostic generation
 - **Codecs** (code↔graph) — Spike-Clojure and future language representations
-- **Layout** — force simulation, topological grid, and other layout algorithms
+- **Layout** — force simulation, topological grid, and other layout algorithms. Port layout currently
+  lacks physics equilibrium (e.g. "chariot" problem where `A <- B -> C` pulls B off-center). This
+  should be addressed as part of the layout extraction with a proper center-of-mass force model.
 
 These are not yet extracted. Their scope and boundaries will be defined in separate branch plans.
 
@@ -756,13 +785,20 @@ The canvas is a **hybrid canvas** — spatially flexible but structurally aware.
 
 - Nodes and their port nodes
 - Edges as first-class routed connections between port nodes
-- Subgraph containment (composite nodes can be entered)
+- Subgraph containment (composite nodes can be entered/expanded inline)
 - Active property schemas (affecting palette and editable fields)
 - Diagnostic overlays (errors/warnings on the relevant node/edge/port)
 - The current persona filter (affecting what is visible and at what detail)
 
 The canvas shows the siblings within the currently focused subgraph. Port nodes appear on the
 boundary of their parent composite node.
+
+**Rendering pipeline:** The IDE builds a `CanvasScene<MarlinNodeState>` from workspace state via an
+adapter (`src/ui/lib/canvas-adapter.ts`), then renders it through the `@marlinspike/canvas` package:
+`buildCanvasScene → renderScene → svgRenderer`. Event handling uses `hitTest` against the render
+primitive tree, then looks up the hit node in the scene to access typed state (levelId, isComposite,
+etc.) for workspace mutations. The theme (`marlinIdeTheme`) resolves visual styles from the typed
+`MarlinNodeState` on each node — all IDE-specific color logic lives in the adapter, not the package.
 
 ### Force Layout
 
