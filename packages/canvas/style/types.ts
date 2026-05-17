@@ -30,6 +30,10 @@ export interface EdgeStyle {
   labelFill: string;
   labelFont: string;
   labelSize: number;
+  strokeDash?: string;
+  opacity?: number;
+  /** Endpoint decoration at destination. Default "arrow". */
+  endCap?: "arrow" | "dot" | "none";
 }
 
 /** Visual properties for rendering a port dot. */
@@ -37,19 +41,6 @@ export interface PortStyle {
   fill: string;
   stroke: string;
   radius: number;
-}
-
-/** Visual properties for rendering an expanded container node. */
-export interface ContainerStyle {
-  fill: string;
-  stroke: string;
-  strokeWidth: number;
-  labelFill: string;
-  labelFont: string;
-  labelSize: number;
-  cornerRadius: number;
-  strokeDash?: string;
-  opacity?: number;
 }
 
 /** Resolves visual style for a node based on its state. */
@@ -64,11 +55,6 @@ export type PortStyleResolver<S = unknown> = (
   node: CanvasNode<S>,
 ) => PortStyle;
 
-/** Resolves visual style for an expanded container based on its state. */
-export type ContainerStyleResolver<S = unknown> = (
-  node: CanvasNode<S>,
-) => ContainerStyle;
-
 /** Additional primitives to render as decorations on a node (badges, indicators). */
 export type NodeDecorationsResolver<S = unknown> = (
   node: CanvasNode<S>,
@@ -79,8 +65,6 @@ export interface CanvasTheme<S = unknown> {
   node: NodeStyleResolver<S>;
   edge: EdgeStyleResolver;
   port: PortStyleResolver<S>;
-  /** Optional resolver for expanded container nodes. Falls back to defaults if omitted. */
-  container?: ContainerStyleResolver<S>;
   /** Optional extra primitives rendered after the node shape (badges, indicators, etc). */
   decorations?: NodeDecorationsResolver<S>;
   background: string;

@@ -31,6 +31,7 @@ export interface EdgeRenderData {
  * @param groupIndex - This edge's index within its parallel-edge group
  * @param groupCount - Total edges in this edge's parallel-edge group
  * @param obstacleOffset - Pre-computed arc offset for obstacle avoidance (0 = straight)
+ * @param dstGap - Gap at destination for endpoint decoration (default 15 for arrowhead)
  */
 export function computeEdgePath<S>(
   edge: CanvasEdge,
@@ -38,6 +39,7 @@ export function computeEdgePath<S>(
   groupIndex: number,
   groupCount: number,
   obstacleOffset = 0,
+  dstGap = 15,
 ): EdgeRenderData | null {
   const pa = nodeMap.get(edge.fromId);
   const pb = nodeMap.get(edge.toId);
@@ -88,12 +90,12 @@ export function computeEdgePath<S>(
       src = arcClipRect(edgeArcC, r, pa, pa.w / 2, pa.h / 2, 5, arcSweep, pb);
     }
 
-    // Clip destination (extra gap for arrowhead)
+    // Clip destination (gap for endpoint decoration)
     if (pb.shape === "circle") {
-      const clipR = Math.min(pb.w, pb.h) / 2 + 15;
+      const clipR = Math.min(pb.w, pb.h) / 2 + dstGap;
       dst = arcClipPoint(edgeArcC, r, pb, clipR, pa);
     } else {
-      dst = arcClipRect(edgeArcC, r, pb, pb.w / 2, pb.h / 2, 15, 1 - arcSweep, pa);
+      dst = arcClipRect(edgeArcC, r, pb, pb.w / 2, pb.h / 2, dstGap, 1 - arcSweep, pa);
     }
 
     // Derive SVG sweep from cross product
@@ -102,7 +104,7 @@ export function computeEdgePath<S>(
     sweep = crossZ > 0 ? 1 : 0;
   } else {
     src = surfacePoint(pa, pb, 5);
-    dst = surfacePoint(pb, pa, 15);
+    dst = surfacePoint(pb, pa, dstGap);
   }
 
   const d = isArc
@@ -119,16 +121,19 @@ export function computeEdgePath<S>(
 export function renderEdge<S>(data: EdgeRenderData, theme: CanvasTheme<S>): RenderPrimitive {
   const style = theme.edge(data.edge);
   const children: RenderPrimitive[] = [];
+  const isInteractive = data.edge.interactive !== false;
 
-  // Transparent hit area
-  children.push({
-    kind: "path",
-    d: data.d,
-    stroke: "transparent",
-    strokeWidth: 8,
-    fill: "none",
-    cursor: "pointer",
-  });
+  // Transparent hit area (only for interactive edges)
+  if (isInteractive) {
+    children.push({
+      kind: "path",
+      d: data.d,
+      stroke: "transparent",
+      strokeWidth: 8,
+      fill: "none",
+      cursor: "pointer",
+    });
+  }
 
   // Visible path
   children.push({
@@ -137,25 +142,49 @@ export function renderEdge<S>(data: EdgeRenderData, theme: CanvasTheme<S>): Rend
     stroke: style.stroke,
     strokeWidth: style.strokeWidth,
     fill: "none",
+    strokeDash: style.strokeDash,
+    opacity: style.opacity,
   });
 
-  // Arrowhead
-  const tangent = pathEndTangent(data.src, data.dst, data.isArc, data.r, data.sweep, data.arcC);
-  const perp = { x: -tangent.y, y: tangent.x };
-  const tip = {
-    x: data.dst.x + tangent.x * style.arrowSize,
-    y: data.dst.y + tangent.y * style.arrowSize,
-  };
-  const arrowHalfW = style.arrowSize * 0.35;
-  children.push({
-    kind: "polygon",
-    points: [
-      [tip.x, tip.y],
-      [data.dst.x + perp.x * arrowHalfW, data.dst.y + perp.y * arrowHalfW],
-      [data.dst.x - perp.x * arrowHalfW, data.dst.y - perp.y * arrowHalfW],
-    ],
-    fill: style.stroke,
-  });
+  // Endpoint decoration
+  const endCap = style.endCap ?? "arrow";
+  if (endCap === "arrow") {
+    const tangent = pathEndTangent(
+      data.src,
+      data.dst,
+      data.isArc,
+      data.r,
+      data.sweep,
+      data.arcC,
+    );
+    const perp = { x: -tangent.y, y: tangent.x };
+    const tip = {
+      x: data.dst.x + tangent.x * style.arrowSize,
+      y: data.dst.y + tangent.y * style.arrowSize,
+    };
+    const arrowHalfW = style.arrowSize * 0.35;
+    children.push({
+      kind: "polygon",
+      points: [
+        [tip.x, tip.y],
+        [data.dst.x + perp.x * arrowHalfW, data.dst.y + perp.y * arrowHalfW],
+        [data.dst.x - perp.x * arrowHalfW, data.dst.y - perp.y * arrowHalfW],
+      ],
+      fill: style.stroke,
+    });
+  } else if (endCap === "dot") {
+    const dotR = style.arrowSize * 0.3;
+    children.push({
+      kind: "circle",
+      cx: data.dst.x,
+      cy: data.dst.y,
+      r: dotR,
+      fill: style.stroke,
+      stroke: "none",
+      strokeWidth: 0,
+    });
+  }
+  // endCap === "none" → no endpoint decoration
 
   // Label
   if (data.edge.label) {
@@ -179,7 +208,9 @@ export function renderEdge<S>(data: EdgeRenderData, theme: CanvasTheme<S>): Rend
     kind: "group",
     children,
     id: data.edge.id,
-    interaction: { id: data.edge.id, clickable: true, hoverable: true, cursor: "pointer" },
+    interaction: isInteractive
+      ? { id: data.edge.id, clickable: true, hoverable: true, cursor: "pointer" }
+      : undefined,
   };
 }
 

@@ -1,25 +1,18 @@
 /**
  * Node rendering — produces render primitives for a canvas node.
  *
- * If the node is expanded with children, delegates to renderContainer.
- * Otherwise renders as a leaf (circle or rect with label and ports).
+ * Renders a node as a shape (circle or rect) with label, ports, and decorations.
  */
 
 import type { CanvasNode } from "../scene/types.ts";
 import type { CanvasTheme } from "../style/types.ts";
 import type { RenderPrimitive } from "./primitives.ts";
-import { renderContainer } from "./container.ts";
 
 /**
  * Produce render primitives for a single node.
- * Returns a group containing the shape and label (leaf) or a container group (expanded).
+ * Returns a group containing the shape, label, ports, and decorations.
  */
 export function renderNode<S>(node: CanvasNode<S>, theme: CanvasTheme<S>): RenderPrimitive {
-  // Expanded container: delegate to container renderer
-  if (node.expanded && node.children && node.children.length > 0) {
-    return renderContainer(node, theme);
-  }
-
   const style = theme.node(node);
   const children: RenderPrimitive[] = [];
 

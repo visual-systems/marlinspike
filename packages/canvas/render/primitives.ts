@@ -45,6 +45,8 @@ export interface RenderPath {
   stroke: string;
   strokeWidth: number;
   fill: string;
+  strokeDash?: string;
+  opacity?: number;
   cursor?: string;
 }
 

@@ -41,12 +41,6 @@ export interface CanvasNode<S = unknown> {
   dashed?: boolean;
   /** Consumer-specific state, typed per-consumer. Opaque to the package. */
   state?: S;
-  /** Child nodes rendered inside this container when expanded. */
-  children?: CanvasNode<S>[];
-  /** If true and children exist, render as an expanded container rather than a leaf. */
-  expanded?: boolean;
-  /** Edges among children at this level (only relevant when expanded). */
-  edges?: CanvasEdge[];
 }
 
 /** A directed edge between two nodes. */
@@ -57,9 +51,16 @@ export interface CanvasEdge {
   label?: string;
   selected?: boolean;
   highlighted?: boolean;
+  /** If false, edge has no hit area and cannot be interacted with. Default true. */
+  interactive?: boolean;
+  /** Consumer classification for style resolution (e.g. "ref-direct"). Package ignores this. */
+  kind?: string;
 }
 
-/** A scene: positioned nodes + edges, optionally hierarchical. */
+/**
+ * A scene: positioned nodes and edges.
+ * Array order determines z-order (first = bottom, last = top).
+ */
 export interface CanvasScene<S = unknown> {
   nodes: CanvasNode<S>[];
   edges: CanvasEdge[];

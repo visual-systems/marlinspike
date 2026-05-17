@@ -1,5 +1,6 @@
 import { assertEquals } from "@std/assert";
 import type { CanvasScene } from "../scene/types.ts";
+import type { CanvasTheme } from "../style/types.ts";
 import { marlinTheme } from "../style/marlin-theme.ts";
 import { renderScene } from "./scene.ts";
 import { renderNode } from "./node.ts";
@@ -225,4 +226,127 @@ Deno.test("svgRenderer — full scene produces valid SVG", () => {
   const [svg] = renderWith(svgRenderer, primitives);
   assertEquals(svg.includes("data-id"), true);
   assertEquals(svg.includes("flow"), true);
+});
+
+// ---------------------------------------------------------------------------
+// Edge style extensibility
+// ---------------------------------------------------------------------------
+
+/** Theme that returns dashed + dot endCap for edges with kind "ref". */
+const refTheme: CanvasTheme<unknown> = {
+  ...marlinTheme,
+  edge: (edge) => {
+    if (edge.kind === "ref") {
+      return {
+        stroke: "#605080",
+        strokeWidth: 1,
+        arrowSize: 10,
+        labelFill: "#556",
+        labelFont: "sans-serif",
+        labelSize: 10,
+        strokeDash: "4,3",
+        opacity: 0.6,
+        endCap: "dot",
+      };
+    }
+    return marlinTheme.edge(edge);
+  },
+};
+
+Deno.test("renderEdge — strokeDash and opacity propagate to path primitive", () => {
+  const nodeMap = new Map([
+    ["a", circleNode("a", 0, 0)],
+    ["b", circleNode("b", 200, 0)],
+  ]);
+  const edge = { id: "e1", fromId: "a", toId: "b", kind: "ref" };
+  const data = computeEdgePath(edge, nodeMap, 0, 1)!;
+  const result = renderEdge(data, refTheme) as RenderGroup;
+  const paths = result.children.filter((c) => c.kind === "path");
+  // Should have a visible path with strokeDash and opacity
+  const visiblePath = paths.find((p) => p.kind === "path" && p.stroke !== "transparent");
+  assertEquals(visiblePath !== undefined, true);
+  if (visiblePath?.kind === "path") {
+    assertEquals(visiblePath.strokeDash, "4,3");
+    assertEquals(visiblePath.opacity, 0.6);
+  }
+});
+
+Deno.test("renderEdge — dot endCap produces circle instead of polygon", () => {
+  const nodeMap = new Map([
+    ["a", circleNode("a", 0, 0)],
+    ["b", circleNode("b", 200, 0)],
+  ]);
+  const edge = { id: "e1", fromId: "a", toId: "b", kind: "ref" };
+  const data = computeEdgePath(edge, nodeMap, 0, 1)!;
+  const result = renderEdge(data, refTheme) as RenderGroup;
+  const kinds = result.children.map((c) => c.kind);
+  assertEquals(kinds.includes("circle"), true);
+  assertEquals(kinds.includes("polygon"), false);
+});
+
+Deno.test("renderEdge — non-interactive edge has no hit area and no interaction hint", () => {
+  const nodeMap = new Map([
+    ["a", circleNode("a", 0, 0)],
+    ["b", circleNode("b", 200, 0)],
+  ]);
+  const edge = { id: "e1", fromId: "a", toId: "b", interactive: false };
+  const data = computeEdgePath(edge, nodeMap, 0, 1)!;
+  const result = renderEdge(data, marlinTheme) as RenderGroup;
+  // No transparent hit area path
+  const transparentPaths = result.children.filter(
+    (c) => c.kind === "path" && c.stroke === "transparent",
+  );
+  assertEquals(transparentPaths.length, 0);
+  // No interaction hint on group
+  assertEquals(result.interaction, undefined);
+});
+
+Deno.test("renderEdge — none endCap produces no endpoint decoration", () => {
+  const noneTheme: CanvasTheme<unknown> = {
+    ...marlinTheme,
+    edge: () => ({
+      stroke: "#2a2a50",
+      strokeWidth: 1,
+      arrowSize: 10,
+      labelFill: "#556",
+      labelFont: "sans-serif",
+      labelSize: 10,
+      endCap: "none" as const,
+    }),
+  };
+  const nodeMap = new Map([
+    ["a", circleNode("a", 0, 0)],
+    ["b", circleNode("b", 200, 0)],
+  ]);
+  const edge = { id: "e1", fromId: "a", toId: "b" };
+  const data = computeEdgePath(edge, nodeMap, 0, 1)!;
+  const result = renderEdge(data, noneTheme) as RenderGroup;
+  const kinds = result.children.map((c) => c.kind);
+  assertEquals(kinds.includes("polygon"), false);
+  assertEquals(kinds.includes("circle"), false);
+});
+
+Deno.test("computeEdgePath — custom dstGap changes endpoint position", () => {
+  const nodeMap = new Map([
+    ["a", circleNode("a", 0, 0)],
+    ["b", circleNode("b", 200, 0)],
+  ]);
+  const edge = { id: "e1", fromId: "a", toId: "b" };
+  const data15 = computeEdgePath(edge, nodeMap, 0, 1, 0, 15)!;
+  const data5 = computeEdgePath(edge, nodeMap, 0, 1, 0, 5)!;
+  // Smaller gap → destination closer to node center
+  assertEquals(data5.dst.x > data15.dst.x, true);
+});
+
+Deno.test("svgRenderer — dashed path emits stroke-dasharray attribute", () => {
+  const nodeMap = new Map([
+    ["a", circleNode("a", 0, 0)],
+    ["b", circleNode("b", 200, 0)],
+  ]);
+  const edge = { id: "e1", fromId: "a", toId: "b", kind: "ref" };
+  const data = computeEdgePath(edge, nodeMap, 0, 1)!;
+  const result = renderEdge(data, refTheme);
+  const [svg] = renderWith(svgRenderer, result);
+  assertEquals(svg.includes("stroke-dasharray"), true);
+  assertEquals(svg.includes("4,3"), true);
 });

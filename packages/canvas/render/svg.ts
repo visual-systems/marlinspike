@@ -51,7 +51,9 @@ export const svgRenderer: Renderer<string> = {
   path(p: RenderPath): string {
     return `<path${attr("d", p.d)}${attr("stroke", p.stroke)}${
       attr("stroke-width", p.strokeWidth)
-    }${attr("fill", p.fill)}${p.cursor ? ` style="cursor:${esc(p.cursor)};"` : ""}/>`;
+    }${attr("fill", p.fill)}${p.strokeDash ? attr("stroke-dasharray", p.strokeDash) : ""}${
+      p.opacity !== undefined ? attr("opacity", p.opacity) : ""
+    }${p.cursor ? ` style="cursor:${esc(p.cursor)};"` : ""}/>`;
   },
 
   polygon(p: RenderPolygon): string {

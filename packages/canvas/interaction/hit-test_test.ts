@@ -49,55 +49,36 @@ Deno.test("hitTest — edge hit returns edge hint", () => {
   assertEquals(hit?.draggable, undefined);
 });
 
-Deno.test("hitTest — nested container: child hit returns child hint", () => {
+Deno.test("hitTest — flat container: child hit returns child (z-order wins)", () => {
+  // Container background is a large rect, child is a circle at the same world-space position.
+  // Child comes later in array → rendered on top → hit-test should return child.
   const scene: CanvasScene = {
-    nodes: [{
-      id: "container",
-      x: 100,
-      y: 100,
-      w: 200,
-      h: 150,
-      shape: "rect",
-      label: "Group",
-      expanded: true,
-      children: [
-        { id: "child", x: 0, y: 0, w: 40, h: 40, shape: "circle", label: "C" },
-      ],
-      edges: [],
-    }],
+    nodes: [
+      { id: "container-bg", x: 100, y: 100, w: 200, h: 150, shape: "rect", label: "" },
+      { id: "child", x: 100, y: 100, w: 40, h: 40, shape: "circle", label: "C" },
+    ],
     edges: [],
   };
 
   const root = renderScene(scene, marlinTheme);
-  // Child is at container (100,100) + child (0,0) = world (100,100)
   const hit = hitTest(root, { x: 100, y: 100 });
   assertEquals(hit?.id, "child");
 });
 
-Deno.test("hitTest — nested container: clicking container background returns container", () => {
+Deno.test("hitTest — flat container: clicking background away from child returns background", () => {
   const scene: CanvasScene = {
-    nodes: [{
-      id: "container",
-      x: 100,
-      y: 100,
-      w: 200,
-      h: 150,
-      shape: "rect",
-      label: "Group",
-      expanded: true,
-      children: [
-        { id: "child", x: 0, y: 0, w: 40, h: 40, shape: "circle", label: "C" },
-      ],
-      edges: [],
-    }],
+    nodes: [
+      { id: "container-bg", x: 100, y: 100, w: 200, h: 150, shape: "rect", label: "" },
+      { id: "child", x: 100, y: 100, w: 40, h: 40, shape: "circle", label: "C" },
+    ],
     edges: [],
   };
 
   const root = renderScene(scene, marlinTheme);
-  // Click on container area but away from child (child is at 100,100 with r=20)
-  // Container spans from (0, 25) to (200, 175) in local coords, or (100, 125) to (200, 175) world
+  // Click far from child (which has r=20 at 100,100) but within container rect
+  // Container rect: center (100,100), w=200, h=150 → bounds (0,25) to (200,175)
   const hit = hitTest(root, { x: 180, y: 160 });
-  assertEquals(hit?.id, "container");
+  assertEquals(hit?.id, "container-bg");
 });
 
 Deno.test("hitTest — rect node hit-testing works", () => {

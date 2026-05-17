@@ -24,8 +24,6 @@ export type { CanvasEdge, CanvasNode, CanvasPort, CanvasScene } from "./scene/ty
 
 export type {
   CanvasTheme,
-  ContainerStyle,
-  ContainerStyleResolver,
   EdgeStyle,
   EdgeStyleResolver,
   NodeDecorationsResolver,
@@ -101,10 +99,9 @@ export { renderWith } from "./render/renderer.ts";
 // ---------------------------------------------------------------------------
 
 export { renderNode } from "./render/node.ts";
-export { renderContainer } from "./render/container.ts";
 export { computeEdgePath, groupEdges, renderEdge } from "./render/edge.ts";
 export type { EdgeRenderData } from "./render/edge.ts";
-export { renderLevel, renderScene } from "./render/scene.ts";
+export { renderScene } from "./render/scene.ts";
 
 // ---------------------------------------------------------------------------
 // SVG renderer (reference implementation)

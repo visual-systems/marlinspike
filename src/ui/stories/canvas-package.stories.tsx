@@ -592,61 +592,102 @@ export function Hierarchical() {
   const W = 700;
   const H = 450;
 
+  // Group definitions with local child positions
+  const groups = [
+    {
+      id: "group-a",
+      x: 200,
+      y: 200,
+      w: 250,
+      h: 180,
+      label: "Group A",
+      children: [
+        { id: "a1", dx: -60, dy: -20, label: "A1" },
+        { id: "a2", dx: 60, dy: -20, label: "A2" },
+        { id: "a3", dx: 0, dy: 50, label: "A3" },
+      ],
+      childEdges: [
+        { id: "ea1", fromId: "a1", toId: "a2" },
+        { id: "ea2", fromId: "a2", toId: "a3" },
+      ],
+    },
+    {
+      id: "group-b",
+      x: 520,
+      y: 200,
+      w: 150,
+      h: 120,
+      label: "Group B",
+      children: [
+        { id: "b1", dx: -25, dy: 0, label: "B1" },
+        { id: "b2", dx: 25, dy: 0, label: "B2" },
+      ],
+      childEdges: [{ id: "eb1", fromId: "b1", toId: "b2" }],
+    },
+  ];
+
   function buildScene(): CanvasScene {
-    return {
-      nodes: [
-        {
-          id: "group-a",
-          x: 200,
-          y: 200,
-          w: 250,
-          h: 180,
+    const nodes: CanvasScene["nodes"] = [];
+    const edges: CanvasScene["edges"] = [
+      { id: "e-top", fromId: "group-a", toId: "standalone" },
+      { id: "e-cross", fromId: "group-a", toId: "group-b" },
+    ];
+
+    for (const g of groups) {
+      if (expandedIds.has(g.id)) {
+        // Background rect (z-order: behind children)
+        nodes.push({
+          id: g.id,
+          x: g.x,
+          y: g.y,
+          w: g.w,
+          h: g.h,
           shape: "rect",
-          label: "Group A",
-          expanded: expandedIds.has("group-a"),
-          selected: selectedId === "group-a",
-          children: [
-            { id: "a1", x: -60, y: -20, w: 40, h: 40, shape: "circle", label: "A1" },
-            { id: "a2", x: 60, y: -20, w: 40, h: 40, shape: "circle", label: "A2" },
-            { id: "a3", x: 0, y: 50, w: 40, h: 40, shape: "circle", label: "A3" },
-          ],
-          edges: [
-            { id: "ea1", fromId: "a1", toId: "a2" },
-            { id: "ea2", fromId: "a2", toId: "a3" },
-          ],
-        },
-        {
-          id: "group-b",
-          x: 520,
-          y: 200,
-          w: 150,
-          h: 120,
+          label: g.label,
+          selected: selectedId === g.id,
+        });
+        // Children at world-space positions
+        for (const c of g.children) {
+          nodes.push({
+            id: c.id,
+            x: g.x + c.dx,
+            y: g.y + c.dy,
+            w: 40,
+            h: 40,
+            shape: "circle",
+            label: c.label,
+            selected: selectedId === c.id,
+          });
+        }
+        edges.push(...g.childEdges);
+      } else {
+        // Collapsed: single rect node
+        nodes.push({
+          id: g.id,
+          x: g.x,
+          y: g.y,
+          w: g.w,
+          h: g.h,
           shape: "rect",
-          label: "Group B",
-          expanded: expandedIds.has("group-b"),
-          selected: selectedId === "group-b",
-          children: [
-            { id: "b1", x: -25, y: 0, w: 40, h: 40, shape: "circle", label: "B1" },
-            { id: "b2", x: 25, y: 0, w: 40, h: 40, shape: "circle", label: "B2" },
-          ],
-          edges: [{ id: "eb1", fromId: "b1", toId: "b2" }],
-        },
-        {
-          id: "standalone",
-          x: 360,
-          y: 50,
-          w: 52,
-          h: 52,
-          shape: "circle",
-          label: "Solo",
-          selected: selectedId === "standalone",
-        },
-      ],
-      edges: [
-        { id: "e-top", fromId: "group-a", toId: "standalone" },
-        { id: "e-cross", fromId: "group-a", toId: "group-b" },
-      ],
-    };
+          label: g.label,
+          selected: selectedId === g.id,
+        });
+      }
+    }
+
+    // Standalone node
+    nodes.push({
+      id: "standalone",
+      x: 360,
+      y: 50,
+      w: 52,
+      h: 52,
+      shape: "circle",
+      label: "Solo",
+      selected: selectedId === "standalone",
+    });
+
+    return { nodes, edges };
   }
 
   const scene = buildScene();
@@ -666,13 +707,15 @@ export function Hierarchical() {
     }
   }
 
+  const groupIds = new Set(groups.map((g) => g.id));
+
   function handleDblClick(e: MouseEvent) {
     const el = svgRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     const pos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     const hit = hitTest(group, pos);
-    if (hit && hit.doubleClickable) {
+    if (hit && hit.doubleClickable && groupIds.has(hit.id)) {
       setExpandedIds((prev) => {
         const next = new Set(prev);
         if (next.has(hit.id)) next.delete(hit.id);
@@ -685,12 +728,13 @@ export function Hierarchical() {
   return (
     <div style="padding:16px; color:#c0c0e0; font-family:sans-serif;">
       <div style={SECTION}>
-        <div style={HEADING}>Hierarchical Scene — Nested Containers</div>
+        <div style={HEADING}>Flat Scene — Consumer-Side Expand/Collapse</div>
         <div style={DESCRIPTION}>
-          Demonstrates hierarchical rendering with{" "}
-          <span style={TAG}>@marlinspike/canvas</span>. Nodes can contain child nodes rendered
-          inside them. Uses <span style={TAG}>hitTest()</span> for click detection and{" "}
-          <span style={TAG}>InteractionHint</span> metadata for expand/collapse on double-click.
+          Demonstrates flat scene rendering with{" "}
+          <span style={TAG}>@marlinspike/canvas</span>. The consumer flattens hierarchy into
+          world-space positioned elements. Container backgrounds are regular rect nodes; children
+          are positioned at world coordinates. Uses <span style={TAG}>hitTest()</span> and{" "}
+          <span style={TAG}>InteractionHint</span> for interaction.
         </div>
 
         <div style="display:flex; gap:8px; margin-bottom:8px;">

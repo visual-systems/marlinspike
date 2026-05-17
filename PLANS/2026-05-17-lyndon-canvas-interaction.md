@@ -10,141 +10,125 @@ Follows from **D4** in the `extract-canvas` plan (`PLANS/2026-05-16-lyndon-extra
 
 > D4. _(deferred)_ Update `canvas.tsx` renderLevel to use canvas package's render data functions — requires hierarchical scene support
 
-`@marlinspike/canvas` currently renders flat scenes — all nodes at one level with no hierarchy. The IDE's `renderLevel` function (650 lines, canvas.tsx:1972-2622) handles recursive rendering of expanded composite nodes, interaction modes (select, add-node, add-edge), drag, selection, expand/collapse, and hover highlighting. This is all tightly coupled to the workspace model and can't be reused.
-
-Adding hierarchical scene support and a hooks-based interaction model to the canvas package would:
-1. Remove ~650 lines from `src/ui/components/canvas.tsx` (the entire `renderLevel` function)
-2. Make the package genuinely useful as a standalone interactive graph editor (Figma-like nested frames)
-3. Enable headless interaction testing without DOM
+The IDE's `renderLevel` function (650 lines) handled recursive rendering of expanded
+composites, interaction modes, drag, selection, expand/collapse, and hover highlighting.
+This work extended `@marlinspike/canvas` with interaction primitives and migrated the IDE
+to use the package's rendering pipeline and adapter pattern.
 
 ## Goal
 
 Extend `@marlinspike/canvas` with:
 
-1. **Hierarchical scenes** — `CanvasNode.children` + `CanvasNode.edges` for recursive container rendering
+1. **Flat scene rendering** — the package renders positioned elements with z-ordering; no hierarchy concepts
 2. **Interaction hints** — metadata on primitives declaring what gestures each element responds to
-3. **Hit-testing** — spatial query: point → deepest interactive primitive (walks nested groups)
+3. **Hit-testing** — spatial query: point → deepest interactive primitive
 4. **CanvasInteraction hooks** — consumer-provided callbacks for drag, click, double-click, hover
 5. **PointerHandler** — optional state machine that manages drag threshold, hover tracking, dispatches hooks
-6. **Updated Figma-lite demo** — uses the interaction model instead of manual DOM event wiring
+6. **Edge style extensibility** — strokeDash, opacity, endCap for dashed/dotted/non-interactive edges
+7. **Canvas adapter** — IDE-side adapter that flattens hierarchy into world-space elements for the flat renderer
+
+### Design principle
+
+The canvas package is a **flat, z-ordered element renderer**. Hierarchy is always domain-specific —
+the consumer (canvas-adapter) owns flattening trees into world-space positioned elements.
+Container backgrounds are just large rect nodes placed behind their children in the array.
 
 ### What's NOT in scope
 
 - **IDE mode logic** (select/add-node/add-edge state machine) — consumer concern
 - **Layout algorithms** — separate extraction planned
+- **Hierarchy in the package** — consumer flattens hierarchy before passing to the package
 - **Actual DOM/browser dependency in core** — PointerHandler accepts abstract points, not MouseEvents
-- **Full D4 refactor of canvas.tsx** — that's a follow-up once this ships; this branch builds the capability
 
 ## Approach
 
-### Phase 1 — Hierarchical scene types (no rendering changes)
+### Phase 1 — Interaction types + hit-testing
 
-- [x] 1.1 Extend `CanvasNode` in `packages/canvas/scene/types.ts`:
-  - `children?: CanvasNode[]` — nested nodes within this container
-  - `expanded?: boolean` — if true and has children, render as container
-  - `edges?: CanvasEdge[]` — edges among children at this level
-- [x] 1.2 Add `ContainerStyle` to `packages/canvas/style/types.ts`:
-  - `ContainerStyle { fill, stroke, strokeWidth, labelFill, labelFont, labelSize, cornerRadius, strokeDash?, opacity? }`
-  - `ContainerStyleResolver = (node: CanvasNode) => ContainerStyle`
-  - Add optional `container?: ContainerStyleResolver` to `CanvasTheme`
-- [x] 1.3 Add container style to `packages/canvas/style/marlin-theme.ts` (default dark theme values matching current expanded-group look)
-- [x] 1.4 Update barrel exports in `mod.ts`
+- [x] 1.1 Create `packages/canvas/interaction/types.ts`: InteractionHint, CanvasInteraction
+- [x] 1.2 Add `interaction?: InteractionHint` and `tx?/ty?` to `RenderGroup` in `primitives.ts`
+- [x] 1.3 Create `packages/canvas/interaction/hit-test.ts`: hitTest(root, point) → InteractionHint | null
+- [x] 1.4 Tests: hit-test with overlapping elements, transform offsets, z-order
 
-### Phase 2 — Hierarchical rendering
+### Phase 2 — Interaction tagging in render functions
 
-- [x] 2.1 Extract `renderLevel(nodes, edges, theme): RenderPrimitive[]` helper in `packages/canvas/render/scene.ts`:
-  - Current `renderScene` body becomes `renderLevel` call wrapped in root group
-  - Handles nodes + edges at one level (same logic as today)
-- [x] 2.2 Create `packages/canvas/render/container.ts`:
-  - `renderContainer(node: CanvasNode, theme): RenderGroup`
-  - Renders: background rect (full w/h, themed), label text (top-left corner), then recursively calls `renderLevel(node.children, node.edges, theme)` for internal content
-  - The group gets `transform: translate(x, y)` and `id: node.id`
-- [x] 2.3 Update `renderNode` to branch: if `node.expanded && node.children?.length`, delegate to `renderContainer`; otherwise render as leaf (existing behavior)
-- [x] 2.4 Tests: hierarchical scene with 2-level nesting → assert primitive tree structure (container rect + children inside nested group)
+- [x] 2.1 `renderNode` → group gets interaction hint (draggable, clickable, doubleClickable, hoverable)
+- [x] 2.2 `renderEdge` → group gets interaction hint (clickable, hoverable)
+- [x] 2.3 All render functions populate `tx`/`ty` on output groups
 
-### Phase 3 — Interaction types + hit-testing
+### Phase 3 — PointerHandler
 
-- [x] 3.1 Create `packages/canvas/interaction/types.ts`:
-  ```typescript
-  InteractionHint { id, draggable?, clickable?, doubleClickable?, hoverable?, cursor? }
-  CanvasInteraction { onDragStart?, onDragMove?, onDragEnd?, onClick?, onDoubleClick?, onHoverEnter?, onHoverLeave? }
-  ```
-- [x] 3.2 Add `interaction?: InteractionHint` field to `RenderGroup` in `primitives.ts`
-  - Also add typed `tx?: number; ty?: number` to `RenderGroup` for hit-test offset computation (avoids parsing transform strings)
-- [x] 3.3 Create `packages/canvas/interaction/hit-test.ts`:
-  - `hitTest(root: RenderGroup, point: Point): InteractionHint | null`
-  - Walks tree depth-first in reverse child order (topmost visual element = last child)
-  - Accumulates tx/ty offsets through nested groups
-  - Shape tests: circle (distance < r), rect (bounds), path (lineSdfDist with tolerance)
-  - Returns deepest interactive primitive's hint, or null
-- [x] 3.4 Tests: hit-test with nested groups, overlapping elements, transform offsets
+- [x] 3.1 Create `packages/canvas/interaction/pointer.ts`: PointerHandler state machine
+- [x] 3.2 Tests: simulate pointer sequences, verify hook dispatch (all headless, no DOM)
 
-### Phase 4 — Interaction tagging in render functions
+### Phase 4 — Edge style extensibility
 
-- [x] 4.1 `renderNode` → output group gets `interaction: { id: node.id, draggable: true, clickable: true, doubleClickable: true, hoverable: true }`
-- [x] 4.2 `renderContainer` → container background group gets same interaction hint
-- [x] 4.3 `renderEdge` → edge group gets `interaction: { id: edge.id, clickable: true, hoverable: true }`
-- [x] 4.4 All render functions populate `tx`/`ty` on their output groups (from node.x/node.y)
-- [x] 4.5 Tests: verify render output contains expected interaction hints (covered by hit-test tests which depend on correct tagging)
+- [x] 4.1 Add `strokeDash`, `opacity` to `RenderPath`; update `svgRenderer.path()`
+- [x] 4.2 Add `strokeDash`, `opacity`, `endCap` to `EdgeStyle`
+- [x] 4.3 Add `interactive`, `kind` to `CanvasEdge`
+- [x] 4.4 Update `renderEdge`: dash, opacity, endCap ("arrow"/"dot"/"none"), non-interactive
+- [x] 4.5 Add `dstGap` parameter to `computeEdgePath`
+- [x] 4.6 Tests: 8 new edge style tests
 
-### Phase 5 — PointerHandler
+### Phase 5 — Generic types (CanvasNode\<S\>)
 
-- [x] 5.1 Create `packages/canvas/interaction/pointer.ts`:
-  ```typescript
-  PointerHandlerConfig { getRoot(): RenderGroup, hooks: CanvasInteraction, dragThreshold?: number }
-  PointerHandler { onPointerDown(pos), onPointerMove(pos), onPointerUp(pos) }
-  ```
-  - State machine: idle → potential-drag → dragging (threshold-based)
-  - Click = pointerdown + pointerup without exceeding threshold
-  - Double-click = two clicks within 300ms
-  - Hover = pointerMove when idle, dispatches enter/leave on target change
-- [x] 5.2 Tests: simulate pointer sequences, verify hook dispatch (all headless, no DOM)
+- [x] 5.1 Add generic `S` parameter to `CanvasNode<S>`, `CanvasScene<S>`, `CanvasTheme<S>`, all resolvers
+- [x] 5.2 Add typed `state?: S` field replacing untyped `data` bag
+- [x] 5.3 Create `MarlinNodeState` interface in adapter with IDE-specific visual flags
+- [x] 5.4 Theme resolvers access `node.state!` directly — zero casting
 
-### Phase 6 — Integration + demo
+### Phase 6 — Canvas adapter + IDE migration
 
-- [x] 6.1 Update `mod.ts` exports: interaction types, hitTest, PointerHandler, renderContainer, ContainerStyle
-- [x] 6.2 _(adjusted)_ Figma-lite story kept as-is (its manual DOM wiring still works). New "Hierarchical" story added demonstrating hitTest + expand/collapse via interaction model.
-- [x] 6.3 Add a new story: "Hierarchical" — nested containers that can be expanded/collapsed via double-click
-- [x] 6.4 Full CI pass — 539 tests
+- [x] 6.1 Create `src/ui/lib/canvas-adapter.ts` with `buildCanvasScene`, `marlinIdeTheme`
+- [x] 6.2 Migrate canvas.tsx to use `buildCanvasScene` + `renderScene` + `svgRenderer`
+- [x] 6.3 Eliminate `buildNodeMetaMap` — direct scene node lookup
+- [x] 6.4 Ref edges rendered through normal pipeline (adapter emits as regular edges with `kind`)
+- [x] 6.5 Ghost edge converted from SVG string to `RenderPrimitive`
 
-#### Key files to modify:
-- `packages/canvas/scene/types.ts` — extend CanvasNode
-- `packages/canvas/style/types.ts` — add ContainerStyle
-- `packages/canvas/style/marlin-theme.ts` — add container theme
-- `packages/canvas/render/primitives.ts` — add interaction + tx/ty to RenderGroup
-- `packages/canvas/render/scene.ts` — extract renderLevel
-- `packages/canvas/render/node.ts` — branch on expanded
-- `packages/canvas/render/edge.ts` — add interaction hint
-- `packages/canvas/render/svg.ts` — handle new fields (cursor from interaction hint)
-- `packages/canvas/mod.ts` — new exports
-- `src/ui/stories/canvas-package.stories.tsx` — updated Figma-lite + new Hierarchical story
+### Phase 7 — Flatten package (remove hierarchy)
 
-#### New files:
+- [x] 7.1 Rewrite adapter to emit flat world-space scenes (container backgrounds = rect nodes)
+- [x] 7.2 Update canvas.tsx for flat scenes (`findSceneNode` flat lookup, `isContainerBackground`)
+- [x] 7.3 Remove `children`, `expanded`, `edges` from `CanvasNode`
+- [x] 7.4 Remove `OverlayEdge`, `overlayEdges` from scene types
+- [x] 7.5 Remove `ContainerStyle`, `ContainerStyleResolver`, `container` from theme
+- [x] 7.6 Delete `renderContainer`, `renderLevel`, `renderOverlayEdges`
+- [x] 7.7 Simplify `renderScene` — direct node/edge iteration, no recursion
+- [x] 7.8 Update stories: Hierarchical story uses flat consumer-side expand/collapse
+- [x] 7.9 Update tests: flat hit-test equivalents, remove overlay/container tests
+- [x] 7.10 CI: 540 tests pass
+
+#### Key files modified:
+- `packages/canvas/scene/types.ts` — flat CanvasNode (no children/expanded/edges)
+- `packages/canvas/style/types.ts` — no ContainerStyle
+- `packages/canvas/render/scene.ts` — flat renderScene
+- `packages/canvas/render/node.ts` — always renders as leaf
+- `packages/canvas/render/edge.ts` — extensible edge styles
+- `packages/canvas/render/primitives.ts` — interaction hints, strokeDash/opacity on path
+- `packages/canvas/render/svg.ts` — new attribute support
+- `packages/canvas/interaction/` — types, hit-test, pointer handler
+- `packages/canvas/mod.ts` — clean exports
+- `src/ui/lib/canvas-adapter.ts` — flat scene builder, IDE theme
+- `src/ui/components/canvas.tsx` — uses adapter pipeline
+- `src/ui/stories/canvas-package.stories.tsx` — flat Hierarchical story
+
+#### Deleted files:
 - `packages/canvas/render/container.ts`
-- `packages/canvas/interaction/types.ts`
-- `packages/canvas/interaction/hit-test.ts`
-- `packages/canvas/interaction/pointer.ts`
-- `packages/canvas/interaction/hit-test_test.ts`
-- `packages/canvas/interaction/pointer_test.ts`
 - `packages/canvas/render/container_test.ts`
 
 ## Open Questions
 
-1. **Path hit-testing for arcs**: `lineSdfDist` works for straight edges. For arc paths, we need point-to-arc-distance. Should we add an `arcSdfDist` utility to geometry, or approximate arcs as polylines for hit-testing? **Recommendation**: Add `arcSdfDist(point, center, radius, startAngle, endAngle)` to geometry/arc.ts — it's a simple distance-to-circle-segment calculation.
+1. **Path hit-testing for arcs**: Currently uses `lineSdfDist` for straight edges. Arc paths would need `arcSdfDist`. Not yet needed — revisit if arc edge hit-testing becomes important.
 
-2. **Double-click timing**: PointerHandler needs a timeout to distinguish single-click from double-click. Should `onClick` fire immediately (and `onDoubleClick` fires additionally), or should `onClick` be delayed to wait for potential second click? **Recommendation**: Fire onClick immediately, fire onDoubleClick additionally — matches DOM behavior and avoids click delay.
-
-3. **Hit-test performance**: For large scenes (1000+ nodes), linear walk may be slow. Is spatial indexing (quadtree) needed? **Recommendation**: No — start simple. The IDE rarely renders more than ~100 nodes at one level. Optimize later if profiling shows need.
-
-4. **RenderGroup tx/ty vs transform string**: Adding typed `tx`/`ty` creates mild redundancy with the `transform` string. **Recommendation**: Keep both — `transform` is what renderers use for output, `tx`/`ty` is what hit-testing uses for spatial math. Render functions populate both consistently.
+2. **Hit-test performance**: Linear walk for large scenes (1000+ nodes). Not a problem in practice — the IDE rarely renders >100 nodes at one level. Spatial indexing can be added later if profiling shows need.
 
 ## Verification
 
-- [x] `NO_COLOR=1 deno task ci` passes (lint, fmt, type-check, all tests) — 539 tests
-- [x] Canvas package tests pass independently: `NO_COLOR=1 deno test packages/canvas/` — 78 tests
-- [x] Existing flat scene rendering unchanged (backward compatible)
-- [x] Hierarchical scene renders correctly: container with children inside
-- [x] Hit-test returns correct element for nested scenes
-- [x] PointerHandler dispatches correct hooks for drag, click, double-click, hover sequences
-- [x] _(adjusted)_ Figma-lite story kept as-is; Hierarchical story demonstrates hitTest-based interaction
-- [x] New "Hierarchical" story demonstrates expand/collapse via double-click
+- [x] `NO_COLOR=1 deno task ci` passes — 540 tests
+- [x] Flat scene rendering works correctly
+- [x] Hit-test returns correct element with z-order (later in array = on top)
+- [x] PointerHandler dispatches correct hooks for drag, click, double-click, hover
+- [x] Edge extensibility: dash, dot endCap, non-interactive edges all render correctly
+- [x] Hierarchical story demonstrates consumer-side expand/collapse with flat scenes
+- [ ] Visual check: expanded containers render correctly (background + children + ports)
+- [ ] Visual check: ref edges render (dashed + dot)
+- [ ] Visual check: ghost edge works during edge-draw

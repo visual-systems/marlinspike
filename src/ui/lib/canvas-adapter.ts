@@ -1,6 +1,10 @@
 /**
- * Canvas adapter — maps workspace state to a CanvasScene for rendering
+ * Canvas adapter — maps workspace state to a flat CanvasScene for rendering
  * via @marlinspike/canvas.
+ *
+ * The adapter flattens the IDE's hierarchical tree into world-space positioned
+ * elements. Expanded containers become a background rect node (behind) plus
+ * child nodes at world-space coordinates. Array order = z-order.
  *
  * Uses the generic CanvasNode<MarlinNodeState> to carry IDE-specific
  * visual state through to theme resolvers with full type safety.
@@ -13,7 +17,6 @@ import type {
   CanvasNode,
   CanvasScene,
   CanvasTheme,
-  ContainerStyle,
   EdgeStyle,
   NodeStyle,
   PortStyle,
@@ -54,6 +57,10 @@ export interface MarlinNodeState {
   childrenCount: number;
   edgePortDots: Array<{ x: number; y: number; out: boolean }>;
   refTarget?: string;
+  /** True for the background rect of an expanded container (not a real tree node). */
+  isContainerBackground: boolean;
+  /** Original label for container backgrounds (since node.label is "" to suppress default). */
+  containerLabel?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -88,10 +95,11 @@ export interface BuildSceneOptions {
   highlightEntityIds: Set<string>;
   allTreeNodes: TreeNode[];
   focusId: string | null;
+  showRefEdges?: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// Scene builder
+// Scene builder helpers
 // ---------------------------------------------------------------------------
 
 /** Collect all labels in the tree (for ref dash determination). */
@@ -115,21 +123,26 @@ function refNeedsDash(node: TreeNode, allLabels: Set<string>): boolean {
   return false;
 }
 
-function getEdgesAtLevel(edges: Edge[], nodeIds: string[]): { a: string; b: string }[] {
+function getEdgesAtLevel(edges: Edge[], nodeIds: string[]): Edge[] {
   const idSet = new Set(nodeIds);
-  return edges
-    .filter((e) => idSet.has(e.fromId) && idSet.has(e.toId))
-    .map((e) => ({ a: e.fromId, b: e.toId }));
+  return edges.filter((e) => idSet.has(e.fromId) && idSet.has(e.toId));
 }
 
+// ---------------------------------------------------------------------------
+// Flat scene builder
+// ---------------------------------------------------------------------------
+
 /**
- * Build a hierarchical CanvasScene from workspace state.
+ * Build a flat CanvasScene from workspace state.
  *
- * Each expanded composite becomes a container node with children.
- * Visual state is encoded in typed `node.state` for theme resolution.
+ * Walks the hierarchy and emits all nodes in world-space coordinates.
+ * Expanded containers become a background rect + children as top-level nodes.
+ * Array order = z-order (backgrounds before children).
  */
 export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNodeState> {
   const allLabels = collectAllLabels(opts.allTreeNodes);
+  const allNodes: CanvasNode<MarlinNodeState>[] = [];
+  const allEdges: CanvasEdge[] = [];
 
   // Determine port role colors (input/output params of focused composite)
   const parentNode = opts.focusId ? findNode(opts.allTreeNodes, opts.focusId) : null;
@@ -140,19 +153,38 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
     (parentNode?.ports ?? []).filter((p: Port) => p.direction === "out").map((p: Port) => p.name),
   );
 
-  function buildLevel(
+  // Index tree for ref-edge ancestor traversal
+  const parentOf = new Map<string, string>();
+  const allTreeNodeIds = new Set<string>();
+  function indexTree(nodes: TreeNode[], parentId: string | null) {
+    for (const n of nodes) {
+      allTreeNodeIds.add(n.id);
+      if (parentId) parentOf.set(n.id, parentId);
+      indexTree(n.children, n.id);
+    }
+  }
+  indexTree(opts.nodes, null);
+
+  // Track world positions for ref edge resolution
+  const worldPos = new Map<
+    string,
+    { node: TreeNode; wx: number; wy: number; w: number; h: number; shape: "circle" | "rect" }
+  >();
+
+  // Map labels to node IDs for ref resolution (non-ref nodes only)
+  const labelToId = new Map<string, string>();
+
+  function emitLevel(
     treeNodes: TreeNode[],
     levelId: string,
-  ): { nodes: CanvasNode<MarlinNodeState>[]; edges: CanvasEdge[] } {
+    worldOffset: { x: number; y: number },
+  ): void {
     const level = opts.layout.get(levelId);
-    if (!level) return { nodes: [], edges: [] };
+    if (!level) return;
 
     const posMap = new Map(level.nodes.map((n) => [n.id, n]));
     const nodeIds = treeNodes.map((n) => n.id);
-    const levelEdgeKeys = getEdgesAtLevel(opts.edges, nodeIds);
-    const levelEdges = opts.edges.filter((e) =>
-      levelEdgeKeys.some((le) => le.a === e.fromId && le.b === e.toId)
-    );
+    const levelEdges = getEdgesAtLevel(opts.edges, nodeIds);
 
     // Effective ports for collapsed nodes
     const effectivePortsMap = new Map<string, Port[]>();
@@ -162,7 +194,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
       if (ports.length > 0) effectivePortsMap.set(node.id, ports);
     }
 
-    // Edge-derived port dots
+    // Edge-derived port dots (need world-space positions for surfacePoint)
     const edgePortDots = new Map<string, { x: number; y: number; out: boolean }[]>();
     for (const edge of levelEdges) {
       const pa = posMap.get(edge.fromId);
@@ -188,12 +220,12 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
       }
     }
 
-    const canvasNodes: CanvasNode<MarlinNodeState>[] = [];
-
     for (const node of treeNodes) {
       const pos = posMap.get(node.id);
       if (!pos) continue;
 
+      const wx = worldOffset.x + pos.x;
+      const wy = worldOffset.y + pos.y;
       const isExpanded = opts.expandedSet.has(node.id) && node.kind === "composite";
       const isSelected = opts.selectedId === node.id;
       const isHighlighted = opts.highlightEntityIds.has(node.id);
@@ -204,6 +236,13 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
       const isInput = inputPortNames.has(node.label);
       const isOutput = outputPortNames.has(node.label) ||
         outputPortNames.has(node.data.outputPort as string);
+      const nodeShape: "circle" | "rect" = isExpanded
+        ? "rect"
+        : (pos.shape === "rect" ? "rect" : "circle");
+
+      // Track world position for ref edge resolution
+      worldPos.set(node.id, { node, wx, wy, w: pos.w, h: pos.h, shape: nodeShape });
+      if (node.type !== "ref") labelToId.set(node.label, node.id);
 
       // Edge-draw interaction state
       const isEdgeSource = node.id === opts.interaction.edgeDrawFromId;
@@ -220,22 +259,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
       const hasError = nodeDiags.some((d) => d.severity === "error");
       const hasWarning = !hasError && nodeDiags.some((d) => d.severity === "warning");
 
-      // Resolve ports for this node
-      let ports: CanvasPort[] | undefined;
-      if (isExpanded && node.ports && node.ports.length > 0) {
-        const positions = rectPortPositions(node.ports, pos.w / 2, pos.h / 2, LABEL_H);
-        ports = positions.map((p: PortPosition) => ({
-          name: p.portName,
-          direction: p.direction,
-          type: p.type,
-          x: p.x,
-          y: p.y,
-          nx: p.nx,
-          ny: p.ny,
-        }));
-      }
-
-      const state: MarlinNodeState = {
+      const baseState: MarlinNodeState = {
         levelId,
         isRef: isRefNode,
         isComposite,
@@ -253,61 +277,118 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
         refTarget: isRefNode && node.ref
           ? (findNode(opts.allTreeNodes, node.ref)?.label ?? node.ref)
           : undefined,
+        isContainerBackground: false,
       };
 
       if (isExpanded) {
-        // Recursively build children
-        const childResult = buildLevel(node.children, node.id);
-        canvasNodes.push({
+        // Resolve ports for the container
+        let ports: CanvasPort[] | undefined;
+        if (node.ports && node.ports.length > 0) {
+          const positions = rectPortPositions(node.ports, pos.w / 2, pos.h / 2, LABEL_H);
+          ports = positions.map((p: PortPosition) => ({
+            name: p.portName,
+            direction: p.direction,
+            type: p.type,
+            x: p.x,
+            y: p.y,
+            nx: p.nx,
+            ny: p.ny,
+          }));
+        }
+
+        // Emit container background (z-order: before children)
+        allNodes.push({
           id: node.id,
-          x: pos.x,
-          y: pos.y,
+          x: wx,
+          y: wy,
           w: pos.w,
           h: pos.h,
           shape: "rect",
-          label: node.label,
+          label: "", // suppresses default centered label
           selected: isSelected,
           highlighted: isHighlighted,
           dashed: isDashed,
-          expanded: true,
-          children: childResult.nodes,
-          edges: childResult.edges,
           ports,
-          state,
+          state: {
+            ...baseState,
+            isContainerBackground: true,
+            containerLabel: node.label,
+          },
         });
+
+        // Recurse into children (they'll be emitted after the background)
+        emitLevel(node.children, node.id, { x: wx, y: wy });
       } else {
-        canvasNodes.push({
+        allNodes.push({
           id: node.id,
-          x: pos.x,
-          y: pos.y,
+          x: wx,
+          y: wy,
           w: pos.w,
           h: pos.h,
-          shape: pos.shape === "rect" ? "rect" : "circle",
+          shape: nodeShape,
           label: node.label,
           selected: isSelected,
           highlighted: isHighlighted,
           dashed: isDashed,
-          ports,
-          state,
+          state: baseState,
         });
       }
     }
 
-    // Build canvas edges
-    const canvasEdges: CanvasEdge[] = levelEdges.map((e) => ({
-      id: e.id,
-      fromId: e.fromId,
-      toId: e.toId,
-      label: e.label,
-      selected: opts.selectedId === e.id,
-      highlighted: opts.highlightEntityIds.has(e.id),
-    }));
-
-    return { nodes: canvasNodes, edges: canvasEdges };
+    // Emit edges for this level (world-space: fromId/toId reference world-space nodes)
+    for (const e of levelEdges) {
+      allEdges.push({
+        id: e.id,
+        fromId: e.fromId,
+        toId: e.toId,
+        label: e.label,
+        selected: opts.selectedId === e.id,
+        highlighted: opts.highlightEntityIds.has(e.id),
+      });
+    }
   }
 
-  const result = buildLevel(opts.nodes, "");
-  return { nodes: result.nodes, edges: result.edges };
+  // Emit all levels starting from root
+  emitLevel(opts.nodes, "", { x: 0, y: 0 });
+
+  // Emit ref edges as regular edges
+  function nearestVisibleAncestor(nodeId: string): string | undefined {
+    let cur = parentOf.get(nodeId);
+    while (cur) {
+      if (worldPos.has(cur)) return cur;
+      cur = parentOf.get(cur);
+    }
+    return undefined;
+  }
+
+  if (opts.showRefEdges) {
+    let refIdx = 0;
+    for (const [id, { node }] of worldPos) {
+      if (node.type !== "ref" || !node.ref) continue;
+
+      let targetId = worldPos.has(node.ref) ? node.ref : labelToId.get(node.ref);
+      let indirect = false;
+
+      if (!targetId) {
+        const exactId = allTreeNodeIds.has(node.ref) ? node.ref : undefined;
+        if (exactId) {
+          targetId = nearestVisibleAncestor(exactId);
+          indirect = true;
+        }
+      }
+      if (!targetId || targetId === id) continue;
+
+      allEdges.push({
+        id: `ref-edge-${refIdx++}`,
+        fromId: id,
+        toId: targetId,
+        interactive: false,
+        kind: indirect ? "ref-indirect" : "ref-direct",
+      });
+    }
+  }
+
+  return { nodes: allNodes, edges: allEdges };
 }
 
 // ---------------------------------------------------------------------------
@@ -317,6 +398,31 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
 function resolveNodeStyle(node: CanvasNode<MarlinNodeState>): NodeStyle {
   const s = node.state!;
   const { selected, highlighted } = node;
+
+  // Container backgrounds have distinct styling
+  if (s.isContainerBackground) {
+    let fill = s.isRef ? "#0f0f24" : "#0f0f28";
+    if (s.hasError) fill = "#1a0f0f";
+
+    let stroke = "#1e1e44";
+    if (s.hasError) stroke = "#c04040";
+    else if (s.hasWarning) stroke = "#c08020";
+    else if (selected) stroke = "#4060b0";
+    else if (highlighted) stroke = "#50c070";
+    else if (s.isRef) stroke = "#605080";
+
+    let strokeWidth = 1;
+    if (selected || s.hasError || s.hasWarning || highlighted) strokeWidth = 2;
+
+    return {
+      fill,
+      stroke,
+      strokeWidth,
+      labelFill: "transparent", // label rendered via decorations
+      labelFont: "sans-serif",
+      labelSize: 11,
+    };
+  }
 
   // Fill
   let fill = "#111125";
@@ -361,39 +467,34 @@ function resolveNodeStyle(node: CanvasNode<MarlinNodeState>): NodeStyle {
   };
 }
 
-function resolveContainerStyle(node: CanvasNode<MarlinNodeState>): ContainerStyle {
-  const s = node.state!;
-  const { selected, highlighted, dashed } = node;
-  const isHighlighted = highlighted ?? false;
-
-  let fill = s.isRef ? "#0f0f24" : "#0f0f28";
-  if (s.hasError) fill = "#1a0f0f";
-
-  let stroke = "#1e1e44";
-  if (s.hasError) stroke = "#c04040";
-  else if (s.hasWarning) stroke = "#c08020";
-  else if (selected) stroke = "#4060b0";
-  else if (isHighlighted) stroke = "#50c070";
-  else if (s.isRef) stroke = "#605080";
-
-  let strokeWidth = 1;
-  if (selected || s.hasError || s.hasWarning || isHighlighted) strokeWidth = 2;
-
-  const labelFill = selected ? "#8090c0" : s.hasError ? "#c07070" : "#444466";
-
-  return {
-    fill,
-    stroke,
-    strokeWidth,
-    labelFill,
-    labelFont: "sans-serif",
-    labelSize: 11,
-    cornerRadius: 8,
-    strokeDash: dashed ? "6,3" : undefined,
-  };
-}
-
 function resolveEdgeStyle(edge: CanvasEdge): EdgeStyle {
+  // Ref edges
+  if (edge.kind === "ref-direct") {
+    return {
+      stroke: "#605080",
+      strokeWidth: 1,
+      arrowSize: 10,
+      labelFill: "#556",
+      labelFont: "sans-serif",
+      labelSize: 10,
+      strokeDash: "4,3",
+      endCap: "dot",
+    };
+  }
+  if (edge.kind === "ref-indirect") {
+    return {
+      stroke: "#403860",
+      strokeWidth: 1,
+      arrowSize: 10,
+      labelFill: "#556",
+      labelFont: "sans-serif",
+      labelSize: 10,
+      strokeDash: "2,4",
+      opacity: 0.6,
+      endCap: "dot",
+    };
+  }
+
   const stroke = edge.selected ? "#5070c0" : edge.highlighted ? "#50c070" : "#2a2a50";
   const strokeWidth = edge.selected ? 2 : 1;
   return {
@@ -415,26 +516,43 @@ function resolvePortStyle(port: CanvasPort, _node: CanvasNode<MarlinNodeState>):
   };
 }
 
-/** Produce decorations: diagnostic badges, ref indicators, children count, port dots. */
+/** Produce decorations: diagnostic badges, ref indicators, children count, port dots, container labels. */
 function resolveDecorations(node: CanvasNode<MarlinNodeState>): RenderPrimitive[] {
   const s = node.state!;
   const prims: RenderPrimitive[] = [];
   const isRect = node.shape === "rect";
   const r = Math.min(node.w, node.h) / 2;
 
+  // Container background: top-left label
+  if (s.isContainerBackground && s.containerLabel) {
+    const halfW = node.w / 2;
+    const halfH = node.h / 2;
+    const labelFill = node.selected ? "#8090c0" : s.hasError ? "#c07070" : "#444466";
+    prims.push({
+      kind: "text",
+      x: -halfW + 10,
+      y: -halfH + 16,
+      text: s.containerLabel,
+      fill: labelFill,
+      fontSize: 11,
+      fontFamily: "sans-serif",
+      anchor: "start",
+    });
+    // Container backgrounds don't get other decorations
+    return prims;
+  }
+
   // Children count badge
-  if (s.hasChildren && !node.expanded) {
-    if (s.childrenCount > 0) {
-      prims.push({
-        kind: "text",
-        x: 0,
-        y: 10,
-        text: `(${s.childrenCount})`,
-        fill: node.selected ? "#6070a0" : "#3a3a60",
-        fontSize: 8,
-        anchor: "middle",
-      });
-    }
+  if (s.hasChildren && s.childrenCount > 0) {
+    prims.push({
+      kind: "text",
+      x: 0,
+      y: 10,
+      text: `(${s.childrenCount})`,
+      fill: node.selected ? "#6070a0" : "#3a3a60",
+      fontSize: 8,
+      anchor: "middle",
+    });
   }
 
   // Error/warning badge
@@ -486,7 +604,6 @@ export const marlinIdeTheme: CanvasTheme<MarlinNodeState> = {
   node: resolveNodeStyle,
   edge: resolveEdgeStyle,
   port: resolvePortStyle,
-  container: resolveContainerStyle,
   decorations: resolveDecorations,
   background: "#0d0d1e",
 };

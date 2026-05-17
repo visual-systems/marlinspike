@@ -26,7 +26,7 @@ import { SmallBtn } from "./widgets.tsx";
 import { type BBox, boundingBox, centerNodes, type ForceNode } from "../lib/force.ts";
 import { rectPortPositions } from "../lib/port-layout.ts";
 import { hitTest, renderScene, renderWith, svgRenderer } from "@marlinspike/canvas";
-import type { CanvasNode, CanvasScene, RenderGroup } from "@marlinspike/canvas";
+import type { CanvasNode, CanvasScene, RenderGroup, RenderPrimitive } from "@marlinspike/canvas";
 import {
   buildCanvasScene,
   type BuildSceneOptions,
@@ -74,56 +74,12 @@ const DRAG_THRESHOLD_SQ = 16; // 4px
 // Scene lookup
 // ---------------------------------------------------------------------------
 
-/** Find a node by ID in a hierarchical scene. */
+/** Find a node by ID in a flat scene. */
 function findSceneNode<S>(
   nodes: CanvasNode<S>[],
   id: string,
 ): CanvasNode<S> | undefined {
-  for (const n of nodes) {
-    if (n.id === id) return n;
-    if (n.children) {
-      const found = findSceneNode(n.children, id);
-      if (found) return found;
-    }
-  }
-  return undefined;
-}
-
-// ---------------------------------------------------------------------------
-// Geometry helpers (kept for renderRefEdges)
-// ---------------------------------------------------------------------------
-
-/** Half-height of a collapsed rect node (rect uses LEAF_R as half-width, 0.7*LEAF_R as half-height). */
-const RECT_HALF_H = LEAF_R * 0.7;
-
-/** Returns the point on `from`'s boundary in the direction of `to`, offset outward by `gap` px. */
-function surfacePoint(
-  from: ForceNode,
-  to: ForceNode,
-  gap = 0,
-): { x: number; y: number } {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist < 0.001) return { x: from.x, y: from.y };
-  const ux = dx / dist;
-  const uy = dy / dist;
-  if (from.w === LEAF_W && from.h === LEAF_H) {
-    if (from.shape === "rect") {
-      // collapsed rect node: ray-AABB clip with rect dimensions
-      const tx = Math.abs(ux) > 0.001 ? LEAF_R / Math.abs(ux) : Infinity;
-      const ty = Math.abs(uy) > 0.001 ? RECT_HALF_H / Math.abs(uy) : Infinity;
-      const t = Math.min(tx, ty);
-      return { x: from.x + ux * (t + gap), y: from.y + uy * (t + gap) };
-    }
-    // collapsed circle node
-    return { x: from.x + ux * (LEAF_R + gap), y: from.y + uy * (LEAF_R + gap) };
-  }
-  // expanded rectangle: ray-AABB clip
-  const tx = Math.abs(ux) > 0.001 ? (from.w / 2) / Math.abs(ux) : Infinity;
-  const ty = Math.abs(uy) > 0.001 ? (from.h / 2) / Math.abs(uy) : Infinity;
-  const t = Math.min(tx, ty);
-  return { x: from.x + ux * (t + gap), y: from.y + uy * (t + gap) };
+  return nodes.find((n) => n.id === id);
 }
 
 // ---------------------------------------------------------------------------
@@ -1345,7 +1301,7 @@ export function Canvas(
       return;
     }
     if (modeRef.current === "add-node") {
-      if (node && node.expanded) {
+      if (node && node.state?.isContainerBackground) {
         // Clicked inside expanded container — add child relative to container
         addNode(hit!.id, canvasPos.x - node.x, canvasPos.y - node.y);
       } else {
@@ -1405,7 +1361,7 @@ export function Canvas(
     if (!hit) return;
     const node = findSceneNode(sceneRef.current!.nodes, hit.id);
     if (!node) return;
-    if (node.expanded) {
+    if (node.state?.isContainerBackground) {
       collapseNode(hit.id);
     } else if (node.state?.isComposite) {
       expandNode(hit.id);
@@ -1527,9 +1483,15 @@ export function Canvas(
     highlightEntityIds: highlightEntityIds ?? new Set(),
     allTreeNodes: ws.treeNodes,
     focusId: ws.focusId,
+    showRefEdges: ws.canvasShowRefEdges,
   };
   const canvasScene = buildCanvasScene(sceneOpts);
   const renderRoot: RenderGroup = renderScene(canvasScene, marlinIdeTheme);
+
+  // Append ghost edge (UI-layer, changes every mouse move)
+  const ghost = ghostEdgePrimitive(mode, edgeDraw, mouseCanvas);
+  if (ghost) renderRoot.children.push(ghost);
+
   const [svgContent] = renderWith(svgRenderer, renderRoot);
   // Update refs so event handlers can access current values
   renderRootRef.current = renderRoot;
@@ -1560,11 +1522,7 @@ export function Canvas(
       >
         <g
           transform={`translate(${view.tx}, ${view.ty}) scale(${view.scale})`}
-          dangerouslySetInnerHTML={{
-            __html: svgContent +
-              renderRefEdges(focusedRootNodes, layout, expandedSet, ws) +
-              renderGhostEdge(mode, edgeDraw, mouseCanvas),
-          }}
+          dangerouslySetInnerHTML={{ __html: svgContent }}
         />
       </svg>
 
@@ -1598,130 +1556,28 @@ export function Canvas(
 }
 
 // ---------------------------------------------------------------------------
-// SVG string helpers (for dangerouslySetInnerHTML overlay content)
+// Ghost edge primitive (UI-layer — changes every mouse move during edge-draw)
 // ---------------------------------------------------------------------------
 
-/**
- * Render reference edges as SVG string (cross-level dotted lines from ref → target).
- */
-function renderRefEdges(
-  focusedRootNodes: TreeNode[],
-  layout: LayoutMap,
-  expandedSet: Set<string>,
-  ws: WorkspaceState,
-): string {
-  if (!ws.canvasShowRefEdges) return "";
-  const worldPos = new Map<
-    string,
-    { node: TreeNode; wx: number; wy: number; w: number; h: number }
-  >();
-  collectWorldPositions(focusedRootNodes, "", layout, expandedSet, { x: 0, y: 0 }, worldPos);
-
-  const labelToId = new Map<string, string>();
-  for (const [id, { node }] of worldPos) {
-    if (node.type !== "ref") labelToId.set(node.label, id);
-  }
-  const parentOf = new Map<string, string>();
-  const allNodeIds = new Set<string>();
-  function indexTree(nodes: TreeNode[], parentId: string | null) {
-    for (const n of nodes) {
-      allNodeIds.add(n.id);
-      if (parentId) parentOf.set(n.id, parentId);
-      indexTree(n.children, n.id);
-    }
-  }
-  indexTree(focusedRootNodes, null);
-  function nearestVisibleAncestor(nodeId: string): string | undefined {
-    let cur = parentOf.get(nodeId);
-    while (cur) {
-      if (worldPos.has(cur)) return cur;
-      cur = parentOf.get(cur);
-    }
-    return undefined;
-  }
-
-  let svg = "";
-  for (const [id, { node, wx, wy, w, h }] of worldPos) {
-    if (node.type !== "ref" || !node.ref) continue;
-    let targetId = worldPos.has(node.ref) ? node.ref : labelToId.get(node.ref);
-    let indirect = false;
-    if (!targetId) {
-      const exactId = allNodeIds.has(node.ref) ? node.ref : undefined;
-      const hiddenId = exactId;
-      if (hiddenId) {
-        targetId = nearestVisibleAncestor(hiddenId);
-        indirect = true;
-      }
-    }
-    if (!targetId || targetId === id) continue;
-    const t = worldPos.get(targetId)!;
-    const pa = { x: wx, y: wy, w, h } as ForceNode;
-    const pb = { x: t.wx, y: t.wy, w: t.w, h: t.h } as ForceNode;
-    const src = surfacePoint(pa, pb, 5);
-    const dst = surfacePoint(pb, pa, 5);
-    const dx = dst.x - src.x, dy = dst.y - src.y;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    const ux = len > 0 ? dx / len : 1, uy = len > 0 ? dy / len : 0;
-    const color = indirect ? "#403860" : "#605080";
-    const dash = indirect ? "2,4" : "4,3";
-    const op = indirect ? 0.6 : 1;
-    const d = `M${src.x},${src.y} L${dst.x},${dst.y}`;
-    const dotR = indirect ? 2 : 3;
-    svg += `<g style="pointer-events:none;">` +
-      `<path d="${d}" stroke="${color}" stroke-width="1" stroke-dasharray="${dash}" fill="none" opacity="${op}"/>` +
-      `<circle cx="${dst.x + ux * 5}" cy="${
-        dst.y + uy * 5
-      }" r="${dotR}" fill="${color}" opacity="${op}"/>` +
-      `</g>`;
-  }
-  return svg;
-}
-
-/**
- * Render ghost edge line as SVG string (visible while drawing a new edge).
- */
-function renderGhostEdge(
+/** Produce a render primitive for the ghost edge shown while drawing a new edge. */
+function ghostEdgePrimitive(
   mode: string,
   edgeDraw: { fromId: string; x: number; y: number; levelId: string } | null,
   mouseCanvas: { x: number; y: number } | null,
-): string {
-  if (mode !== "add-edge" || !edgeDraw || !mouseCanvas) return "";
+): RenderPrimitive | null {
+  if (mode !== "add-edge" || !edgeDraw || !mouseCanvas) return null;
   const gdx = mouseCanvas.x - edgeDraw.x;
   const gdy = mouseCanvas.y - edgeDraw.y;
   const gd = Math.sqrt(gdx * gdx + gdy * gdy);
   const gp = gd < 0.001
     ? { x: edgeDraw.x, y: edgeDraw.y }
     : { x: edgeDraw.x + gdx / gd * (LEAF_R + 5), y: edgeDraw.y + gdy / gd * (LEAF_R + 5) };
-  return `<line x1="${gp.x}" y1="${gp.y}" x2="${mouseCanvas.x}" y2="${mouseCanvas.y}" ` +
-    `stroke="#5070c0" stroke-width="1.5" stroke-dasharray="6 4" style="pointer-events:none;"/>`;
+  return {
+    kind: "path",
+    d: `M${gp.x},${gp.y} L${mouseCanvas.x},${mouseCanvas.y}`,
+    stroke: "#5070c0",
+    strokeWidth: 1.5,
+    fill: "none",
+    strokeDash: "6 4",
+  };
 }
-
-/**
- * Collect world-space positions and TreeNode references for all visible nodes
- * across all expanded levels. Used for cross-level reference edge rendering.
- */
-function collectWorldPositions(
-  nodes: TreeNode[],
-  levelId: string,
-  layout: LayoutMap,
-  expandedSet: Set<string>,
-  worldOffset: { x: number; y: number },
-  out: Map<string, { node: TreeNode; wx: number; wy: number; w: number; h: number }>,
-): void {
-  const level = layout.get(levelId);
-  if (!level) return;
-  const posMap = new Map(level.nodes.map((n) => [n.id, n]));
-  for (const node of nodes) {
-    const pos = posMap.get(node.id);
-    if (!pos) continue;
-    const wx = worldOffset.x + pos.x;
-    const wy = worldOffset.y + pos.y;
-    out.set(node.id, { node, wx, wy, w: pos.w, h: pos.h });
-    if (expandedSet.has(node.id) && node.kind === "composite") {
-      collectWorldPositions(node.children, node.id, layout, expandedSet, { x: wx, y: wy }, out);
-    }
-  }
-}
-
-// renderLevel removed — rendering now handled by @marlinspike/canvas package
-// via buildCanvasScene + renderScene + svgRenderer in the Canvas component.
