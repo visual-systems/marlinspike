@@ -129,6 +129,9 @@ Container backgrounds are just large rect nodes placed behind their children in 
 - [x] PointerHandler dispatches correct hooks for drag, click, double-click, hover
 - [x] Edge extensibility: dash, dot endCap, non-interactive edges all render correctly
 - [x] Hierarchical story demonstrates consumer-side expand/collapse with flat scenes
-- [ ] Visual check: expanded containers render correctly (background + children + ports)
-- [ ] Visual check: ref edges render (dashed + dot)
-- [ ] Visual check: ghost edge works during edge-draw
+- [x] Visual check: expanded containers render correctly (background + children + ports)
+- [x] Visual check: ref edges render (dashed + dot)
+- [x] Visual check: ghost edge works during edge-draw
+- [x] Fix: port node coloring — per-level port identification (was computed once globally)
+- [x] Fix: pinch-to-zoom after pan — `pointer-events:none` on SVG content `<g>` prevents child elements from becoming gesture targets
+- [x] Zoom improvements: 5% factor, max 5x, skip re-render when clamped

@@ -981,18 +981,23 @@ export function Canvas(
       e.preventDefault();
       if (e.ctrlKey) {
         // Pinch-to-zoom via trackpad (browser sets ctrlKey for pinch gestures)
+        if (panRef.current) {
+          panRef.current = null;
+          document.body.style.cursor = "";
+        }
         const rect = el.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
-        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+        const factor = e.deltaY < 0 ? 1.05 : 1 / 1.05;
         setView((v) => {
-          const newScale = Math.max(0.1, Math.min(10, v.scale * factor));
+          const newScale = Math.max(0.1, Math.min(5, v.scale * factor));
+          if (newScale === v.scale) return v; // skip re-render when clamped
           const canvasX = (mx - v.tx) / v.scale;
           const canvasY = (my - v.ty) / v.scale;
           return { scale: newScale, tx: mx - canvasX * newScale, ty: my - canvasY * newScale };
         });
       } else {
-        // Two-finger scroll → pan (inverted: dragging canvas behind viewport)
+        // Two-finger scroll → pan
         document.body.style.cursor = "none";
         if (scrollCursorTimer.current) clearTimeout(scrollCursorTimer.current);
         scrollCursorTimer.current = setTimeout(() => {
@@ -1060,7 +1065,7 @@ export function Canvas(
         const nowDist = Math.hypot(nowB.x - nowA.x, nowB.y - nowA.y);
         if (origDist < 1) return;
         const factor = nowDist / origDist;
-        const newScale = Math.max(0.1, Math.min(10, state.origView.scale * factor));
+        const newScale = Math.max(0.1, Math.min(5, state.origView.scale * factor));
 
         // Pan: shift from original midpoint to current midpoint
         const origMidX = (origA.x + origB.x) / 2 - rect.left;
@@ -1522,6 +1527,7 @@ export function Canvas(
       >
         <g
           transform={`translate(${view.tx}, ${view.ty}) scale(${view.scale})`}
+          style="pointer-events:none;"
           dangerouslySetInnerHTML={{ __html: svgContent }}
         />
       </svg>

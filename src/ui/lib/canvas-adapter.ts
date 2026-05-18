@@ -144,15 +144,6 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
   const allNodes: CanvasNode<MarlinNodeState>[] = [];
   const allEdges: CanvasEdge[] = [];
 
-  // Determine port role colors (input/output params of focused composite)
-  const parentNode = opts.focusId ? findNode(opts.allTreeNodes, opts.focusId) : null;
-  const inputPortNames = new Set(
-    (parentNode?.ports ?? []).filter((p: Port) => p.direction === "in").map((p: Port) => p.name),
-  );
-  const outputPortNames = new Set(
-    (parentNode?.ports ?? []).filter((p: Port) => p.direction === "out").map((p: Port) => p.name),
-  );
-
   // Index tree for ref-edge ancestor traversal
   const parentOf = new Map<string, string>();
   const allTreeNodeIds = new Set<string>();
@@ -178,7 +169,19 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
     treeNodes: TreeNode[],
     levelId: string,
     worldOffset: { x: number; y: number },
+    parentComposite: TreeNode | null,
   ): void {
+    // Port role identification from the parent composite's declared ports
+    const inputPortNames = new Set(
+      (parentComposite?.ports ?? []).filter((p: Port) => p.direction === "in").map((p: Port) =>
+        p.name
+      ),
+    );
+    const outputPortNames = new Set(
+      (parentComposite?.ports ?? []).filter((p: Port) => p.direction === "out").map((p: Port) =>
+        p.name
+      ),
+    );
     const level = opts.layout.get(levelId);
     if (!level) return;
 
@@ -317,7 +320,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
         });
 
         // Recurse into children (they'll be emitted after the background)
-        emitLevel(node.children, node.id, { x: wx, y: wy });
+        emitLevel(node.children, node.id, { x: wx, y: wy }, node);
       } else {
         allNodes.push({
           id: node.id,
@@ -349,7 +352,8 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
   }
 
   // Emit all levels starting from root
-  emitLevel(opts.nodes, "", { x: 0, y: 0 });
+  const focusNode = opts.focusId ? findNode(opts.allTreeNodes, opts.focusId) ?? null : null;
+  emitLevel(opts.nodes, "", { x: 0, y: 0 }, focusNode);
 
   // Emit ref edges as regular edges
   function nearestVisibleAncestor(nodeId: string): string | undefined {
