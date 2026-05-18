@@ -1,9 +1,14 @@
 /**
  * Scene graph types for canvas rendering.
  *
- * A CanvasScene is a flat collection of positioned nodes and edges.
- * Nodes carry shape, dimensions, and optional port positions.
+ * A CanvasScene is a collection of positioned nodes and edges.
+ * Nodes carry shape, dimensions, optional port positions, and
+ * optional children for hierarchical (nested container) rendering.
  * Edges reference nodes by ID.
+ *
+ * The `S` type parameter allows consumers to attach typed state
+ * to nodes for use in theme resolvers — the package itself never
+ * inspects this state, only passes it through.
  */
 
 /** A port on a canvas node — position relative to node center. */
@@ -22,7 +27,7 @@ export interface CanvasPort {
 }
 
 /** A positioned node in the canvas scene. */
-export interface CanvasNode {
+export interface CanvasNode<S = unknown> {
   id: string;
   x: number;
   y: number;
@@ -34,7 +39,8 @@ export interface CanvasNode {
   selected?: boolean;
   highlighted?: boolean;
   dashed?: boolean;
-  data?: Record<string, unknown>;
+  /** Consumer-specific state, typed per-consumer. Opaque to the package. */
+  state?: S;
 }
 
 /** A directed edge between two nodes. */
@@ -45,10 +51,17 @@ export interface CanvasEdge {
   label?: string;
   selected?: boolean;
   highlighted?: boolean;
+  /** If false, edge has no hit area and cannot be interacted with. Default true. */
+  interactive?: boolean;
+  /** Consumer classification for style resolution (e.g. "ref-direct"). Package ignores this. */
+  kind?: string;
 }
 
-/** A flat scene: positioned nodes + edges. */
-export interface CanvasScene {
-  nodes: CanvasNode[];
+/**
+ * A scene: positioned nodes and edges.
+ * Array order determines z-order (first = bottom, last = top).
+ */
+export interface CanvasScene<S = unknown> {
+  nodes: CanvasNode<S>[];
   edges: CanvasEdge[];
 }

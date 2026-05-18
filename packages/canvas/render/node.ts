@@ -1,5 +1,7 @@
 /**
  * Node rendering — produces render primitives for a canvas node.
+ *
+ * Renders a node as a shape (circle or rect) with label, ports, and decorations.
  */
 
 import type { CanvasNode } from "../scene/types.ts";
@@ -8,9 +10,9 @@ import type { RenderPrimitive } from "./primitives.ts";
 
 /**
  * Produce render primitives for a single node.
- * Returns a group containing the shape and label.
+ * Returns a group containing the shape, label, ports, and decorations.
  */
-export function renderNode(node: CanvasNode, theme: CanvasTheme): RenderPrimitive {
+export function renderNode<S>(node: CanvasNode<S>, theme: CanvasTheme<S>): RenderPrimitive {
   const style = theme.node(node);
   const children: RenderPrimitive[] = [];
 
@@ -71,11 +73,26 @@ export function renderNode(node: CanvasNode, theme: CanvasTheme): RenderPrimitiv
     }
   }
 
+  // Decorations (badges, indicators, etc.)
+  if (theme.decorations) {
+    children.push(...theme.decorations(node));
+  }
+
   return {
     kind: "group",
     transform: `translate(${node.x}, ${node.y})`,
+    tx: node.x,
+    ty: node.y,
     children,
     opacity: style.opacity,
     id: node.id,
+    interaction: {
+      id: node.id,
+      draggable: true,
+      clickable: true,
+      doubleClickable: true,
+      hoverable: true,
+      cursor: "pointer",
+    },
   };
 }

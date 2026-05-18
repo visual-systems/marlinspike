@@ -63,7 +63,7 @@ Deno.test("marlinTheme — dashed node style (ref-like)", () => {
   assertEquals(style.stroke, "#605080");
 });
 
-Deno.test("marlinTheme — inactive node has opacity", () => {
+Deno.test("marlinTheme — default node has no opacity", () => {
   const style = marlinTheme.node({
     id: "n",
     x: 0,
@@ -72,9 +72,8 @@ Deno.test("marlinTheme — inactive node has opacity", () => {
     h: 52,
     shape: "circle",
     label: "N",
-    data: { inactive: true },
   });
-  assertEquals(style.opacity, 0.3);
+  assertEquals(style.opacity, undefined);
 });
 
 Deno.test("marlinTheme — default edge style", () => {

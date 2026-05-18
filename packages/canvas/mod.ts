@@ -26,6 +26,7 @@ export type {
   CanvasTheme,
   EdgeStyle,
   EdgeStyleResolver,
+  NodeDecorationsResolver,
   NodeStyle,
   NodeStyleResolver,
   PortStyle,
@@ -113,3 +114,12 @@ export { svgRenderer } from "./render/svg.ts";
 // ---------------------------------------------------------------------------
 
 export { marlinTheme } from "./style/marlin-theme.ts";
+
+// ---------------------------------------------------------------------------
+// Interaction
+// ---------------------------------------------------------------------------
+
+export type { CanvasInteraction, InteractionHint } from "./interaction/types.ts";
+export { hitTest } from "./interaction/hit-test.ts";
+export { PointerHandler } from "./interaction/pointer.ts";
+export type { PointerHandlerConfig } from "./interaction/pointer.ts";

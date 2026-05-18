@@ -1,8 +1,11 @@
 /**
  * Scene rendering — produces a complete render primitive tree from a CanvasScene.
  *
- * This is the main entry point for rendering. It takes a flat scene and theme,
+ * This is the main entry point for rendering. It takes a scene and theme,
  * and returns a RenderGroup containing all nodes and edges.
+ *
+ * Array order in the scene determines z-order: nodes rendered first appear
+ * behind nodes rendered later.
  */
 
 import type { CanvasScene } from "../scene/types.ts";
@@ -12,12 +15,12 @@ import { renderNode } from "./node.ts";
 import { computeEdgePath, groupEdges, renderEdge } from "./edge.ts";
 
 /**
- * Render a flat CanvasScene into a render primitive tree.
+ * Render a CanvasScene into a render primitive tree.
  *
  * Rendering order: nodes first (background), then edge paths, then edge labels on top.
  * Multi-edge grouping is handled automatically.
  */
-export function renderScene(scene: CanvasScene, theme: CanvasTheme): RenderGroup {
+export function renderScene<S>(scene: CanvasScene<S>, theme: CanvasTheme<S>): RenderGroup {
   const children: RenderPrimitive[] = [];
   const nodeMap = new Map(scene.nodes.map((n) => [n.id, n]));
 
@@ -44,7 +47,6 @@ export function renderScene(scene: CanvasScene, theme: CanvasTheme): RenderGroup
     if (!data) continue;
     const edgeGroup = renderEdge(data, theme);
     if (edgeGroup.kind === "group") {
-      // Split: non-text children go in pass 1, text children in pass 2
       const pathChildren: RenderPrimitive[] = [];
       const labelChildren: RenderPrimitive[] = [];
       for (const child of edgeGroup.children) {
@@ -55,7 +57,12 @@ export function renderScene(scene: CanvasScene, theme: CanvasTheme): RenderGroup
         }
       }
       if (pathChildren.length > 0) {
-        edgePathPrimitives.push({ kind: "group", children: pathChildren, id: edgeGroup.id });
+        edgePathPrimitives.push({
+          kind: "group",
+          children: pathChildren,
+          id: edgeGroup.id,
+          interaction: edgeGroup.interaction,
+        });
       }
       if (labelChildren.length > 0) {
         edgeLabelPrimitives.push(...labelChildren);

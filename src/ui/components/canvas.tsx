@@ -8,7 +8,6 @@ import {
   findParentOf,
   findPath,
   isRef,
-  type Port,
   type TreeNode,
 } from "@marlinspike/graph";
 import {
@@ -25,10 +24,17 @@ import type { DiagnosticMap } from "../../graph/diagnostics.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { SmallBtn } from "./widgets.tsx";
 import { type BBox, boundingBox, centerNodes, type ForceNode } from "../lib/force.ts";
-import { rectPortPositions, resolveNodePorts } from "../lib/port-layout.ts";
-import { lineSdfDist } from "@marlinspike/canvas";
+import { rectPortPositions } from "../lib/port-layout.ts";
+import { hitTest, renderScene, renderWith, svgRenderer } from "@marlinspike/canvas";
+import type { CanvasNode, CanvasScene, RenderGroup, RenderPrimitive } from "@marlinspike/canvas";
+import {
+  buildCanvasScene,
+  type BuildSceneOptions,
+  type CanvasInteractionState,
+  marlinIdeTheme,
+  type MarlinNodeState,
+} from "../lib/canvas-adapter.ts";
 import { topoCharge } from "../lib/topo-charge.ts";
-import { NodePorts } from "./port-rendering.tsx";
 import {
   createFIELD,
   createJANK,
@@ -65,285 +71,15 @@ const LABEL_H = 22;
 const DRAG_THRESHOLD_SQ = 16; // 4px
 
 // ---------------------------------------------------------------------------
-// Ref helpers
+// Scene lookup
 // ---------------------------------------------------------------------------
 
-/** Collect all node labels in the tree (flat). */
-function collectAllLabels(roots: TreeNode[]): Set<string> {
-  const labels = new Set<string>();
-  (function walk(ns: TreeNode[]) {
-    for (const n of ns) {
-      labels.add(n.label);
-      walk(n.children);
-    }
-  })(roots);
-  return labels;
-}
-
-/** Dashed outline for explicit aliases, URI refs, broken/imported refs — NOT scope-inferred. */
-function refNeedsDash(node: TreeNode, allLabels: Set<string>): boolean {
-  if (!isRef(node) || !node.ref) return false;
-  // Explicit top-level alias (def name target) — no data.fn
-  if (!node.data.fn) return true;
-  // URI reference (spike://...)
-  if (node.ref.startsWith("spike://")) return true;
-  // Broken or imported: target not found in tree
-  if (!allLabels.has(node.ref)) return true;
-  return false;
-}
-
-// ---------------------------------------------------------------------------
-// Edge helpers
-// ---------------------------------------------------------------------------
-
-/** Unit vector of the path's direction of travel at its endpoint (dst).
- *  For straight paths this is the chord direction; for arcs it is the circle tangent. */
-/** Arc tangent at dst, given the actual arc circle center arcC. sweep=1 → CW in screen space. */
-function pathEndTangent(
-  src: { x: number; y: number },
-  dst: { x: number; y: number },
-  needsArc: boolean,
-  _r: number,
-  sweep: number,
-  arcC?: { x: number; y: number },
-): { x: number; y: number } {
-  const dx = dst.x - src.x;
-  const dy = dst.y - src.y;
-  const d = Math.sqrt(dx * dx + dy * dy);
-  if (d < 0.001) return { x: 1, y: 0 };
-  if (!needsArc) return { x: dx / d, y: dy / d };
-  const cx = arcC?.x ?? (src.x + dst.x) / 2;
-  const cy = arcC?.y ?? (src.y + dst.y) / 2;
-  // Radius vector at dst. In screen space (Y-down):
-  // CW tangent (sweep=1) = (-rv.y, rv.x); CCW (sweep=0) = (rv.y, -rv.x)
-  const rvx = dst.x - cx, rvy = dst.y - cy;
-  const tx = sweep === 1 ? -rvy : rvy;
-  const ty = sweep === 1 ? rvx : -rvx;
-  const tl = Math.sqrt(tx * tx + ty * ty);
-  return tl < 0.001 ? { x: dx / d, y: dy / d } : { x: tx / tl, y: ty / tl };
-}
-
-/**
- * Returns the geometric midpoint of a circular arc given the actual arc circle center.
- * For a short arc (< 180°), the midpoint is in the direction of normalize(vs + vd) from arcC,
- * where vs/vd are unit vectors from arcC to src/dst. This is sweep-independent.
- */
-function arcMidpoint(
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-  r: number,
-  _sweep: number,
-  arcC?: { x: number; y: number },
-): { x: number; y: number } {
-  if (!arcC) {
-    // Fallback: chord midpoint
-    return { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
-  }
-  const vsx = x1 - arcC.x, vsy = y1 - arcC.y;
-  const vdx = x2 - arcC.x, vdy = y2 - arcC.y;
-  const bx = vsx + vdx, by = vsy + vdy;
-  const bl = Math.sqrt(bx * bx + by * by);
-  if (bl < 0.001) return { x: arcC.x, y: arcC.y + r };
-  return { x: arcC.x + r * bx / bl, y: arcC.y + r * by / bl };
-}
-
-/** Half-height of a collapsed rect node (rect uses LEAF_R as half-width, 0.7*LEAF_R as half-height). */
-const RECT_HALF_H = LEAF_R * 0.7;
-
-/** Returns the point on `from`'s boundary in the direction of `to`, offset outward by `gap` px. */
-function surfacePoint(
-  from: ForceNode,
-  to: ForceNode,
-  gap = 0,
-): { x: number; y: number } {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist < 0.001) return { x: from.x, y: from.y };
-  const ux = dx / dist;
-  const uy = dy / dist;
-  if (from.w === LEAF_W && from.h === LEAF_H) {
-    if (from.shape === "rect") {
-      // collapsed rect node: ray-AABB clip with rect dimensions
-      const tx = Math.abs(ux) > 0.001 ? LEAF_R / Math.abs(ux) : Infinity;
-      const ty = Math.abs(uy) > 0.001 ? RECT_HALF_H / Math.abs(uy) : Infinity;
-      const t = Math.min(tx, ty);
-      return { x: from.x + ux * (t + gap), y: from.y + uy * (t + gap) };
-    }
-    // collapsed circle node
-    return { x: from.x + ux * (LEAF_R + gap), y: from.y + uy * (LEAF_R + gap) };
-  }
-  // expanded rectangle: ray-AABB clip
-  const tx = Math.abs(ux) > 0.001 ? (from.w / 2) / Math.abs(ux) : Infinity;
-  const ty = Math.abs(uy) > 0.001 ? (from.h / 2) / Math.abs(uy) : Infinity;
-  const t = Math.min(tx, ty);
-  return { x: from.x + ux * (t + gap), y: from.y + uy * (t + gap) };
-}
-
-/**
- * Compute a signed perpendicular offset `h` for obstacle avoidance.
- * Returns 0 if no obstruction. The offset is relative to the pa→pb midpoint
- * along the perpendicular direction: positive = left side, negative = right side
- * (in screen coords with Y-down).
- */
-function edgeArcOffset(
-  pa: { x: number; y: number },
-  pb: { x: number; y: number },
-  levelNodes: ForceNode[],
-  edgeNodeIds: [string, string],
-  clearance: number,
-): number {
-  const dx = pb.x - pa.x;
-  const dy = pb.y - pa.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist < 0.001) return 0;
-
-  let bestDist = clearance;
-  let bestSign = 0;
-  let bestSagitta = 0;
-
-  for (const n of levelNodes) {
-    if (n.id === edgeNodeIds[0] || n.id === edgeNodeIds[1]) continue;
-    const d = lineSdfDist(n.x, n.y, pa.x, pa.y, pb.x, pb.y);
-    if (d >= clearance || d >= bestDist) continue;
-    const cross = (n.x - pa.x) * dy - (n.y - pa.y) * dx;
-    bestDist = d;
-    bestSign = cross > 0 ? -1 : 1;
-    bestSagitta = clearance - d;
-  }
-
-  if (bestSagitta < 1) return 0;
-  // Compute h from desired sagitta: sagitta = sqrt(D²+h²) - |h|
-  // Solving: |h| = (D² - s²) / (2s)  where D = dist/2, s = sagitta
-  const D = dist / 2;
-  if (bestSagitta >= D) return bestSign * D * 0.5; // cap at gentle curve
-  const h = (D * D - bestSagitta * bestSagitta) / (2 * bestSagitta);
-  return bestSign * h;
-}
-
-/**
- * Returns the point where an arc circle (center arcC, radius r) exits a collapsed node's
- * bounding circle (radius clipR, centered at nodeCenter). nodeCenter must lie on the arc circle.
- * otherCenter is the other arc endpoint, used to select the correct intersection.
- */
-function arcClipPoint(
-  arcC: { x: number; y: number },
-  r: number,
-  nodeCenter: { x: number; y: number },
-  clipR: number,
-  otherCenter: { x: number; y: number },
-): { x: number; y: number } {
-  // |arcC - nodeCenter| = r  (nodeCenter is on the arc circle)
-  const dcx = nodeCenter.x - arcC.x;
-  const dcy = nodeCenter.y - arcC.y;
-  // Standard circle-circle intersection (d = r):
-  const a = (r * r + r * r - clipR * clipR) / (2 * r);
-  const hh = r * r - a * a;
-  if (hh < 0 || r < 0.001) {
-    // Degenerate — fall back to straight surface point
-    const ddx = otherCenter.x - nodeCenter.x;
-    const ddy = otherCenter.y - nodeCenter.y;
-    const dd = Math.sqrt(ddx * ddx + ddy * ddy);
-    if (dd < 0.001) return nodeCenter;
-    return { x: nodeCenter.x + (ddx / dd) * clipR, y: nodeCenter.y + (ddy / dd) * clipR };
-  }
-  const h = Math.sqrt(hh);
-  const mx = arcC.x + a * dcx / r;
-  const my = arcC.y + a * dcy / r;
-  const px = -dcy / r;
-  const py = dcx / r;
-  const p1 = { x: mx + h * px, y: my + h * py };
-  const p2 = { x: mx - h * px, y: my - h * py };
-  const d1sq = (p1.x - otherCenter.x) ** 2 + (p1.y - otherCenter.y) ** 2;
-  const d2sq = (p2.x - otherCenter.x) ** 2 + (p2.y - otherCenter.y) ** 2;
-  return d1sq < d2sq ? p1 : p2;
-}
-
-/**
- * Returns the point where an arc circle (center arcC, radius r) first exits an AABB rectangle
- * (center nodeCenter, half-dims halfW × halfH expanded outward by gap) when travelling from
- * nodeCenter toward otherCenter. Uses angular distance from nodeCenter's angle to pick the
- * "first" exit point in the arc's travel direction (initialSweep: 1=CW, 0=CCW in screen space).
- */
-function arcClipRect(
-  arcC: { x: number; y: number },
-  r: number,
-  nodeCenter: { x: number; y: number },
-  halfW: number,
-  halfH: number,
-  gap: number,
-  initialSweep: number,
-  otherCenter: { x: number; y: number },
-): { x: number; y: number } {
-  const left = nodeCenter.x - halfW - gap;
-  const right = nodeCenter.x + halfW + gap;
-  const top = nodeCenter.y - halfH - gap;
-  const bottom = nodeCenter.y + halfH + gap;
-
-  const pts: { x: number; y: number }[] = [];
-  // Vertical edges
-  for (const x of [left, right]) {
-    const disc = r * r - (x - arcC.x) ** 2;
-    if (disc < 0) continue;
-    const sq = Math.sqrt(disc);
-    for (const y of [arcC.y + sq, arcC.y - sq]) {
-      if (y >= top && y <= bottom) pts.push({ x, y });
-    }
-  }
-  // Horizontal edges
-  for (const y of [top, bottom]) {
-    const disc = r * r - (y - arcC.y) ** 2;
-    if (disc < 0) continue;
-    const sq = Math.sqrt(disc);
-    for (const x of [arcC.x + sq, arcC.x - sq]) {
-      if (x >= left && x <= right) pts.push({ x, y });
-    }
-  }
-
-  if (pts.length === 0) {
-    // Fallback: straight surface direction toward otherCenter
-    const ddx = otherCenter.x - nodeCenter.x;
-    const ddy = otherCenter.y - nodeCenter.y;
-    const dd = Math.sqrt(ddx * ddx + ddy * ddy);
-    if (dd < 0.001) return nodeCenter;
-    const tx = Math.abs(ddx) > 0.001 ? halfW / Math.abs(ddx) : Infinity;
-    const ty = Math.abs(ddy) > 0.001 ? halfH / Math.abs(ddy) : Infinity;
-    const t = Math.min(tx, ty);
-    return {
-      x: nodeCenter.x + ddx * t + (ddx / dd) * gap,
-      y: nodeCenter.y + ddy * t + (ddy / dd) * gap,
-    };
-  }
-
-  // Pick the candidate with the smallest positive angular distance from nodeCenter's angle,
-  // travelling in the arc's direction (initialSweep: 1=CW, 0=CCW in screen space).
-  const aFrom = Math.atan2(nodeCenter.y - arcC.y, nodeCenter.x - arcC.x);
-  const cw = initialSweep === 1;
-  function cwDist(from: number, to: number): number {
-    // Angular distance travelling CW (decreasing angle in screen space) from `from` to `to`
-    let d = from - to;
-    if (d < 0) d += 2 * Math.PI;
-    return d;
-  }
-  function ccwDist(from: number, to: number): number {
-    let d = to - from;
-    if (d < 0) d += 2 * Math.PI;
-    return d;
-  }
-  const angDist = cw ? cwDist : ccwDist;
-
-  let best = pts[0];
-  let bestDist = angDist(aFrom, Math.atan2(pts[0].y - arcC.y, pts[0].x - arcC.x));
-  for (const p of pts.slice(1)) {
-    const d = angDist(aFrom, Math.atan2(p.y - arcC.y, p.x - arcC.x));
-    if (d < bestDist) {
-      bestDist = d;
-      best = p;
-    }
-  }
-  return best;
+/** Find a node by ID in a flat scene. */
+function findSceneNode<S>(
+  nodes: CanvasNode<S>[],
+  id: string,
+): CanvasNode<S> | undefined {
+  return nodes.find((n) => n.id === id);
 }
 
 // ---------------------------------------------------------------------------
@@ -1117,21 +853,6 @@ interface TouchState {
   origView: View;
 }
 
-/** All add-edge interaction state bundled for passing into renderLevel. */
-interface InteractionState {
-  mode: CanvasMode;
-  edgeDrawFromId: string | null;
-  /** levelId of the currently-selected edge source node, if any. */
-  edgeDrawLevelId: string | null;
-  hoveredNodeId: string | null;
-  onEdgeNodeClick: (id: string, x: number, y: number, levelId: string) => void;
-  onNodeHover: (id: string | null) => void;
-  /** Convert a client-space mouse position to canvas (SVG world) coordinates. */
-  clientToCanvas: (clientX: number, clientY: number) => { x: number; y: number };
-  /** Create a new leaf node. parentId=null → root level; otherwise child of that composite. */
-  onAddNode: (parentId: string | null, localX: number, localY: number) => void;
-}
-
 export function Canvas(
   { ws: wsProp, update, diagnostics = {}, highlightEntityIds, onExecute }: {
     ws: WorkspaceState;
@@ -1153,6 +874,8 @@ export function Canvas(
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const inspectorRef = useRef<HTMLDivElement | null>(null);
+  const renderRootRef = useRef<RenderGroup | null>(null);
+  const sceneRef = useRef<CanvasScene<MarlinNodeState> | null>(null);
   const [view, setView] = useState<View>({ scale: 1, tx: 400, ty: 300 });
   const focusedRootNodes = getFocusedRootNodes(ws);
   const focusNode = ws.focusId ? findNode(ws.treeNodes, ws.focusId) : null;
@@ -1258,18 +981,23 @@ export function Canvas(
       e.preventDefault();
       if (e.ctrlKey) {
         // Pinch-to-zoom via trackpad (browser sets ctrlKey for pinch gestures)
+        if (panRef.current) {
+          panRef.current = null;
+          document.body.style.cursor = "";
+        }
         const rect = el.getBoundingClientRect();
         const mx = e.clientX - rect.left;
         const my = e.clientY - rect.top;
-        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+        const factor = e.deltaY < 0 ? 1.05 : 1 / 1.05;
         setView((v) => {
-          const newScale = Math.max(0.1, Math.min(10, v.scale * factor));
+          const newScale = Math.max(0.1, Math.min(5, v.scale * factor));
+          if (newScale === v.scale) return v; // skip re-render when clamped
           const canvasX = (mx - v.tx) / v.scale;
           const canvasY = (my - v.ty) / v.scale;
           return { scale: newScale, tx: mx - canvasX * newScale, ty: my - canvasY * newScale };
         });
       } else {
-        // Two-finger scroll → pan (inverted: dragging canvas behind viewport)
+        // Two-finger scroll → pan
         document.body.style.cursor = "none";
         if (scrollCursorTimer.current) clearTimeout(scrollCursorTimer.current);
         scrollCursorTimer.current = setTimeout(() => {
@@ -1337,7 +1065,7 @@ export function Canvas(
         const nowDist = Math.hypot(nowB.x - nowA.x, nowB.y - nowA.y);
         if (origDist < 1) return;
         const factor = nowDist / origDist;
-        const newScale = Math.max(0.1, Math.min(10, state.origView.scale * factor));
+        const newScale = Math.max(0.1, Math.min(5, state.origView.scale * factor));
 
         // Pan: shift from original midpoint to current midpoint
         const origMidX = (origA.x + origB.x) / 2 - rect.left;
@@ -1507,27 +1235,6 @@ export function Canvas(
     };
   }, []);
 
-  function startDrag(
-    e: MouseEvent,
-    nodeId: string,
-    levelId: string,
-    origX: number,
-    origY: number,
-    onClickFn: (() => void) | null,
-  ) {
-    e.stopPropagation();
-    dragRef.current = {
-      nodeId,
-      levelId,
-      startClientX: e.clientX,
-      startClientY: e.clientY,
-      origX,
-      origY,
-      hasMoved: false,
-      onClickFn,
-    };
-  }
-
   function clientToCanvas(clientX: number, clientY: number): { x: number; y: number } {
     const el = svgRef.current;
     if (!el) return { x: 0, y: 0 };
@@ -1582,38 +1289,88 @@ export function Canvas(
   }
 
   function onSvgMouseDown(e: MouseEvent) {
+    const canvasPos = clientToCanvas(e.clientX, e.clientY);
+    const hit = hitTest(renderRootRef.current!, canvasPos);
+    const node = hit ? findSceneNode(sceneRef.current!.nodes, hit.id) : undefined;
+
     if (modeRef.current === "add-edge") {
-      // Background click: return to select mode and clear everything (same as Escape)
-      setEdgeDraw(null);
-      setMode("select");
-      update((s) => ({ ...s, canvasSelected: null }));
+      if (hit && node) {
+        // Clicked a node — use as edge source/target
+        onEdgeNodeClick(hit.id, node.x, node.y, node.state!.levelId);
+      } else {
+        // Background click: return to select mode
+        setEdgeDraw(null);
+        setMode("select");
+        update((s) => ({ ...s, canvasSelected: null }));
+      }
       return;
     }
     if (modeRef.current === "add-node") {
-      const { x, y } = clientToCanvas(e.clientX, e.clientY);
-      addNode(null, x, y);
+      if (node && node.state?.isContainerBackground) {
+        // Clicked inside expanded container — add child relative to container
+        addNode(hit!.id, canvasPos.x - node.x, canvasPos.y - node.y);
+      } else {
+        addNode(null, canvasPos.x, canvasPos.y);
+      }
       return;
     }
-    panRef.current = {
-      startX: e.clientX,
-      startY: e.clientY,
-      origTx: viewRef.current!.tx,
-      origTy: viewRef.current!.ty,
-      hasMoved: false,
-    };
-    document.body.style.cursor = "none";
+
+    // Select mode
+    if (hit && node) {
+      // Start drag on node
+      dragRef.current = {
+        nodeId: hit.id,
+        levelId: node.state!.levelId,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        origX: node.x,
+        origY: node.y,
+        hasMoved: false,
+        onClickFn: () => selectNode(hit.id),
+      };
+    } else if (hit && !node) {
+      // Clicked an edge
+      selectEdge(hit.id);
+    } else {
+      // Background click — start pan
+      panRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        origTx: viewRef.current!.tx,
+        origTy: viewRef.current!.ty,
+        hasMoved: false,
+      };
+      document.body.style.cursor = "none";
+    }
   }
 
   function onSvgMouseMove(e: MouseEvent) {
-    if (modeRef.current !== "add-edge") return;
-    const el = svgRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const v = viewRef.current!;
-    setMouseCanvas({
-      x: (e.clientX - rect.left - v.tx) / v.scale,
-      y: (e.clientY - rect.top - v.ty) / v.scale,
-    });
+    if (modeRef.current === "add-edge") {
+      const el = svgRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const v = viewRef.current!;
+      const mx = (e.clientX - rect.left - v.tx) / v.scale;
+      const my = (e.clientY - rect.top - v.ty) / v.scale;
+      setMouseCanvas({ x: mx, y: my });
+      // Hover detection for edge-draw candidates
+      const hit = hitTest(renderRootRef.current!, { x: mx, y: my });
+      const node = hit ? findSceneNode(sceneRef.current!.nodes, hit.id) : undefined;
+      setHoveredNodeId(node ? hit!.id : null);
+    }
+  }
+
+  function onSvgDblClick(e: MouseEvent) {
+    const canvasPos = clientToCanvas(e.clientX, e.clientY);
+    const hit = hitTest(renderRootRef.current!, canvasPos);
+    if (!hit) return;
+    const node = findSceneNode(sceneRef.current!.nodes, hit.id);
+    if (!node) return;
+    if (node.state?.isContainerBackground) {
+      collapseNode(hit.id);
+    } else if (node.state?.isComposite) {
+      expandNode(hit.id);
+    }
   }
 
   function addEdge(fromId: string, toId: string) {
@@ -1713,16 +1470,37 @@ export function Canvas(
   const selectedId = ws.canvasSelected?.id ?? null;
   const hasSelection = ws.canvasSelected != null;
 
-  const interaction: InteractionState = {
+  // Build canvas scene via adapter
+  const canvasInteraction: CanvasInteractionState = {
     mode,
     edgeDrawFromId: edgeDraw?.fromId ?? null,
     edgeDrawLevelId: edgeDraw?.levelId ?? null,
     hoveredNodeId,
-    onEdgeNodeClick,
-    onNodeHover: setHoveredNodeId,
-    clientToCanvas,
-    onAddNode: addNode,
   };
+  const sceneOpts: BuildSceneOptions = {
+    nodes: focusedRootNodes,
+    edges: ws.edges,
+    layout: layout as unknown as import("../lib/canvas-adapter.ts").LayoutMap,
+    expandedSet,
+    selectedId,
+    interaction: canvasInteraction,
+    diagnostics,
+    highlightEntityIds: highlightEntityIds ?? new Set(),
+    allTreeNodes: ws.treeNodes,
+    focusId: ws.focusId,
+    showRefEdges: ws.canvasShowRefEdges,
+  };
+  const canvasScene = buildCanvasScene(sceneOpts);
+  const renderRoot: RenderGroup = renderScene(canvasScene, marlinIdeTheme);
+
+  // Append ghost edge (UI-layer, changes every mouse move)
+  const ghost = ghostEdgePrimitive(mode, edgeDraw, mouseCanvas);
+  if (ghost) renderRoot.children.push(ghost);
+
+  const [svgContent] = renderWith(svgRenderer, renderRoot);
+  // Update refs so event handlers can access current values
+  renderRootRef.current = renderRoot;
+  sceneRef.current = canvasScene;
 
   return (
     <div
@@ -1745,159 +1523,13 @@ export function Canvas(
         }`}
         onMouseDown={onSvgMouseDown}
         onMouseMove={onSvgMouseMove}
+        onDblClick={onSvgDblClick}
       >
-        <g transform={`translate(${view.tx}, ${view.ty}) scale(${view.scale})`}>
-          {renderLevel(
-            focusedRootNodes,
-            "",
-            layout,
-            expandedSet,
-            ws,
-            selectedId,
-            selectNode,
-            selectEdge,
-            expandNode,
-            collapseNode,
-            startDrag,
-            interaction,
-            { x: 0, y: 0 },
-            diagnostics,
-            highlightEntityIds ?? new Set(),
-          )}
-          {/* Reference edges — cross-level dotted edges from ref nodes to targets */}
-          {ws.canvasShowRefEdges && (() => {
-            const worldPos = new Map<
-              string,
-              { node: TreeNode; wx: number; wy: number; w: number; h: number }
-            >();
-            collectWorldPositions(
-              focusedRootNodes,
-              "",
-              layout,
-              expandedSet,
-              { x: 0, y: 0 },
-              worldPos,
-            );
-            // Build label→id index for non-ref nodes (fallback target resolution)
-            const labelToId = new Map<string, string>();
-            for (const [id, { node }] of worldPos) {
-              if (node.type !== "ref") labelToId.set(node.label, id);
-            }
-            // Build parent map + full node-id→id index for ancestor walking
-            const parentOf = new Map<string, string>();
-            const allNodeIds = new Set<string>();
-            function indexTree(nodes: TreeNode[], parentId: string | null) {
-              for (const n of nodes) {
-                allNodeIds.add(n.id);
-                if (parentId) parentOf.set(n.id, parentId);
-                indexTree(n.children, n.id);
-              }
-            }
-            indexTree(focusedRootNodes, null);
-            /** Find the nearest visible ancestor of `nodeId` in worldPos. */
-            function nearestVisibleAncestor(nodeId: string): string | undefined {
-              let cur = parentOf.get(nodeId);
-              while (cur) {
-                if (worldPos.has(cur)) return cur;
-                cur = parentOf.get(cur);
-              }
-              return undefined;
-            }
-            const refEdges: Array<{
-              fromId: string;
-              toId: string;
-              d: string;
-              dx: number;
-              dy: number;
-              indirect: boolean;
-            }> = [];
-            for (const [id, { node, wx, wy, w, h }] of worldPos) {
-              if (node.type !== "ref" || !node.ref) continue;
-              // Resolve target: direct id → label match → nearest visible ancestor
-              let targetId = worldPos.has(node.ref) ? node.ref : labelToId.get(node.ref);
-              let indirect = false;
-              if (!targetId) {
-                // Target not visible — try to find by id in full tree, then walk up
-                const exactId = allNodeIds.has(node.ref) ? node.ref : undefined;
-                const labelId = !exactId
-                  ? [...allNodeIds].find((nid) => {
-                    const wp = worldPos.get(nid);
-                    return !wp && parentOf.has(nid); // exists in tree but not visible
-                  })
-                  : undefined;
-                const hiddenId = exactId ?? labelId;
-                if (hiddenId) {
-                  targetId = nearestVisibleAncestor(hiddenId);
-                  indirect = true;
-                }
-              }
-              if (!targetId || targetId === id) continue;
-              const t = worldPos.get(targetId)!;
-              // Compute surface points — cast to ForceNode (surfacePoint only reads x/y/w/h)
-              const pa = { x: wx, y: wy, w, h } as ForceNode;
-              const pb = { x: t.wx, y: t.wy, w: t.w, h: t.h } as ForceNode;
-              const src = surfacePoint(pa, pb, 5);
-              const dst = surfacePoint(pb, pa, 5);
-              const dx = dst.x - src.x, dy = dst.y - src.y;
-              refEdges.push({
-                fromId: id,
-                toId: targetId,
-                d: `M${src.x},${src.y} L${dst.x},${dst.y}`,
-                dx,
-                dy,
-                indirect,
-              });
-            }
-            return refEdges.map(({ fromId, toId, d, dx, dy, indirect: ind }) => {
-              const len = Math.sqrt(dx * dx + dy * dy);
-              const ux = len > 0 ? dx / len : 1, uy = len > 0 ? dy / len : 0;
-              const parts = d.split("L");
-              const end = parts[1].split(",").map(Number);
-              const color = ind ? "#403860" : "#605080";
-              return (
-                <g key={`ref-${fromId}-${toId}`} style="pointer-events:none;">
-                  <path
-                    d={d}
-                    stroke={color}
-                    stroke-width={1}
-                    stroke-dasharray={ind ? "2,4" : "4,3"}
-                    fill="none"
-                    opacity={ind ? 0.6 : 1}
-                  />
-                  <circle
-                    cx={end[0] + ux * 5}
-                    cy={end[1] + uy * 5}
-                    r={ind ? 2 : 3}
-                    fill={color}
-                    opacity={ind ? 0.6 : 1}
-                  />
-                </g>
-              );
-            });
-          })()}
-          {/* Ghost edge line while drawing */}
-          {mode === "add-edge" && edgeDraw && mouseCanvas && (() => {
-            const gdx = mouseCanvas.x - edgeDraw.x;
-            const gdy = mouseCanvas.y - edgeDraw.y;
-            const gd = Math.sqrt(gdx * gdx + gdy * gdy);
-            const gp = gd < 0.001 ? { x: edgeDraw.x, y: edgeDraw.y } : {
-              x: edgeDraw.x + gdx / gd * (LEAF_R + 5),
-              y: edgeDraw.y + gdy / gd * (LEAF_R + 5),
-            };
-            return (
-              <line
-                x1={gp.x}
-                y1={gp.y}
-                x2={mouseCanvas.x}
-                y2={mouseCanvas.y}
-                stroke="#5070c0"
-                stroke-width={1.5}
-                stroke-dasharray="6 4"
-                style="pointer-events:none;"
-              />
-            );
-          })()}
-        </g>
+        <g
+          transform={`translate(${view.tx}, ${view.ty}) scale(${view.scale})`}
+          style="pointer-events:none;"
+          dangerouslySetInnerHTML={{ __html: svgContent }}
+        />
       </svg>
 
       {/* Top-right bar: canvas-wide controls + breadcrumb */}
@@ -1930,693 +1562,28 @@ export function Canvas(
 }
 
 // ---------------------------------------------------------------------------
-// Recursive SVG rendering
+// Ghost edge primitive (UI-layer — changes every mouse move during edge-draw)
 // ---------------------------------------------------------------------------
 
-type StartDragFn = (
-  e: MouseEvent,
-  nodeId: string,
-  levelId: string,
-  origX: number,
-  origY: number,
-  onClickFn: (() => void) | null,
-) => void;
-
-/**
- * Collect world-space positions and TreeNode references for all visible nodes
- * across all expanded levels. Used for cross-level reference edge rendering.
- */
-function collectWorldPositions(
-  nodes: TreeNode[],
-  levelId: string,
-  layout: LayoutMap,
-  expandedSet: Set<string>,
-  worldOffset: { x: number; y: number },
-  out: Map<string, { node: TreeNode; wx: number; wy: number; w: number; h: number }>,
-): void {
-  const level = layout.get(levelId);
-  if (!level) return;
-  const posMap = new Map(level.nodes.map((n) => [n.id, n]));
-  for (const node of nodes) {
-    const pos = posMap.get(node.id);
-    if (!pos) continue;
-    const wx = worldOffset.x + pos.x;
-    const wy = worldOffset.y + pos.y;
-    out.set(node.id, { node, wx, wy, w: pos.w, h: pos.h });
-    if (expandedSet.has(node.id) && node.kind === "composite") {
-      collectWorldPositions(node.children, node.id, layout, expandedSet, { x: wx, y: wy }, out);
-    }
-  }
-}
-
-function renderLevel(
-  nodes: TreeNode[],
-  levelId: string,
-  layout: LayoutMap,
-  expandedSet: Set<string>,
-  ws: WorkspaceState,
-  selectedId: string | null,
-  onSelectNode: (id: string) => void,
-  onSelectEdge: (id: string) => void,
-  onExpand: (id: string) => void,
-  onCollapse: (id: string) => void,
-  startDrag: StartDragFn,
-  interaction: InteractionState,
-  worldOffset: { x: number; y: number },
-  diagnostics: DiagnosticMap,
-  highlightEntityIds: Set<string>,
-): unknown {
-  const level = layout.get(levelId);
-  if (!level) return null;
-
-  const posMap = new Map(level.nodes.map((n) => [n.id, n]));
-  const nodeIds = nodes.map((n) => n.id);
-  const levelEdgeKeys = getEdgesAtLevel(ws.edges, nodeIds);
-  const levelEdges = ws.edges.filter((e) =>
-    levelEdgeKeys.some((le) => le.a === e.fromId && le.b === e.toId)
-  );
-
-  // All labels in the tree — used to distinguish scope-inferred refs from broken/imported.
-  const allLabels = collectAllLabels(ws.treeNodes);
-
-  // Determine which children are input params or output terminals based on
-  // the parent's ports. Used to tint nodes with port colors when focused.
-  // When levelId is "" (top-level focused view), use the focused node as parent
-  const parentNode = (levelId ? findNode(ws.treeNodes, levelId) : null) ??
-    (ws.focusId ? findNode(ws.treeNodes, ws.focusId) : null);
-  const inputPortNames = new Set(
-    (parentNode?.ports ?? []).filter((p) => p.direction === "in").map((p) => p.name),
-  );
-  const outputPortNames = new Set(
-    (parentNode?.ports ?? []).filter((p) => p.direction === "out").map((p) => p.name),
-  );
-  // A node is an "output terminal" if its label or data.outputPort matches an output port
-  const isInputParam = (n: TreeNode) => inputPortNames.has(n.label);
-  const isOutputTerminal = (n: TreeNode) =>
-    outputPortNames.has(n.label) || outputPortNames.has(n.data.outputPort as string);
-
-  // Effective ports for collapsed nodes — own ports or resolved from ref target.
-  const effectivePortsMap = new Map<string, Port[]>();
-  for (const node of nodes) {
-    if (expandedSet.has(node.id) && node.kind === "composite") continue;
-    const ports = resolveNodePorts(node, ws.treeNodes);
-    if (ports.length > 0) effectivePortsMap.set(node.id, ports);
-  }
-
-  // Edge-derived port dots: project each edge endpoint onto the node boundary.
-  // Port dots appear where edges actually cross the node, not at predetermined positions.
-  const edgePortDots = new Map<string, { x: number; y: number; out: boolean }[]>();
-  for (const edge of levelEdges) {
-    const pa = posMap.get(edge.fromId);
-    const pb = posMap.get(edge.toId);
-    if (!pa || !pb) continue;
-    if (effectivePortsMap.has(edge.fromId)) {
-      const bp = surfacePoint(pa, pb, 0);
-      if (!edgePortDots.has(edge.fromId)) edgePortDots.set(edge.fromId, []);
-      edgePortDots.get(edge.fromId)!.push({ x: bp.x - pa.x, y: bp.y - pa.y, out: true });
-    }
-    if (effectivePortsMap.has(edge.toId)) {
-      const bp = surfacePoint(pb, pa, 0);
-      if (!edgePortDots.has(edge.toId)) edgePortDots.set(edge.toId, []);
-      edgePortDots.get(edge.toId)!.push({ x: bp.x - pb.x, y: bp.y - pb.y, out: false });
-    }
-  }
-
-  return (
-    <>
-      {/* Shapes first (nodes and expanded group boxes) */}
-      {nodes.map((node) => {
-        const pos = posMap.get(node.id);
-        if (!pos) return null;
-        const isSelected = selectedId === node.id;
-        const isExpanded = expandedSet.has(node.id) && node.kind === "composite";
-
-        if (isExpanded) {
-          // Rect coordinates in local space (relative to pos.x, pos.y).
-          // Use ForceNode dimensions (pos.w/pos.h) — these include minimum
-          // width for port nodes, matching what pinPortNodes uses.
-          const rw = pos.w;
-          const rh = pos.h;
-          const rx = -rw / 2;
-          const ry = -rh / 2;
-
-          // Constraint visual state for expanded group rect
-          const groupDiags = diagnostics[node.id] ?? [];
-          const groupHasError = groupDiags.some((d) => d.severity === "error");
-          const groupHasWarning = !groupHasError &&
-            groupDiags.some((d) => d.severity === "warning");
-          const groupIsHighlighted = highlightEntityIds.has(node.id);
-          const groupStroke = groupHasError
-            ? "#c04040"
-            : groupHasWarning
-            ? "#c08020"
-            : isSelected
-            ? "#4060b0"
-            : groupIsHighlighted
-            ? "#50c070"
-            : "#1e1e44";
-          const groupStrokeWidth = isSelected || groupHasError || groupHasWarning ||
-              groupIsHighlighted
-            ? 2
-            : 1;
-          const groupIsRef = isRef(node);
-          const groupStrokeDash = refNeedsDash(node, allLabels) ? "6,3" : undefined;
-
-          return (
-            <g key={node.id} transform={`translate(${pos.x}, ${pos.y})`}>
-              <rect
-                x={rx}
-                y={ry}
-                width={rw}
-                height={rh}
-                fill={groupHasError ? "#1a0f0f" : groupIsRef ? "#0f0f24" : "#0f0f28"}
-                stroke={groupIsRef && !isSelected ? "#605080" : groupStroke}
-                stroke-width={groupStrokeWidth}
-                stroke-dasharray={groupStrokeDash}
-                rx={8}
-                ry={8}
-                style="cursor:pointer;"
-                onMouseDown={(e: MouseEvent) => {
-                  if (interaction.mode === "add-edge" && nodes.length > 1) {
-                    e.stopPropagation();
-                    interaction.onEdgeNodeClick(
-                      node.id,
-                      worldOffset.x + pos.x,
-                      worldOffset.y + pos.y,
-                      levelId,
-                    );
-                    return;
-                  }
-                  if (interaction.mode === "add-node") {
-                    e.stopPropagation();
-                    const cp = interaction.clientToCanvas(e.clientX, e.clientY);
-                    interaction.onAddNode(
-                      node.id,
-                      cp.x - (worldOffset.x + pos.x),
-                      cp.y - (worldOffset.y + pos.y),
-                    );
-                    return;
-                  }
-                  startDrag(e, node.id, levelId, pos.x, pos.y, () => onSelectNode(node.id));
-                }}
-                onDblClick={(e: MouseEvent) => {
-                  e.stopPropagation();
-                  onCollapse(node.id);
-                }}
-              />
-              <text
-                x={rx + 10}
-                y={ry + LABEL_H - 6}
-                fill={isSelected ? "#8090c0" : groupHasError ? "#c07070" : "#444466"}
-                font-size="11"
-                style="user-select:none; pointer-events:none;"
-              >
-                {node.label}
-              </text>
-              {(groupHasError || groupHasWarning) && (
-                <circle
-                  cx={rx + rw - 8}
-                  cy={ry + 8}
-                  r={5}
-                  fill={groupHasError ? "#c04040" : "#c08020"}
-                  stroke="#0d0d1e"
-                  stroke-width={1}
-                  style="pointer-events:none;"
-                />
-              )}
-              {node.ports && node.ports.length > 0 && (
-                <g transform={`translate(${rx + rw / 2}, ${ry + rh / 2})`}>
-                  <NodePorts
-                    ports={rectPortPositions(node.ports, rw / 2, rh / 2, LABEL_H)}
-                    showLabels
-                  />
-                </g>
-              )}
-              {renderLevel(
-                node.children,
-                node.id,
-                layout,
-                expandedSet,
-                ws,
-                selectedId,
-                onSelectNode,
-                onSelectEdge,
-                onExpand,
-                onCollapse,
-                startDrag,
-                interaction,
-                { x: worldOffset.x + pos.x, y: worldOffset.y + pos.y },
-                diagnostics,
-                highlightEntityIds,
-              )}
-            </g>
-          );
-        }
-
-        // Collapsed node — rendered as a circle by default, or rect if constraint specifies
-        const isComposite = node.kind === "composite";
-        const isRefNode = isRef(node);
-        const isRect = pos?.shape === "rect";
-        const r = LEAF_R;
-        const hasChildren = isComposite && node.children.length > 0;
-
-        // Edge-draw visual state
-        const isEdgeSource = node.id === interaction.edgeDrawFromId;
-        const hasSourceSelected = interaction.edgeDrawFromId !== null;
-        const sameLevel = interaction.edgeDrawLevelId === levelId;
-        // Candidate: can be clicked as from/to; requires sibling(s) and, once source is chosen,
-        // must be at the same level as the source.
-        const isCandidate = interaction.mode === "add-edge" && nodes.length > 1 &&
-          !isEdgeSource && (!hasSourceSelected || sameLevel);
-        // Inactive: source is selected but this node cannot be a target.
-        const isInactive = interaction.mode === "add-edge" && hasSourceSelected &&
-          !isEdgeSource && !isCandidate;
-        const isHovered = interaction.hoveredNodeId === node.id && isCandidate;
-
-        // Constraint visual state — fill persists even when selected (stroke shows selection)
-        const nodeDiags = diagnostics[node.id] ?? [];
-        const hasError = nodeDiags.some((d) => d.severity === "error");
-        const hasWarning = !hasError && nodeDiags.some((d) => d.severity === "warning");
-        const isHighlighted = highlightEntityIds.has(node.id);
-        const isInput = isInputParam(node);
-        const isOutput = isOutputTerminal(node);
-
-        const fill = isEdgeSource || isHovered
-          ? "#1e2a4a"
-          : hasError
-          ? "#2a1a1a"
-          : isSelected
-          ? "#1e2a4a"
-          : isRefNode
-          ? "#141428"
-          : isComposite
-          ? "#141430"
-          : isInput
-          ? "#101828"
-          : isOutput
-          ? "#181410"
-          : "#111125";
-        const stroke = isEdgeSource
-          ? "#5070c0"
-          : isHovered
-          ? "#6080e0"
-          : hasError
-          ? "#c04040"
-          : hasWarning
-          ? "#c08020"
-          : isSelected
-          ? "#5070c0"
-          : isCandidate
-          ? "#3050a0"
-          : isHighlighted
-          ? "#50c070"
-          : isRefNode
-          ? "#605080"
-          : isInput
-          ? "#4080c0"
-          : isOutput
-          ? "#c06040"
-          : isComposite
-          ? "#303060"
-          : "#252545";
-        const strokeDash = refNeedsDash(node, allLabels) ? "3,2" : undefined;
-        const strokeWidth = isEdgeSource || isSelected || isHovered
-          ? 2
-          : isCandidate
-          ? 1.5
-          : hasError || hasWarning || isHighlighted
-          ? 1.5
-          : 1;
-        const nodeCursor = interaction.mode === "add-edge"
-          ? (isCandidate || isEdgeSource ? "crosshair" : "default")
-          : "pointer";
-
-        return (
-          <g
-            key={node.id}
-            transform={`translate(${pos.x}, ${pos.y})`}
-            style={`cursor:${nodeCursor};${isInactive ? " opacity:0.3;" : ""}`}
-            onMouseDown={(e: MouseEvent) => {
-              if (interaction.mode === "add-edge" && (isCandidate || isEdgeSource)) {
-                e.stopPropagation();
-                interaction.onEdgeNodeClick(
-                  node.id,
-                  worldOffset.x + pos.x,
-                  worldOffset.y + pos.y,
-                  levelId,
-                );
-                return;
-              }
-              if (interaction.mode === "add-node") {
-                e.stopPropagation();
-                const cp = interaction.clientToCanvas(e.clientX, e.clientY);
-                interaction.onAddNode(
-                  node.id,
-                  cp.x - (worldOffset.x + pos.x),
-                  cp.y - (worldOffset.y + pos.y),
-                );
-                return;
-              }
-              if (interaction.mode === "select") {
-                startDrag(e, node.id, levelId, pos.x, pos.y, () => onSelectNode(node.id));
-              }
-            }}
-            onMouseEnter={() => {
-              if (isCandidate) interaction.onNodeHover(node.id);
-            }}
-            onMouseLeave={() => {
-              if (isCandidate) interaction.onNodeHover(null);
-            }}
-            onDblClick={(e: MouseEvent) => {
-              e.stopPropagation();
-              if (isComposite) onExpand(node.id);
-            }}
-          >
-            {isRect
-              ? (
-                <rect
-                  x={-r}
-                  y={-r * 0.7}
-                  width={r * 2}
-                  height={r * 1.4}
-                  rx={4}
-                  fill={fill}
-                  stroke={stroke}
-                  stroke-width={strokeWidth}
-                  stroke-dasharray={strokeDash}
-                />
-              )
-              : (
-                <circle
-                  cx={0}
-                  cy={0}
-                  r={r}
-                  fill={fill}
-                  stroke={stroke}
-                  stroke-width={strokeWidth}
-                  stroke-dasharray={strokeDash}
-                />
-              )}
-            {(hasError || hasWarning) && (
-              <circle
-                cx={r - 2}
-                cy={-(isRect ? r * 0.7 - 2 : r - 2)}
-                r={5}
-                fill={hasError ? "#c04040" : "#c08020"}
-                stroke="#0d0d1e"
-                stroke-width={1}
-                style="pointer-events:none;"
-              />
-            )}
-            {/* Home workspace indicator — small green dot at top-right */}
-            {levelId === "" &&
-              node.id ===
-                (getActiveTab(ws).homeWorkspaceId ?? getActiveTab(ws).rootNodeId) &&
-              (
-                <circle
-                  cx={r - 2}
-                  cy={-(isRect ? r * 0.7 - 2 : r - 2)}
-                  r={4}
-                  fill="#50c070"
-                  stroke="#0d0d1e"
-                  stroke-width={1}
-                  style="pointer-events:none;"
-                />
-              )}
-            {/* Ref indicator — shows target label beneath the node */}
-            {isRefNode && (() => {
-              const refTarget = node.ref;
-              const targetNode = refTarget ? findNode(ws.treeNodes, refTarget) : null;
-              const targetLabel = targetNode?.label ?? refTarget ?? "?";
-              return (
-                <text
-                  x={0}
-                  y={isRect ? r * 0.7 + 9 : r + 9}
-                  text-anchor="middle"
-                  fill="#605080"
-                  font-size="7"
-                  style="user-select:none; pointer-events:none;"
-                >
-                  {"↗ "}
-                  {targetLabel}
-                </text>
-              );
-            })()}
-            {(() => {
-              const dots = edgePortDots.get(node.id);
-              if (!dots || dots.length === 0) return null;
-              return dots.map((dot: { x: number; y: number; out: boolean }, i: number) => (
-                <circle
-                  key={`port-${i}`}
-                  cx={dot.x}
-                  cy={dot.y}
-                  r={3}
-                  fill={dot.out ? "#cc8844" : "#6688cc"}
-                />
-              ));
-            })()}
-            <text
-              x={0}
-              y={hasChildren ? -3 : 3}
-              text-anchor="middle"
-              fill={isSelected ? "#a0b4e0" : isRefNode ? "#9080b0" : "#777799"}
-              font-size="9"
-              style="user-select:none; pointer-events:none;"
-            >
-              {node.label}
-            </text>
-            {hasChildren && (
-              <text
-                x={0}
-                y={10}
-                text-anchor="middle"
-                fill={isSelected ? "#6070a0" : "#3a3a60"}
-                font-size="8"
-                style="user-select:none; pointer-events:none;"
-              >
-                ({node.children.length})
-              </text>
-            )}
-          </g>
-        );
-      })}
-
-      {/* Edges last — on top of all shapes */}
-      {(() => {
-        // Group edges by unordered node pair (canonical key = minId|maxId).
-        // Each group gets indices 0,1,2... — used to alternate arc sweep so
-        // parallel and bidirectional edges separate visually.
-        const groupIndex = new Map<string, number>();
-        const groupCount = new Map<string, number>();
-        for (const e of levelEdges) {
-          const key = [e.fromId, e.toId].sort().join("|");
-          groupIndex.set(e.id, groupCount.get(key) ?? 0);
-          groupCount.set(key, (groupCount.get(key) ?? 0) + 1);
-        }
-
-        // Pre-compute path data for each edge so we can do two render passes:
-        // pass 1 — all paths (so no arc draws over another edge's label),
-        // pass 2 — all labels on top.
-        type EdgeRenderData = {
-          edge: (typeof levelEdges)[0];
-          src: { x: number; y: number };
-          dst: { x: number; y: number };
-          d: string;
-          isArc: boolean;
-          r: number;
-          sweep: number;
-          arcC?: { x: number; y: number };
-          isSelected: boolean;
-          isHighlighted: boolean;
-        };
-
-        const renderData: EdgeRenderData[] = [];
-        for (const edge of levelEdges) {
-          const pa = posMap.get(edge.fromId);
-          const pb = posMap.get(edge.toId);
-          if (!pa || !pb) continue;
-          const dx = pb.x - pa.x;
-          const dy = pb.y - pa.y;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < 0.001) continue;
-          const key = [edge.fromId, edge.toId].sort().join("|");
-          const isMulti = (groupCount.get(key) ?? 1) > 1;
-          const idx = groupIndex.get(edge.id) ?? 0;
-
-          // Compute arc perpendicular offset `h` from the pa→pb midpoint.
-          // h = 0 → straight line; h ≠ 0 → circular arc through both centers.
-          let h = 0;
-          if (isMulti) {
-            // Multi-edges: alternate sides, increasing radius per pair
-            const baseSweep = edge.fromId < edge.toId ? 0 : 1;
-            const side = idx % 2 === 0 ? baseSweep : 1 - baseSweep;
-            const sign = side === 1 ? -1 : 1;
-            const scale = 1.5 + Math.floor(idx / 2) * 0.5;
-            const r = dist * scale;
-            const hh = Math.max(0, r * r - (dist / 2) * (dist / 2));
-            h = sign * Math.sqrt(hh);
-          } else {
-            // Single edge: check for obstacle avoidance
-            h = edgeArcOffset(pa, pb, level.nodes, [edge.fromId, edge.toId], LEAF_R + 20);
-          }
-
-          // Build arc or straight edge
-          let src: { x: number; y: number };
-          let dst: { x: number; y: number };
-          let edgeArcC: { x: number; y: number } | undefined;
-          let r = 0;
-          let sweep = 0;
-          const isArc = Math.abs(h) > 0.5;
-
-          if (isArc) {
-            // Circular arc through both node centers
-            const ux = dx / dist, uy = dy / dist;
-            const nx = -uy, ny = ux;
-            r = Math.sqrt((dist / 2) * (dist / 2) + h * h);
-            edgeArcC = {
-              x: (pa.x + pb.x) / 2 + h * nx,
-              y: (pa.y + pb.y) / 2 + h * ny,
-            };
-            // Determine initial sweep from h sign for clipping
-            const arcSweep = h < 0 ? 1 : 0;
-            const isSrcCollapsed = pa.w === LEAF_W && pa.h === LEAF_H;
-            const isDstCollapsed = pb.w === LEAF_W && pb.h === LEAF_H;
-            const isSrcRect = isSrcCollapsed && pa.shape === "rect";
-            const isDstRect = isDstCollapsed && pb.shape === "rect";
-            src = isSrcCollapsed && !isSrcRect
-              ? arcClipPoint(edgeArcC, r, pa, LEAF_R + 5, pb)
-              : arcClipRect(
-                edgeArcC,
-                r,
-                pa,
-                isSrcRect ? LEAF_R : pa.w / 2,
-                isSrcRect ? RECT_HALF_H : pa.h / 2,
-                5,
-                arcSweep,
-                pb,
-              );
-            dst = isDstCollapsed && !isDstRect
-              ? arcClipPoint(edgeArcC, r, pb, LEAF_R + 5 + 10, pa)
-              : arcClipRect(
-                edgeArcC,
-                r,
-                pb,
-                isDstRect ? LEAF_R : pb.w / 2,
-                isDstRect ? RECT_HALF_H : pb.h / 2,
-                5 + 10,
-                1 - arcSweep,
-                pa,
-              );
-            // Derive SVG sweep flag from cross product of src/dst relative to arcC
-            const crossZ = (src.x - edgeArcC.x) * (dst.y - edgeArcC.y) -
-              (src.y - edgeArcC.y) * (dst.x - edgeArcC.x);
-            sweep = crossZ > 0 ? 1 : 0;
-          } else {
-            // Straight line through centers, clipped at boundaries
-            src = surfacePoint(pa, pb, 5);
-            dst = surfacePoint(pb, pa, 5 + 10);
-          }
-
-          const d = isArc
-            ? `M${src.x},${src.y} A${r},${r} 0 0,${sweep} ${dst.x},${dst.y}`
-            : `M${src.x},${src.y} L${dst.x},${dst.y}`;
-          renderData.push({
-            edge,
-            src,
-            dst,
-            d,
-            isArc,
-            r,
-            sweep,
-            arcC: edgeArcC,
-            isSelected: selectedId === edge.id,
-            isHighlighted: highlightEntityIds.has(edge.id),
-          });
-        }
-
-        return (
-          <>
-            {/* Pass 1: all edge paths */}
-            {renderData.map(
-              (
-                {
-                  edge,
-                  d,
-                  src,
-                  dst,
-                  isArc,
-                  r,
-                  sweep,
-                  arcC,
-                  isSelected,
-                  isHighlighted,
-                },
-              ) => {
-                const stroke = isSelected ? "#5070c0" : isHighlighted ? "#50c070" : "#2a2a50";
-                const tangent = pathEndTangent(src, dst, isArc, r, sweep, arcC);
-                const perp = { x: -tangent.y, y: tangent.x };
-                const tip = { x: dst.x + tangent.x * 10, y: dst.y + tangent.y * 10 };
-                const arrowPoints = `${tip.x},${tip.y} ${dst.x + perp.x * 3.5},${
-                  dst.y + perp.y * 3.5
-                } ${dst.x - perp.x * 3.5},${dst.y - perp.y * 3.5}`;
-                return (
-                  <g key={edge.id}>
-                    {/* Wide transparent hit-area */}
-                    <path
-                      d={d}
-                      stroke="transparent"
-                      stroke-width={8}
-                      fill="none"
-                      style="cursor:pointer;"
-                      onClick={(e: MouseEvent) => {
-                        e.stopPropagation();
-                        onSelectEdge(edge.id);
-                      }}
-                    />
-                    {/* Visible path */}
-                    <path
-                      d={d}
-                      stroke={stroke}
-                      stroke-width={isSelected ? 2 : 1}
-                      fill="none"
-                      style="pointer-events:none;"
-                    />
-                    {/* Arrowhead polygon */}
-                    <polygon
-                      points={arrowPoints}
-                      fill={stroke}
-                      style="pointer-events:none;"
-                    />
-                  </g>
-                );
-              },
-            )}
-            {/* Pass 2: all labels on top of all paths */}
-            {renderData.map(({ edge, src, dst, isArc, r, sweep, arcC }) => {
-              if (!edge.label) return null;
-              const lp = isArc
-                ? arcMidpoint(src.x, src.y, dst.x, dst.y, r, sweep, arcC)
-                : { x: (src.x + dst.x) / 2, y: (src.y + dst.y) / 2 };
-              return (
-                <text
-                  key={`${edge.id}-label`}
-                  x={lp.x}
-                  y={lp.y - 4}
-                  text-anchor="middle"
-                  fill="#556"
-                  font-size="10"
-                  stroke="#0d0d1e"
-                  stroke-width="4"
-                  stroke-linejoin="round"
-                  style="pointer-events:none; user-select:none; paint-order:stroke;"
-                >
-                  {edge.label}
-                </text>
-              );
-            })}
-          </>
-        );
-      })()}
-    </>
-  );
+/** Produce a render primitive for the ghost edge shown while drawing a new edge. */
+function ghostEdgePrimitive(
+  mode: string,
+  edgeDraw: { fromId: string; x: number; y: number; levelId: string } | null,
+  mouseCanvas: { x: number; y: number } | null,
+): RenderPrimitive | null {
+  if (mode !== "add-edge" || !edgeDraw || !mouseCanvas) return null;
+  const gdx = mouseCanvas.x - edgeDraw.x;
+  const gdy = mouseCanvas.y - edgeDraw.y;
+  const gd = Math.sqrt(gdx * gdx + gdy * gdy);
+  const gp = gd < 0.001
+    ? { x: edgeDraw.x, y: edgeDraw.y }
+    : { x: edgeDraw.x + gdx / gd * (LEAF_R + 5), y: edgeDraw.y + gdy / gd * (LEAF_R + 5) };
+  return {
+    kind: "path",
+    d: `M${gp.x},${gp.y} L${mouseCanvas.x},${mouseCanvas.y}`,
+    stroke: "#5070c0",
+    strokeWidth: 1.5,
+    fill: "none",
+    strokeDash: "6 4",
+  };
 }
