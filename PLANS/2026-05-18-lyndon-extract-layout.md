@@ -45,61 +45,66 @@ port pinning) stays in `canvas.tsx`.
 
 ### Phase 1 — Package skeleton and types
 
-- [ ] 1.1 Create `packages/layout/deno.json` (`@marlinspike/layout`, version 0.1.0)
-- [ ] 1.2 Create `packages/layout/types.ts` — move `ForceNode`, `BBox` from force.ts; move
+- [x] 1.1 Create `packages/layout/deno.json` (`@marlinspike/layout`, version 0.1.0)
+- [x] 1.2 Create `packages/layout/types.ts` — move `ForceNode`, `BBox` from force.ts; move
   `LayoutAlgorithm`, `AlgorithmId` from algorithms/types.ts; add `ForceEdge` named type
-- [ ] 1.3 Update root `deno.json`: add `packages/layout` to workspace, add import map entry,
+- [x] 1.3 Update root `deno.json`: add `packages/layout` to workspace, add import map entry,
   add `packages/layout/mod.ts` to check/ci tasks
-- [ ] 1.4 Create minimal `packages/layout/mod.ts` exporting types only
-- [ ] 1.5 `deno check` passes
+- [x] 1.4 Create minimal `packages/layout/mod.ts` exporting types only
+- [x] 1.5 `deno check` passes
 
 ### Phase 2 — Move pure utility modules
 
-- [ ] 2.1 Move `force.ts` → `packages/layout/force.ts` (import types from `./types.ts`,
+- [x] 2.1 Move `force.ts` → `packages/layout/force.ts` (import types from `./types.ts`,
   export `ForceConfig`, `DEFAULT_FORCE_CONFIG`, `tickLevel`, `maxVelocity`, `boundingBox`,
   `centerNodes`, `initPositions`)
-- [ ] 2.2 Move `topo-charge.ts` → `packages/layout/topo-charge.ts`
-- [ ] 2.3 Move `topo-grid.ts` → `packages/layout/topo-grid.ts` (import `ForceNode` from `./types.ts`)
-- [ ] 2.4 Move tests: `force.test.ts`, `topo-charge_test.ts`, `topo-grid_test.ts`
-- [ ] 2.5 `deno test packages/layout/` passes
+- [x] 2.2 Move `topo-charge.ts` → `packages/layout/topo-charge.ts`
+- [x] 2.3 Move `topo-grid.ts` → `packages/layout/topo-grid.ts` (import `ForceNode` from `./types.ts`)
+- [x] 2.4 Move tests: `force.test.ts`, `topo-charge_test.ts`, `topo-grid_test.ts`
+- [x] 2.5 `deno test packages/layout/` passes
 
 ### Phase 3 — Move SDF force module
 
-- [ ] 3.1 Move `sdf-force.ts` → `packages/layout/sdf-force.ts` — remove the re-export aliasing
+- [x] 3.1 Move `sdf-force.ts` → `packages/layout/sdf-force.ts` — remove the re-export aliasing
   layer. Import `sdfOf`, `surfaceToSurface`, `sdfGradient`, `lineSdfDist`, `isCircleShape`
   directly from `@marlinspike/canvas`. `ForceNode` structurally satisfies `SdfShape` so no casts
   needed. Export `SdfPhysicsConfig`, `tickSdfLevel`, `applyAnchorForces`, `connectedComponents`,
   `lineSdfGrad`, `lineClosestPoint`
-- [ ] 3.2 Write `packages/layout/sdf-force_test.ts` — basic unit tests for SDF force computation
-- [ ] 3.3 Tests pass
+- [x] 3.2 Write `packages/layout/sdf-force_test.ts` — basic unit tests for SDF force computation
+- [x] 3.3 Tests pass
 
 ### Phase 4 — Move port layout
 
-- [ ] 4.1 Move `port-layout.ts` → `packages/layout/port-layout.ts`. Import `Port`, `TreeNode`,
+- [x] 4.1 Move `port-layout.ts` → `packages/layout/port-layout.ts`. Import `Port`, `TreeNode`,
   `isRef` from `@marlinspike/graph`; import `CanvasPort`, `circlePortPositions`,
   `rectPortPositions` from `@marlinspike/canvas`
-- [ ] 4.2 Move `port-layout_test.ts` — update imports
-- [ ] 4.3 Tests pass
+- [x] 4.2 Move `port-layout_test.ts` — update imports
+- [x] 4.3 Tests pass
 
 ### Phase 5 — Move algorithm implementations
 
-- [ ] 5.1 Move all five algorithm files to `packages/layout/algorithms/` — update relative imports
-- [ ] 5.2 Complete `mod.ts` with all exports (algorithm factories, config types, utilities)
-- [ ] 5.3 `deno check packages/layout/mod.ts` passes
+- [x] 5.1 Move all five algorithm files to `packages/layout/algorithms/` — update relative imports
+- [x] 5.2 Complete `mod.ts` with all exports (algorithm factories, config types, utilities)
+- [x] 5.3 `deno check packages/layout/mod.ts` passes
 
 ### Phase 6 — Rewire IDE imports
 
-- [ ] 6.1 Update `canvas.tsx` to import from `@marlinspike/layout` instead of `../lib/`
-- [ ] 6.2 Update `canvas-adapter.ts` — import `ForceNode`, `PortPosition` etc. from
+- [x] 6.1 Update `canvas.tsx` to import from `@marlinspike/layout` instead of `../lib/`
+- [x] 6.2 Update `canvas-adapter.ts` — import `ForceNode`, `PortPosition` etc. from
   `@marlinspike/layout`
-- [ ] 6.3 Update any other IDE files importing from old locations
-- [ ] 6.4 Delete old files: `src/ui/lib/force.ts`, `sdf-force.ts`, `topo-charge.ts`,
+- [x] 6.3 Update any other IDE files importing from old locations
+  - `port-rendering.tsx` — PortPosition import
+  - `db/operations.ts` — AlgorithmId import
+  - `workspace.ts` — AlgorithmId import
+  - `stories/layout.stories.tsx` — all layout imports + `isCircleNode` → `isCircleShape`
+  - `stories/port.stories.tsx` — port layout imports
+- [x] 6.4 Delete old files: `src/ui/lib/force.ts`, `sdf-force.ts`, `topo-charge.ts`,
   `topo-grid.ts`, `port-layout.ts`, `src/ui/lib/algorithms/` directory
-- [ ] 6.5 `NO_COLOR=1 deno task ci` passes — all tests green
+- [x] 6.5 `NO_COLOR=1 deno task ci` passes — all tests green (555 tests)
 
 ### Phase 7 — Property-based tests
 
-- [ ] 7.1 Create `packages/layout/properties_test.ts` with testable layout invariants:
+- [x] 7.1 Create `packages/layout/properties_test.ts` with testable layout invariants:
   - No node overlap after settlement (`surfaceToSurface(a, b) >= -epsilon`)
   - Bounding box contains all non-anchored nodes
   - Center invariant: centroid near (0,0) after `centerNodes()`
@@ -175,10 +180,10 @@ One-directional. Canvas and graph never import from layout.
 
 ## Verification
 
-- [ ] `NO_COLOR=1 deno task ci` — all existing tests pass
-- [ ] New property tests pass for all 5 algorithms
-- [ ] No files in `src/ui/lib/` import layout code (all via `@marlinspike/layout`)
-- [ ] `src/ui/lib/algorithms/` directory deleted
+- [x] `NO_COLOR=1 deno task ci` — all existing tests pass (555 tests)
+- [x] New property tests pass for all 5 algorithms (15 property tests)
+- [x] No files in `src/ui/lib/` import layout code (all via `@marlinspike/layout`)
+- [x] `src/ui/lib/algorithms/` directory deleted
 - [ ] Visual check: all 5 algorithms work in IDE (switch between them)
 - [ ] Visual check: port layout correct (inputs left, outputs right)
 - [ ] Visual check: expanded containers layout children correctly
