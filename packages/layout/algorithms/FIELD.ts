@@ -9,7 +9,7 @@
 // A future compass widget will allow arbitrary rotation.
 // ---------------------------------------------------------------------------
 
-import type { LayoutAlgorithm } from "./types.ts";
+import type { LayoutAlgorithm } from "../types.ts";
 import { initPositions, maxVelocity } from "../force.ts";
 import { applyAnchorForces, type SdfPhysicsConfig, tickSdfLevel } from "../sdf-force.ts";
 

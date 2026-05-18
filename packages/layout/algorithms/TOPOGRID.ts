@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { topoGridLayout, topoGridLayoutSized } from "../topo-grid.ts";
-import type { LayoutAlgorithm } from "./types.ts";
+import type { LayoutAlgorithm } from "../types.ts";
 
 export interface TopogridConfig {
   /** Horizontal spacing between node centres within a layer */

@@ -24,9 +24,8 @@ import type {
 } from "@marlinspike/canvas";
 import { surfacePoint } from "@marlinspike/canvas";
 import type { CanvasPort } from "@marlinspike/canvas";
-import type { PortPosition } from "./port-layout.ts";
-import type { ForceNode } from "./force.ts";
-import { rectPortPositions, resolveNodePorts } from "./port-layout.ts";
+import type { ForceNode, PortPosition } from "@marlinspike/layout";
+import { rectPortPositions, resolveNodePorts } from "@marlinspike/layout";
 import type { DiagnosticMap } from "../../graph/diagnostics.ts";
 
 // ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@
 // Port rendering — SVG elements for port indicators on canvas nodes
 // ---------------------------------------------------------------------------
 
-import type { PortPosition } from "../lib/port-layout.ts";
+import type { PortPosition } from "@marlinspike/layout";
 
 const PORT_R = 4;
 

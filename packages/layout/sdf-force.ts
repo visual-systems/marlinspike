@@ -9,31 +9,12 @@
 //   - Virtual bounding circles for inter-component cohesion
 //
 // Geometry primitives (sdfOf, surfaceToSurface, sdfGradient, lineSdfDist)
-// are provided by @marlinspike/canvas and re-exported here for backward compat.
+// are provided by @marlinspike/canvas. ForceNode structurally satisfies
+// SdfShape, so no casts are needed.
 // ---------------------------------------------------------------------------
 
-import type { ForceNode } from "./force.ts";
-import {
-  isCircleShape as isCircleShape_,
-  lineSdfDist as lineSdfDist_,
-  sdfGradient as sdfGradient_,
-  sdfOf as sdfOf_,
-  surfaceToSurface as surfaceToSurface_,
-} from "@marlinspike/canvas";
-
-// Re-export geometry primitives (ForceNode is structurally compatible with SdfShape)
-export const isCircleNode = isCircleShape_ as (node: ForceNode, threshold: number) => boolean;
-export const sdfOf = sdfOf_ as (
-  node: ForceNode,
-  threshold: number,
-) => (px: number, py: number) => number;
-export const surfaceToSurface = surfaceToSurface_ as (
-  a: ForceNode,
-  b: ForceNode,
-  threshold: number,
-) => number;
-export const sdfGradient = sdfGradient_;
-export const lineSdfDist = lineSdfDist_;
+import type { ForceEdge, ForceNode } from "./types.ts";
+import { lineSdfDist, sdfGradient, sdfOf, surfaceToSurface } from "@marlinspike/canvas";
 
 // ---------------------------------------------------------------------------
 // Config — physics parameters for tickSdfLevel
@@ -135,7 +116,7 @@ export function lineClosestPoint(
 
 export function connectedComponents(
   ids: string[],
-  edges: { a: string; b: string }[],
+  edges: ForceEdge[],
 ): string[][] {
   const idSet = new Set(ids);
   const adj = new Map<string, string[]>();
@@ -174,7 +155,7 @@ export function connectedComponents(
 
 export function tickSdfLevel(
   nodes: ForceNode[],
-  edges: { a: string; b: string }[],
+  edges: ForceEdge[],
   config: SdfPhysicsConfig,
 ): ForceNode[] {
   if (nodes.length === 0) return nodes;

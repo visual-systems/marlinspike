@@ -3,7 +3,7 @@
 import { useState } from "@hono/hono/jsx/dom";
 import { NodePorts } from "../components/port-rendering.tsx";
 import { makeNode, type Port } from "@marlinspike/graph";
-import { circlePortPositions, rectPortPositions } from "../lib/port-layout.ts";
+import { circlePortPositions, rectPortPositions } from "@marlinspike/layout";
 import { NodeInspector } from "../components/inspector.tsx";
 import { defaultState, type Updater, type WorkspaceState } from "../workspace.ts";
 

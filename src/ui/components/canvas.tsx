@@ -23,8 +23,8 @@ import { ConstraintInspector } from "./constraints-panel.tsx";
 import type { DiagnosticMap } from "../../graph/diagnostics.ts";
 import { Dropdown } from "./dropdown.tsx";
 import { SmallBtn } from "./widgets.tsx";
-import { type BBox, boundingBox, centerNodes, type ForceNode } from "../lib/force.ts";
-import { rectPortPositions } from "../lib/port-layout.ts";
+import { type BBox, boundingBox, centerNodes, type ForceNode } from "@marlinspike/layout";
+import { rectPortPositions } from "@marlinspike/layout";
 import { hitTest, renderScene, renderWith, svgRenderer } from "@marlinspike/canvas";
 import type { CanvasNode, CanvasScene, RenderGroup, RenderPrimitive } from "@marlinspike/canvas";
 import {
@@ -34,7 +34,6 @@ import {
   marlinIdeTheme,
   type MarlinNodeState,
 } from "../lib/canvas-adapter.ts";
-import { topoCharge } from "../lib/topo-charge.ts";
 import {
   createFIELD,
   createJANK,
@@ -46,7 +45,8 @@ import {
   DEFAULT_PORT_CONFIG,
   DEFAULT_SDF_CONFIG,
   type LayoutAlgorithm,
-} from "../lib/algorithms/index.ts";
+  topoCharge,
+} from "@marlinspike/layout";
 
 // ---------------------------------------------------------------------------
 // Types

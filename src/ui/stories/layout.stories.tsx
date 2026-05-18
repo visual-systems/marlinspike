@@ -1,9 +1,12 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
 import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
-import { type BBox, boundingBox, centerNodes, type ForceNode, maxVelocity } from "../lib/force.ts";
 import {
   type AlgorithmId,
+  type BBox,
+  boundingBox,
+  centerNodes,
+  connectedComponents,
   createFIELD,
   createJANK,
   createSDF,
@@ -12,17 +15,15 @@ import {
   DEFAULT_JANK_CONFIG,
   DEFAULT_SDF_CONFIG,
   DEFAULT_TOPOGRID_CONFIG,
+  type ForceNode,
   type LayoutAlgorithm,
-} from "../lib/algorithms/index.ts";
-import { topoCharge } from "../lib/topo-charge.ts";
-import { rectPortPositions } from "../lib/port-layout.ts";
-import type { Port } from "../workspace.ts";
-import {
-  connectedComponents,
-  isCircleNode,
   lineClosestPoint,
-  lineSdfDist,
-} from "../lib/sdf-force.ts";
+  maxVelocity,
+  rectPortPositions,
+  topoCharge,
+} from "@marlinspike/layout";
+import type { Port } from "../workspace.ts";
+import { isCircleShape, lineSdfDist } from "@marlinspike/canvas";
 
 export const meta = { title: "Layout" };
 
@@ -888,7 +889,7 @@ function renderLevel(
         ];
         return level.nodes.map((fn, i) => {
           const color = palette[i % palette.length];
-          if (isCircleNode(fn, cfg.circleThreshold)) {
+          if (isCircleShape(fn, cfg.circleThreshold)) {
             return (
               <circle
                 key={`sdf-${fn.id}`}
