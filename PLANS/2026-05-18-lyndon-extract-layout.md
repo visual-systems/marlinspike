@@ -169,6 +169,9 @@ One-directional. Canvas and graph never import from layout.
 **Not in scope for this branch** — future work. Documented here because the extract-layout work
 surfaces the shape boundary question clearly.
 
+**Implemented in:** [`PLANS/2026-05-19-lyndon-theme-system.md`](2026-05-19-lyndon-theme-system.md)
+(`lyndon/theme-system` branch).
+
 #### Problem
 
 Shape knowledge is currently scattered: constraints carry `data.rendering.shape: "rect"`,
