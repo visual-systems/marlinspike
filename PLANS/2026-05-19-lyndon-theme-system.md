@@ -212,6 +212,56 @@ themes, applied as a top-level `style` field on the `Constraint` type.
 - Modify: `packages/canvas/render/scene_test.ts` — geometry-only helpers
 - Modify: various story files
 
+### Phase H — Extract theme package
+
+Extract generic theme machinery into `packages/theme/` while keeping semantic role
+definitions in marlinspike application code. Architecture:
+
+- **`packages/theme/`** — generic theme infrastructure:
+  - `ThemeDefinition<Roles>` — maps role identifiers to `NodeStyleProps`
+  - `resolveProps(roleDefs, role, overrides) → NodeStyleProps` — sparse merge
+  - `resolveGeometryFromProps(props) → NodeGeometry` — geometry string → singleton
+  - Re-export `NodeStyleProps`, `ThemeConstants` from canvas package
+- **Style data format** — `NodeStyleProps.geometry` is already a string identifier.
+  The theme package resolves strings to `NodeGeometry` via a registry. This means theme
+  definitions are pure data (JSON-serializable role→props maps).
+- **Semantic identifiers** — marlinspike defines a `MarlinRoles` interface mandating
+  required role identifiers (`"leaf"`, `"container"`, `"collapsed-subgraph"`, `"ref"`,
+  `"leaf-rect"`). The theme package is generic over role sets. The app-specific schema
+  constrains which roles a valid theme must provide.
+- **CLASSIC theme** becomes: a `ThemeDefinition<MarlinRoles>` data object + the CLASSIC
+  theme's interaction-dependent style logic (selection/hover/error states are computed,
+  not declarative — they stay in the theme function).
+
+Steps:
+- [ ] H.1 Create `packages/theme/` with `deno.json`, `mod.ts`
+- [ ] H.2 Define `ThemeDefinition<R>` — generic record of role→NodeStyleProps
+- [ ] H.3 Implement `resolveProps(definition, role, overrides)` — merge logic
+- [ ] H.4 Implement geometry string→singleton resolution
+- [ ] H.5 Move CLASSIC theme's role→props map to use `ThemeDefinition<MarlinRoles>`
+- [ ] H.6 Import theme package from `src/ui/lib/classic-theme.ts`
+- [ ] H.7 Tests pass
+
+#### Key files:
+- New: `packages/theme/deno.json`
+- New: `packages/theme/mod.ts`
+- New: `packages/theme/resolve.ts`
+- New: `packages/theme/resolve_test.ts`
+- Modify: `src/ui/lib/classic-theme.ts` — use theme package for resolution
+- Modify: `deno.json` — workspace member
+
+### Phase I — Update DESIGN.md
+
+- [ ] I.1 Update DESIGN.md to reflect the theme system architecture
+- [ ] I.2 Document the theme package, role system, style property schema
+- [ ] I.3 Document constraint migration (style overrides instead of data.rendering.shape)
+
+### Phase J — Theme system stories
+
+- [ ] J.1 Write canvas-package stories exercising theme.resolveNode
+- [ ] J.2 Write a story showing custom NodeGeometry (demonstrates extensibility)
+- [ ] J.3 Write a theme-package story showing ThemeDefinition + resolveProps
+
 ### Dependency graph
 
 ```
@@ -222,10 +272,14 @@ A (NodeGeometry type)
         → E (roles + CLASSIC theme + rewire IDE)
           → F (migrate constraints to style overrides)
             → G (remove shape field)
+              → H (extract theme package)
+                → I (update DESIGN.md)
+                → J (theme system stories)
 ```
 
 Each phase is independently committable. A–D are within `packages/canvas/`.
-E–F are the integration steps. G is cleanup.
+E–F are the integration steps. G is cleanup. H is package extraction.
+I and J are parallel after H.
 
 ## Open Questions
 
@@ -239,16 +293,26 @@ E–F are the integration steps. G is cleanup.
    a single "container" role that renders both? Or keep the two-node pattern?
    Lean: keep two-node pattern for now — it works and the refactor scope is already large.
 
+3. **Theme package scope** — the theme package provides generic machinery. Interaction-
+   dependent style logic (hover, selection, error states) is computed rather than declarative.
+   Should the theme package provide a combinator for layering interaction state over base
+   role styles, or leave that entirely to consumers? Lean: leave to consumers initially,
+   extract patterns if they emerge.
+
 ### Resolved
 
 - **SDF on NodeGeometry** — YES, include `sdf(w, h)` now. It's the core of D1.
 - **Port positioning on NodeGeometry** — YES, `portPositions(ports, w, h, labelH)` as a
   method. Centralizes shape-specific dispatch.
-- **Scope** — full (A–G). All 7 phases in this branch.
+- **Scope** — full (A–J). 10 phases in this branch.
 - **Style schema** — YES, implement now as `NodeStyleProps`. Same property format for theme
   definitions and per-element overrides. Sparse merge: element overrides ← theme defaults.
 - **Constraint migration** — YES, eliminate `data.rendering.shape`. Move to top-level
   `style: NodeStyleProps` on `Constraint`. Same vocabulary as themes.
+- **Theme package extraction** — YES, in scope. Generic machinery in `packages/theme/`,
+  semantic role identifiers mandated by app-specific schema. Theme definitions are pure
+  data (role→NodeStyleProps maps). The style data format's string geometry identifiers
+  enable JSON-serializable theme definitions.
 
 ## Verification
 
@@ -260,3 +324,5 @@ E–F are the integration steps. G is cleanup.
 - [ ] Visual check: expanded containers render correctly
 - [ ] Visual check: edge clipping identical for circle and rect nodes
 - [ ] `marlinTheme` (simple canvas-package theme) still works for package stories
+- [ ] Theme package unit tests for resolveProps merge logic
+- [ ] DESIGN.md accurately reflects new architecture
