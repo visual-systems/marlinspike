@@ -21,8 +21,13 @@ This is a Deno project. Always prefix deno commands with `NO_COLOR=1` to suppres
 | Type check | `NO_COLOR=1 deno task check` |
 
 ## Conventions
-<!-- Coding style, naming conventions, file organisation rules.
-     Any patterns that should be followed consistently. -->
+
+### Package READMEs
+
+Every package under `packages/` must have a `README.md`. See the "Package READMEs" section in
+DESIGN.md for the required content structure. When creating or extracting a new package, include a
+README that covers: what it does, relationship to Marlinspike, standalone usage with examples, API
+summary, design rationale, deferred concepts from the plan, and links to stories.
 
 ### Branch Planning
 

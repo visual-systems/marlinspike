@@ -113,10 +113,32 @@ the IDE context.
 - **Integration via types and traversal** — packages provide types as the lingua franca and
   traversal functions (like `walk`) as the integration surface for plugins/codecs/constraints.
 
+### Package READMEs
+
+Every package under `packages/` has a README.md that serves as the primary documentation surface.
+Package READMEs should cover:
+
+- **What it does** — high-level description of the package's purpose
+- **Relationship to Marlinspike** — how the package fits into the broader system
+- **Standalone usage** — quick start with minimal dependencies and runnable examples
+- **API summary** — types, functions, and exports (tables preferred)
+- **Design rationale** — key architectural choices, trade-offs, and why they were made
+- **Deferred concepts** — ideas from the plans that created the package: what was considered, why it
+  was deferred, and under what conditions it should be revisited
+- **Live demos** — links to relevant stories on the production domain
+- **Dependencies** — what the package depends on (or that it has none)
+
+DESIGN.md delegates detailed package documentation to these READMEs. The package sections in
+DESIGN.md provide a brief summary and link to the README for full details. This avoids duplication
+and keeps the authoritative documentation close to the code.
+
+Content should serve a purpose — no filler for the sake of length.
+
 ### Package: `@marlinspike/graph`
 
 **Status: Extracted** (see
-[PLANS/2026-05-13-lyndon-extract-graph.md](PLANS/2026-05-13-lyndon-extract-graph.md))
+[PLANS/2026-05-13-lyndon-extract-graph.md](PLANS/2026-05-13-lyndon-extract-graph.md)) |
+[README](packages/graph/README.md)
 
 The foundational package. Contains the rose-tree graph types (`TreeNode`, `Edge`, `Port`), pure tree
 operations (traversal, mutation, query), factory functions, and flat serialization for persistence.
@@ -132,9 +154,11 @@ Key integration points for downstream packages:
 
 ### Package: `@marlinspike/canvas`
 
-**Status: Extracted + interaction model** (see
+**Status: Extracted + interaction model + theme system** (see
 [PLANS/2026-05-16-lyndon-extract-canvas.md](PLANS/2026-05-16-lyndon-extract-canvas.md),
-[PLANS/2026-05-17-lyndon-canvas-interaction.md](PLANS/2026-05-17-lyndon-canvas-interaction.md))
+[PLANS/2026-05-17-lyndon-canvas-interaction.md](PLANS/2026-05-17-lyndon-canvas-interaction.md),
+[PLANS/2026-05-19-lyndon-theme-system.md](PLANS/2026-05-19-lyndon-theme-system.md)) |
+[README](packages/canvas/README.md)
 
 Target-agnostic graph canvas rendering with hierarchical scene support and an interaction model.
 
@@ -194,7 +218,8 @@ Key design decisions:
 ### Package: `@marlinspike/theme`
 
 **Status: Extracted** (see
-[PLANS/2026-05-19-lyndon-theme-system.md](PLANS/2026-05-19-lyndon-theme-system.md))
+[PLANS/2026-05-19-lyndon-theme-system.md](PLANS/2026-05-19-lyndon-theme-system.md)) |
+[README](packages/theme/README.md)
 
 Generic theme infrastructure — separates theme machinery from domain-specific semantics.
 
