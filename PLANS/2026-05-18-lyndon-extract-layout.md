@@ -211,12 +211,28 @@ affects sibling layout.
 There may be an SDF algorithm for containing arbitrary collections of shapes with arbitrary
 simple hulls, but this is not needed for the initial implementation.
 
+#### Where it lives
+
+- **`@marlinspike/canvas`** — provides the generic mechanism: `CanvasTheme` interface, primitive
+  types, SDF geometry. Knows nothing about roles or marlinspike semantics.
+- **`src/`** — defines the concrete role types (`"leaf" | "container" | ...`), the role
+  computation function (`TreeNode` + expansion state → role), and the role→primitive mappings.
+  This is application code, not a package — roles are marlinspike-specific semantic concepts.
+
+The current `marlinTheme` already follows this pattern (canvas provides the resolver shape,
+IDE fills it in). Roles just formalize the semantic input so the theme resolver has a clean
+role to work with rather than a bag of booleans.
+
+**CLASSIC** is the name for the current visual style — the first instance of the role→primitive
+mapping. Future styles (e.g. BLUEPRINT, CIRCUIT) would be additional mappings implementing the
+same interface. Naming TBD: "skin", "visual style", or just "theme" (since `CanvasTheme` is
+already the mechanism).
+
 #### Extension concept (deferred)
 
-Visual role mappings fit into a broader "extension" concept: a package that bundles role
-mappings + primitive definitions + possibly layout hints. Different extensions could provide
-entirely different visual languages for the same semantic model (e.g. "blueprint", "circuit
-diagram", "hand-drawn"). Defer until the role system is proven.
+Role→primitive mappings fit into a broader "extension" concept: a bundle of role mappings +
+primitive definitions + possibly layout hints. Different extensions could provide entirely
+different visual languages for the same semantic model. Defer until the role system is proven.
 
 #### Roles are derived, not prescribed
 
@@ -237,8 +253,8 @@ a styling choice.
 
 - [ ] 8.1 Promote SDF from shape-enum dispatch to primitive-carried geometry. Primitives carry
       their own SDF function rather than dispatching through `sdfOf("circle" | "rect")`.
-- [ ] 8.2 Define visual role type and role→primitive mapping type in `@marlinspike/canvas`
-- [ ] 8.3 Add role computation function in IDE (`TreeNode` + expansion state → visual role)
+- [ ] 8.2 Define visual role type and role→primitive mapping interface in `src/`
+- [ ] 8.3 Role computation function in `src/` (`TreeNode` + expansion state → visual role)
 - [ ] 8.4 Replace canvas-adapter shape hardcoding with role→primitive resolution via theme
 - [ ] 8.5 Container primitives: extent rule (children bbox → parent w,h) + SDF from computed
       dimensions. Replaces hardcoded GROUP_PADDING / LABEL_H.
