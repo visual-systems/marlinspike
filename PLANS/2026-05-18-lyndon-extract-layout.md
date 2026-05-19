@@ -376,6 +376,6 @@ visual languages for the same semantic model. Defer until the theme system is pr
 - [x] New property tests pass for all 5 algorithms (15 property tests)
 - [x] No files in `src/ui/lib/` import layout code (all via `@marlinspike/layout`)
 - [x] `src/ui/lib/algorithms/` directory deleted
-- [ ] Visual check: all 5 algorithms work in IDE (switch between them)
-- [ ] Visual check: port layout correct (inputs left, outputs right)
-- [ ] Visual check: expanded containers layout children correctly
+- [x] Visual check: all 5 algorithms work in IDE (switch between them)
+- [x] Visual check: port layout correct (inputs left, outputs right)
+- [x] Visual check: expanded containers layout children correctly
