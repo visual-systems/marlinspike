@@ -228,6 +228,35 @@ mapping. Future styles (e.g. BLUEPRINT, CIRCUIT) would be additional mappings im
 same interface. Naming TBD: "skin", "visual style", or just "theme" (since `CanvasTheme` is
 already the mechanism).
 
+#### Constructive SDF geometry (deferred)
+
+The canvas geometry currently only has primitives (circle, rect). A natural extension is
+**constructive geometry** — combinators for building complex shapes from simple ones:
+
+- **Union** — `min(sdf_a, sdf_b)` — merge two shapes
+- **Intersection** — `max(sdf_a, sdf_b)` — keep only overlap
+- **Subtraction** — `max(sdf_a, -sdf_b)` — cut one shape from another
+- **Smooth variants** — `smin`, `smax` — blend transitions between shapes
+
+Reference: [Inigo Quilez — 2D distance functions](https://iquilezles.org/articles/distfunctions2d/)
+
+This fits the architecture naturally: constructed SDFs are still SDFs, so layout and rendering
+consume them identically. A shape built from `union(circle, rect)` has the same interface as a
+primitive circle — the SDF contract is the composability mechanism.
+
+**WebGL rendering target**: SDF constructive geometry is extremely performant in a GL context.
+SDFs evaluate per-pixel on the GPU, so arbitrarily complex shapes (unions, intersections, smooth
+blends) render at the same cost as simple primitives. If constructive SDF geometry is implemented,
+a WebGL renderer for `@marlinspike/canvas` becomes a natural next step — the SDF functions
+translate directly to GLSL fragment shaders. This would enable:
+
+- Hardware-accelerated rendering of complex node shapes
+- Smooth zoom with resolution-independent geometry
+- Large graph rendering (thousands of nodes) without DOM bottlenecks
+- Animated shape transitions via SDF interpolation
+
+The current SVG renderer would remain as a lightweight/server-side option.
+
 #### Extension concept (deferred)
 
 Role→primitive mappings fit into a broader "extension" concept: a bundle of role mappings +
