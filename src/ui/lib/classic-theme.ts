@@ -240,7 +240,7 @@ function resolvePortStyle(port: CanvasPort, _node: CanvasNode<MarlinNodeState>):
 function resolveDecorations(node: CanvasNode<MarlinNodeState>): RenderPrimitive[] {
   const s = node.state!;
   const prims: RenderPrimitive[] = [];
-  const isRect = node.shape === "rect" || node.geometry === RECT_GEOMETRY;
+  const isRect = node.geometry === RECT_GEOMETRY;
   const r = Math.min(node.w, node.h) / 2;
 
   // Container background: top-left label

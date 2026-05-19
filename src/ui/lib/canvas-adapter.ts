@@ -319,7 +319,6 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
           y: wy,
           w: pos.w,
           h: pos.h,
-          shape: "rect",
           geometry: RECT_GEOMETRY,
           label: "", // suppresses default centered label
           selected: isSelected,
@@ -342,7 +341,6 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
           y: wy,
           w: pos.w,
           h: pos.h,
-          shape: nodeShape,
           geometry: nodeGeometry,
           label: node.label,
           selected: isSelected,

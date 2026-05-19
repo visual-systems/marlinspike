@@ -195,17 +195,11 @@ Deno.test("RECT_GEOMETRY.strokeDash returns '6,3' when dashed", () => {
 });
 
 // ---------------------------------------------------------------------------
-// resolveGeometry — bridge function
+// resolveGeometry
 // ---------------------------------------------------------------------------
 
-Deno.test("resolveGeometry prefers geometry over shape", () => {
-  const geo = resolveGeometry({ geometry: RECT_GEOMETRY, shape: "circle" });
-  assertEquals(geo, RECT_GEOMETRY);
-});
-
-Deno.test("resolveGeometry falls back to shape", () => {
-  assertEquals(resolveGeometry({ shape: "rect" }), RECT_GEOMETRY);
-  assertEquals(resolveGeometry({ shape: "circle" }), CIRCLE_GEOMETRY);
+Deno.test("resolveGeometry returns geometry when present", () => {
+  assertEquals(resolveGeometry({ geometry: RECT_GEOMETRY }), RECT_GEOMETRY);
 });
 
 Deno.test("resolveGeometry defaults to CIRCLE_GEOMETRY", () => {

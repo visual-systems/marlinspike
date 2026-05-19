@@ -209,17 +209,14 @@ export const RECT_GEOMETRY: NodeGeometry = {
 };
 
 // ---------------------------------------------------------------------------
-// resolveGeometry — bridge function for migration
+// resolveGeometry
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve the NodeGeometry for a node, with fallback from geometry → shape → circle.
- * This is the single choke-point for the old/new bridge during migration.
+ * Resolve the NodeGeometry for a node, defaulting to CIRCLE_GEOMETRY if absent.
  */
 export function resolveGeometry(
-  node: { shape?: "circle" | "rect"; geometry?: NodeGeometry },
+  node: { geometry?: NodeGeometry },
 ): NodeGeometry {
-  if (node.geometry) return node.geometry;
-  if (node.shape === "rect") return RECT_GEOMETRY;
-  return CIRCLE_GEOMETRY;
+  return node.geometry ?? CIRCLE_GEOMETRY;
 }

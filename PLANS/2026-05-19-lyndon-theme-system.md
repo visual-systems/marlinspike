@@ -201,7 +201,7 @@ themes, applied as a top-level `style` field on the `Constraint` type.
 - [x] G.3 `resolveGeometry` already handles `geometry ?? shape ?? CIRCLE` — no change needed
 - [x] G.4 Update all canvas-package test helpers to use `geometry` only (scene_test,
   surface_test, hit-test_test, pointer_test, marlin_theme_test)
-- [ ] G.5 Update story files to use `geometry` instead of `shape` (deferred to Phase J)
+- [x] G.5 Update story files to use `geometry` instead of `shape` (completed in Phase J)
 - [x] G.6 `NO_COLOR=1 deno task ci` — 573 tests green
 - [x] G.7 Decision: keep `shape` as optional with `@deprecated`. resolveGeometry bridge
   handles fallback. Stories still use shape — migrated in Phase J.
@@ -308,11 +308,11 @@ Steps:
 - [ ] J.1 Write canvas-package stories exercising theme.resolveNode
 - [ ] J.2 Write a story showing custom NodeGeometry (demonstrates extensibility)
 - [ ] J.3 Write a theme-package story showing ThemeDefinition + resolveProps
-- [ ] J.4 Migrate all story files from `shape` to `geometry` (completes G.5)
-- [ ] J.5 Remove `shape` field from `CanvasNode` entirely (no longer optional —
-  gone). Remove shape branch from `resolveGeometry`. Remove `shape` assignments
-  in canvas-adapter.ts. Remove `shape` from the `worldPos` internal type.
-- [ ] J.6 CI green with shape fully removed
+- [x] J.4 Migrate all story files from `shape` to `geometry` (completes G.5)
+- [x] J.5 Remove `shape` field from `CanvasNode` entirely. Remove shape branch
+  from `resolveGeometry`. Remove `shape` assignments in canvas-adapter.ts.
+  (`worldPos` internal type retains shape string for role derivation — not exposed.)
+- [x] J.6 CI green with shape fully removed (581 tests)
 
 ### Dependency graph
 
