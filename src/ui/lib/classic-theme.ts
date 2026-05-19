@@ -7,6 +7,9 @@
  *
  * Interaction-dependent styles (hover, selection, error) are computed
  * functions — not declarative data — because they depend on transient state.
+ *
+ * Satisfies `ThemeDefinition & MarlinSemanticIdentifiers` — the structural
+ * intersection of generic theme machinery and marlinspike's domain contract.
  */
 
 import type {
@@ -21,8 +24,11 @@ import type {
   ResolvedNode,
   ThemeConstants,
 } from "@marlinspike/canvas";
-import { CIRCLE_GEOMETRY, RECT_GEOMETRY } from "@marlinspike/canvas";
+import { RECT_GEOMETRY } from "@marlinspike/canvas";
+import type { ThemeDefinition } from "@marlinspike/theme";
+import { resolveGeometryFromProps, resolveProps } from "@marlinspike/theme";
 import type { MarlinNodeState, MarlinRole } from "./canvas-adapter.ts";
+import type { MarlinSemanticIdentifiers } from "./marlin-theme-contract.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -89,14 +95,14 @@ const ROLE_DEFAULTS: Record<MarlinRole, NodeStyleProps> = {
   },
 };
 
-// ---------------------------------------------------------------------------
-// Geometry resolution
-// ---------------------------------------------------------------------------
-
-function resolveGeometryFromString(geo: string | undefined) {
-  if (geo === "rect") return RECT_GEOMETRY;
-  return CIRCLE_GEOMETRY;
-}
+/**
+ * CLASSIC theme definition — satisfies ThemeDefinition & MarlinSemanticIdentifiers.
+ * Pure data: role→NodeStyleProps + layout constants.
+ */
+export const classicDefinition: ThemeDefinition & MarlinSemanticIdentifiers = {
+  roles: ROLE_DEFAULTS,
+  constants: CLASSIC_CONSTANTS,
+};
 
 // ---------------------------------------------------------------------------
 // Node style resolution (interaction-dependent)
@@ -106,14 +112,11 @@ function resolveNodeStyle(node: CanvasNode<MarlinNodeState>): ResolvedNode {
   const s = node.state!;
   const { selected, highlighted } = node;
 
-  // Start from role defaults, merge style overrides
-  const roleDefaults = ROLE_DEFAULTS[s.role];
-  const merged: NodeStyleProps = s.styleOverrides
-    ? { ...roleDefaults, ...s.styleOverrides }
-    : roleDefaults;
+  // Start from role defaults, merge style overrides via theme package
+  const merged = resolveProps(ROLE_DEFAULTS, s.role, s.styleOverrides);
 
   // Resolve geometry from merged props
-  const geometry = resolveGeometryFromString(merged.geometry);
+  const geometry = resolveGeometryFromProps(merged.geometry);
 
   // Compute interaction-dependent style mutations
   let fill = merged.fill!;

@@ -243,22 +243,25 @@ definitions in marlinspike application code. Architecture:
   states are computed, not declarative — they stay in the theme function).
 
 Steps:
-- [ ] H.1 Create `packages/theme/` with `deno.json`, `mod.ts`
-- [ ] H.2 Define `ThemeDefinition` — theme machinery interface
-- [ ] H.3 Define `MarlinSemanticIdentifiers` in `src/` — required role→props contract
-- [ ] H.4 Implement `resolveProps(roleDefs, role, overrides)` — merge logic
-- [ ] H.5 Implement geometry string→singleton resolution
-- [ ] H.6 Move CLASSIC theme to `ThemeDefinition & MarlinSemanticIdentifiers`
-- [ ] H.7 Import theme package from `src/ui/lib/classic-theme.ts`
-- [ ] H.8 Tests pass
+- [x] H.1 Create `packages/theme/` with `deno.json`, `mod.ts`
+- [x] H.2 Define `ThemeDefinition` — theme machinery interface
+- [x] H.3 Define `MarlinSemanticIdentifiers` in `src/` — required role→props contract
+- [x] H.4 Implement `resolveProps(roleDefs, role, overrides)` — merge logic
+- [x] H.5 Implement geometry string→singleton resolution
+- [x] H.6 Move CLASSIC theme to `ThemeDefinition & MarlinSemanticIdentifiers`
+- [x] H.7 Import theme package from `src/ui/lib/classic-theme.ts`
+- [x] H.8 Tests pass (582 tests)
 
 #### Key files:
 - New: `packages/theme/deno.json`
-- New: `packages/theme/mod.ts`
-- New: `packages/theme/resolve.ts`
-- New: `packages/theme/resolve_test.ts`
-- Modify: `src/ui/lib/classic-theme.ts` — use theme package for resolution
-- Modify: `deno.json` — workspace member
+- New: `packages/theme/mod.ts` — re-exports ThemeDefinition, resolveProps, resolveGeometryFromProps
+- New: `packages/theme/types.ts` — ThemeDefinition, RoleDefs interfaces
+- New: `packages/theme/resolve.ts` — resolveProps, resolveGeometryFromProps
+- New: `packages/theme/resolve_test.ts` — 8 tests for resolve utilities
+- New: `src/ui/lib/marlin-theme-contract.ts` — MarlinSemanticIdentifiers
+- Modify: `src/ui/lib/classic-theme.ts` — use theme package, export classicDefinition
+- Modify: `deno.json` — workspace member, import map, CI check
+- Modify: `deno.client.json` — import map
 
 ### Phase H design notes
 
@@ -300,11 +303,16 @@ Steps:
 - [ ] I.2 Document the theme package, role system, style property schema
 - [ ] I.3 Document constraint migration (style overrides instead of data.rendering.shape)
 
-### Phase J — Theme system stories
+### Phase J — Theme system stories + final shape removal
 
 - [ ] J.1 Write canvas-package stories exercising theme.resolveNode
 - [ ] J.2 Write a story showing custom NodeGeometry (demonstrates extensibility)
 - [ ] J.3 Write a theme-package story showing ThemeDefinition + resolveProps
+- [ ] J.4 Migrate all story files from `shape` to `geometry` (completes G.5)
+- [ ] J.5 Remove `shape` field from `CanvasNode` entirely (no longer optional —
+  gone). Remove shape branch from `resolveGeometry`. Remove `shape` assignments
+  in canvas-adapter.ts. Remove `shape` from the `worldPos` internal type.
+- [ ] J.6 CI green with shape fully removed
 
 ### Dependency graph
 
@@ -315,15 +323,15 @@ A (NodeGeometry type)
       → D (style property schema)
         → E (roles + CLASSIC theme + rewire IDE)
           → F (migrate constraints to style overrides)
-            → G (remove shape field)
+            → G (deprecate shape field)
               → H (extract theme package)
                 → I (update DESIGN.md)
-                → J (theme system stories)
+                → J (stories + final shape removal)
 ```
 
 Each phase is independently committable. A–D are within `packages/canvas/`.
-E–F are the integration steps. G is cleanup. H is package extraction.
-I and J are parallel after H.
+E–F are the integration steps. G deprecates shape; J removes it entirely after
+stories are migrated. H is package extraction. I and J are parallel after H.
 
 ## Open Questions
 
