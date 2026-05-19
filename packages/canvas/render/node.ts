@@ -1,49 +1,31 @@
 /**
  * Node rendering — produces render primitives for a canvas node.
  *
- * Renders a node as a shape (circle or rect) with label, ports, and decorations.
+ * Delegates shape rendering to the node's NodeGeometry (or falls back via resolveGeometry).
  */
 
 import type { CanvasNode } from "../scene/types.ts";
 import type { CanvasTheme } from "../style/types.ts";
 import type { RenderPrimitive } from "./primitives.ts";
+import { resolveGeometry } from "../geometry/node-geometry.ts";
 
 /**
  * Produce render primitives for a single node.
  * Returns a group containing the shape, label, ports, and decorations.
  */
 export function renderNode<S>(node: CanvasNode<S>, theme: CanvasTheme<S>): RenderPrimitive {
-  const style = theme.node(node);
+  const resolved = theme.resolveNode?.(node);
+  const themeStyle = resolved?.style ?? theme.node(node);
+  const style = node.style ? { ...themeStyle, ...node.style } : themeStyle;
+  const geo = resolved?.geometry ?? resolveGeometry(node);
   const children: RenderPrimitive[] = [];
 
-  if (node.shape === "rect") {
-    const halfW = node.w / 2;
-    const halfH = node.h / 2;
-    children.push({
-      kind: "rect",
-      x: -halfW,
-      y: -halfH,
-      w: node.w,
-      h: node.h,
-      rx: node.w > 60 ? 8 : 4,
-      fill: style.fill,
-      stroke: style.stroke,
-      strokeWidth: style.strokeWidth,
-      strokeDash: node.dashed ? "6,3" : undefined,
-    });
-  } else {
-    const r = Math.min(node.w, node.h) / 2;
-    children.push({
-      kind: "circle",
-      cx: 0,
-      cy: 0,
-      r,
-      fill: style.fill,
-      stroke: style.stroke,
-      strokeWidth: style.strokeWidth,
-      strokeDash: node.dashed ? "3,2" : undefined,
-    });
-  }
+  children.push(...geo.renderBody(node.w, node.h, {
+    fill: style.fill,
+    stroke: style.stroke,
+    strokeWidth: style.strokeWidth,
+    strokeDash: geo.strokeDash(!!node.dashed),
+  }));
 
   // Label
   children.push({

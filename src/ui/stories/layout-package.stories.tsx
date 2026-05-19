@@ -28,6 +28,7 @@ import {
 } from "@marlinspike/layout";
 import type { CanvasEdge, CanvasNode, CanvasScene } from "@marlinspike/canvas";
 import {
+  CIRCLE_GEOMETRY,
   hitTest,
   isCircleShape,
   lineSdfDist,
@@ -38,7 +39,10 @@ import {
 } from "@marlinspike/canvas";
 import type { Port } from "../workspace.ts";
 
-export const meta = { title: "Package: @marlinspike-layout" };
+export const meta = {
+  title: "Package: @marlinspike-layout",
+  url: "https://github.com/visual-systems/marlinspike/blob/main/packages/layout/README.md",
+};
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -91,7 +95,7 @@ function toCanvasScene(nodes: ForceNode[], edges: ForceEdge[]): CanvasScene {
     y: n.y,
     w: n.w,
     h: n.h,
-    shape: n.shape ?? "circle",
+    geometry: CIRCLE_GEOMETRY,
     label: n.id,
   }));
   const canvasEdges: CanvasEdge[] = edges.map((e, i) => ({
@@ -591,7 +595,7 @@ export function Utilities() {
   const offCenter: ForceNode[] = [
     { id: "A", x: 200, y: 300, vx: 0, vy: 0, pinned: false, w: 52, h: 52 },
     { id: "B", x: 350, y: 250, vx: 0, vy: 0, pinned: false, w: 52, h: 52 },
-    { id: "C", x: 280, y: 400, vx: 0, vy: 0, pinned: false, w: 80, h: 60, shape: "rect" },
+    { id: "C", x: 280, y: 400, vx: 0, vy: 0, pinned: false, w: 80, h: 60 },
   ];
   const centered = centerNodes(offCenter);
   const edges: ForceEdge[] = [{ a: "A", b: "B" }, { a: "B", b: "C" }];
@@ -754,10 +758,10 @@ let flEdgeCounter = 0;
 
 export function FigmaLiteWithLayout() {
   const [nodes, setNodes] = useState<CanvasNode[]>([
-    { id: "n1", x: 150, y: 200, w: 52, h: 52, shape: "circle", label: "A" },
-    { id: "n2", x: 300, y: 120, w: 52, h: 52, shape: "circle", label: "B" },
-    { id: "n3", x: 300, y: 280, w: 52, h: 52, shape: "circle", label: "C" },
-    { id: "n4", x: 450, y: 200, w: 52, h: 52, shape: "circle", label: "D" },
+    { id: "n1", x: 150, y: 200, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "A" },
+    { id: "n2", x: 300, y: 120, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "B" },
+    { id: "n3", x: 300, y: 280, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "C" },
+    { id: "n4", x: 450, y: 200, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "D" },
   ]);
   const [edges, setEdges] = useState<CanvasEdge[]>([
     { id: "e1", fromId: "n1", toId: "n2" },
@@ -865,7 +869,7 @@ export function FigmaLiteWithLayout() {
       const id = `n${++flNodeCounter}`;
       setNodes((prev) => [
         ...prev,
-        { id, x, y, w: 52, h: 52, shape: "circle" as const, label: `N${flNodeCounter}` },
+        { id, x, y, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: `N${flNodeCounter}` },
       ]);
       setSelectedId(id);
       return;

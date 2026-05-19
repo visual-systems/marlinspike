@@ -34,6 +34,7 @@ import {
   marlinIdeTheme,
   type MarlinNodeState,
 } from "../lib/canvas-adapter.ts";
+import { CLASSIC_CONSTANTS } from "../lib/classic-theme.ts";
 import {
   createFIELD,
   createJANK,
@@ -60,14 +61,14 @@ type CanvasMode = "select" | "add-node" | "add-edge";
 // ---------------------------------------------------------------------------
 
 /** Radius of collapsed leaf/composite nodes (circles) */
-const LEAF_R = 26;
+const LEAF_R = CLASSIC_CONSTANTS.leafRadius;
 /** Force-body diameter (used for repulsion body sizing) */
 const LEAF_W = LEAF_R * 2;
 const LEAF_H = LEAF_R * 2;
 /** Padding inside expanded group bounding boxes */
-const GROUP_PADDING = 32;
+const GROUP_PADDING = CLASSIC_CONSTANTS.groupPadding;
 /** Height of the label strip at the top of an expanded group rect */
-const LABEL_H = 22;
+const LABEL_H = CLASSIC_CONSTANTS.labelH;
 const DRAG_THRESHOLD_SQ = 16; // 4px
 
 // ---------------------------------------------------------------------------
@@ -241,7 +242,6 @@ function buildLevel(
   pinnedPositions: Record<string, { x: number; y: number; pinned?: boolean }>,
   levelEdges: { a: string; b: string }[],
   algorithm: LayoutAlgorithm,
-  shapeMap?: Map<string, "circle" | "rect">,
   portChildIds?: Set<string>,
 ): LevelState {
   const prevMap = new Map(prev?.nodes.map((n) => [n.id, n]) ?? []);
@@ -278,9 +278,8 @@ function buildLevel(
     const w = isExpanded ? (existing?.w ?? LEAF_W * 3) : LEAF_W;
     const h = isExpanded ? (existing?.h ?? LEAF_H * 3) : LEAF_H;
     const charge = charges.get(fn.id);
-    const shape = shapeMap?.get(fn.id);
-    if (existing && algorithm.preservesPositions) return { ...existing, w, h, charge, shape };
-    return { ...fn, w, h, charge, shape };
+    if (existing && algorithm.preservesPositions) return { ...existing, w, h, charge };
+    return { ...fn, w, h, charge };
   });
 
   return { nodes, settled: false, ticks: 0, bbox: null };
@@ -293,7 +292,6 @@ function syncLayout(
   pinnedPositions: Record<string, { x: number; y: number; pinned?: boolean }>,
   allEdges: Edge[],
   algorithm: LayoutAlgorithm,
-  shapeMap?: Map<string, "circle" | "rect">,
 ): LayoutMap {
   const expandedSet = new Set(canvasExpandedNodes);
   const next = new Map<string, LevelState>();
@@ -310,7 +308,6 @@ function syncLayout(
       pinnedPositions,
       rootEdges,
       algorithm,
-      shapeMap,
     ),
   );
 
@@ -331,7 +328,6 @@ function syncLayout(
         pinnedPositions,
         levelEdges,
         algorithm,
-        shapeMap,
         portChildren,
       ),
     );
@@ -891,12 +887,20 @@ export function Canvas(
     });
   }
 
-  // Compute node shapes driven by constraint data.rendering.shape
-  const shapeMap = new Map<string, "circle" | "rect">();
+  // Compute per-entity style overrides from constraint.style
+  const styleOverridesMap = new Map<
+    string,
+    import("@marlinspike/canvas").NodeStyleProps
+  >();
   for (const app of ws.constraintApplications) {
     const constraint = ws.constraints.find((c) => c.id === app.constraintId);
-    const shape = (constraint?.data?.rendering as { shape?: string } | undefined)?.shape;
-    if (shape === "circle" || shape === "rect") shapeMap.set(app.entityId, shape);
+    if (constraint?.style) {
+      const existing = styleOverridesMap.get(app.entityId);
+      styleOverridesMap.set(
+        app.entityId,
+        existing ? { ...existing, ...constraint.style } : constraint.style,
+      );
+    }
   }
   const focusedEdges = focusNode
     ? (() => {
@@ -913,7 +917,6 @@ export function Canvas(
       ws.canvasNodePositions,
       focusedEdges,
       makeCanvasAlgorithm(ws.canvasAlgorithm),
-      shapeMap,
     )
   );
 
@@ -949,7 +952,6 @@ export function Canvas(
         ws.canvasNodePositions,
         edges,
         makeCanvasAlgorithm(ws.canvasAlgorithm),
-        shapeMap,
       )
     );
   }, [ws.treeNodes, ws.canvasExpandedNodes, ws.edges, ws.canvasAlgorithm, ws.focusId]);
@@ -1489,6 +1491,7 @@ export function Canvas(
     allTreeNodes: ws.treeNodes,
     focusId: ws.focusId,
     showRefEdges: ws.canvasShowRefEdges,
+    styleOverrides: styleOverridesMap,
   };
   const canvasScene = buildCanvasScene(sceneOpts);
   const renderRoot: RenderGroup = renderScene(canvasScene, marlinIdeTheme);

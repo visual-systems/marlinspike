@@ -97,19 +97,19 @@ added.
 ## Composing with @marlinspike/canvas
 
 The layout package computes positions; the canvas package renders them. No shared dependency — just
-structural compatibility (`ForceNode` has `{x, y, w, h, shape}` which satisfies canvas's
-`CanvasNode`).
+structural compatibility (`ForceNode` has `{x, y, w, h}` which maps directly to `CanvasNode`
+fields).
 
 ```ts
 import { createSDF, DEFAULT_SDF_CONFIG } from "@marlinspike/layout";
-import { marlinTheme, renderScene, renderWith, svgRenderer } from "@marlinspike/canvas";
+import { CIRCLE_GEOMETRY, renderScene, renderWith, svgRenderer } from "@marlinspike/canvas";
 
 // 1. Run layout
 const algo = createSDF(DEFAULT_SDF_CONFIG);
 let nodes = algo.initNodes(ids, edges, 52, 52, new Map());
 // ... run until settled ...
 
-// 2. Convert to canvas scene
+// 2. Convert to canvas scene — geometry and style set directly on each node
 const scene = {
   nodes: nodes.map((n) => ({
     id: n.id,
@@ -117,14 +117,14 @@ const scene = {
     y: n.y,
     w: n.w,
     h: n.h,
-    shape: n.shape ?? "circle",
+    geometry: CIRCLE_GEOMETRY,
     label: n.id,
   })),
   edges: edges.map((e, i) => ({ id: `e${i}`, fromId: e.a, toId: e.b })),
 };
 
-// 3. Render
-const root = renderScene(scene, marlinTheme);
+// 3. Render (theme optional — defaults to marlinTheme)
+const root = renderScene(scene);
 const [svg] = renderWith(svgRenderer, root);
 ```
 

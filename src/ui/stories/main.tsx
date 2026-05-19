@@ -12,17 +12,19 @@ type StoryFn = () => unknown;
 
 interface StoryGroup {
   title: string;
+  url?: string;
   stories: { name: string; fn: StoryFn }[];
 }
 
 function buildRegistry(): StoryGroup[] {
   return Object.entries(AllStories).map(([_key, module]) => {
     const mod = module as Record<string, unknown>;
-    const title = (mod.meta as { title: string } | undefined)?.title ?? _key;
+    const meta = mod.meta as { title: string; url?: string } | undefined;
+    const title = meta?.title ?? _key;
     const stories = Object.entries(mod)
       .filter(([name]) => name !== "meta")
       .map(([name, fn]) => ({ name, fn: fn as StoryFn }));
-    return { title, stories };
+    return { title, url: meta?.url, stories };
   });
 }
 
@@ -95,7 +97,22 @@ function Sidebar(
       {registry.map((group) => (
         <div key={group.title}>
           <div style="padding:8px 12px 4px; font-size:11px; font-weight:600; color:#666; letter-spacing:0.05em;">
-            {group.title}
+            {group.url
+              ? (
+                <a
+                  href={group.url}
+                  target="_blank"
+                  rel="noopener"
+                  style="color:inherit; text-decoration:none;"
+                  onMouseEnter={(e: Event) =>
+                    (e.target as HTMLElement).style.textDecoration = "underline"}
+                  onMouseLeave={(e: Event) =>
+                    (e.target as HTMLElement).style.textDecoration = "none"}
+                >
+                  {group.title}
+                </a>
+              )
+              : group.title}
           </div>
           {group.stories.map((story) => {
             const isActive = current?.group === group.title && current?.story === story.name;

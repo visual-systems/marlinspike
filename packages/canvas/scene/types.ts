@@ -2,7 +2,7 @@
  * Scene graph types for canvas rendering.
  *
  * A CanvasScene is a collection of positioned nodes and edges.
- * Nodes carry shape, dimensions, optional port positions, and
+ * Nodes carry geometry, dimensions, optional port positions, and
  * optional children for hierarchical (nested container) rendering.
  * Edges reference nodes by ID.
  *
@@ -33,7 +33,8 @@ export interface CanvasNode<S = unknown> {
   y: number;
   w: number;
   h: number;
-  shape: "circle" | "rect";
+  /** Opaque geometry for rendering and clipping. Defaults to CIRCLE_GEOMETRY if absent. */
+  geometry?: import("../geometry/node-geometry.ts").NodeGeometry;
   label: string;
   ports?: CanvasPort[];
   selected?: boolean;
@@ -41,6 +42,11 @@ export interface CanvasNode<S = unknown> {
   dashed?: boolean;
   /** Consumer-specific state, typed per-consumer. Opaque to the package. */
   state?: S;
+  /**
+   * Per-element style overrides. Merged over theme defaults at render time.
+   * Allows ad-hoc styling without defining a custom theme.
+   */
+  style?: Partial<import("../style/types.ts").NodeStyle>;
 }
 
 /** A directed edge between two nodes. */
@@ -55,6 +61,11 @@ export interface CanvasEdge {
   interactive?: boolean;
   /** Consumer classification for style resolution (e.g. "ref-direct"). Package ignores this. */
   kind?: string;
+  /**
+   * Per-element style overrides. Merged over theme defaults at render time.
+   * Allows ad-hoc styling without defining a custom theme.
+   */
+  style?: Partial<import("../style/types.ts").EdgeStyle>;
 }
 
 /**

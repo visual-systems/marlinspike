@@ -9,13 +9,14 @@ import type { RenderGroup } from "./primitives.ts";
 import type { Renderer } from "./renderer.ts";
 import { renderWith } from "./renderer.ts";
 import { svgRenderer } from "./svg.ts";
+import { CIRCLE_GEOMETRY, RECT_GEOMETRY } from "../geometry/node-geometry.ts";
 
 function circleNode(id: string, x: number, y: number) {
-  return { id, x, y, w: 52, h: 52, shape: "circle" as const, label: id };
+  return { id, x, y, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: id };
 }
 
 function rectNode(id: string, x: number, y: number) {
-  return { id, x, y, w: 100, h: 60, shape: "rect" as const, label: id };
+  return { id, x, y, w: 100, h: 60, geometry: RECT_GEOMETRY, label: id };
 }
 
 // ---------------------------------------------------------------------------

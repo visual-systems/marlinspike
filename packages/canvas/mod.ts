@@ -28,9 +28,12 @@ export type {
   EdgeStyleResolver,
   NodeDecorationsResolver,
   NodeStyle,
+  NodeStyleProps,
   NodeStyleResolver,
   PortStyle,
   PortStyleResolver,
+  ResolvedNode,
+  ThemeConstants,
 } from "./style/types.ts";
 
 // ---------------------------------------------------------------------------
@@ -65,6 +68,13 @@ export {
   supportExtent,
   surfaceToSurface,
 } from "./geometry/sdf.ts";
+
+// ---------------------------------------------------------------------------
+// Geometry — node geometry (opaque shape abstraction)
+// ---------------------------------------------------------------------------
+
+export type { BodyStyle, NodeGeometry } from "./geometry/node-geometry.ts";
+export { CIRCLE_GEOMETRY, RECT_GEOMETRY, resolveGeometry } from "./geometry/node-geometry.ts";
 
 // ---------------------------------------------------------------------------
 // Geometry — port positions

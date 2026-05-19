@@ -3,16 +3,21 @@
 import { useRef, useState } from "@hono/hono/jsx/dom";
 import type { CanvasEdge, CanvasNode, CanvasPort, CanvasScene } from "@marlinspike/canvas";
 import {
+  CIRCLE_GEOMETRY,
   circlePortPositions,
   hitTest,
   marlinTheme,
+  RECT_GEOMETRY,
   renderScene,
   renderWith,
   surfacePoint,
   svgRenderer,
 } from "@marlinspike/canvas";
 
-export const meta = { title: "Package: @marlinspike-canvas" };
+export const meta = {
+  title: "Package: @marlinspike-canvas",
+  url: "https://github.com/visual-systems/marlinspike/blob/main/packages/canvas/README.md",
+};
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -65,15 +70,15 @@ function SvgCanvas(
 export function SceneTypes() {
   const scene: CanvasScene = {
     nodes: [
-      { id: "a", x: 100, y: 100, w: 52, h: 52, shape: "circle", label: "Input" },
-      { id: "b", x: 250, y: 80, w: 52, h: 52, shape: "circle", label: "Process" },
+      { id: "a", x: 100, y: 100, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "Input" },
+      { id: "b", x: 250, y: 80, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "Process" },
       {
         id: "c",
         x: 400,
         y: 100,
         w: 100,
         h: 60,
-        shape: "rect",
+        geometry: RECT_GEOMETRY,
         label: "Output",
         selected: true,
       },
@@ -83,7 +88,7 @@ export function SceneTypes() {
         y: 200,
         w: 52,
         h: 52,
-        shape: "circle",
+        geometry: CIRCLE_GEOMETRY,
         label: "Ref",
         dashed: true,
       },
@@ -131,7 +136,7 @@ export function Geometry() {
     y: 130,
     w: 52,
     h: 52,
-    shape: "circle",
+    geometry: CIRCLE_GEOMETRY,
     label: "A",
   };
   const nodeB: CanvasNode = {
@@ -140,7 +145,7 @@ export function Geometry() {
     y: 130,
     w: 100,
     h: 60,
-    shape: "rect",
+    geometry: RECT_GEOMETRY,
     label: "B",
   };
 
@@ -268,19 +273,37 @@ export function Geometry() {
 
 export function Styles() {
   const baseNodes: CanvasNode[] = [
-    { id: "n1", x: 80, y: 60, w: 52, h: 52, shape: "circle", label: "Default" },
-    { id: "n2", x: 200, y: 60, w: 52, h: 52, shape: "circle", label: "Selected", selected: true },
+    { id: "n1", x: 80, y: 60, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "Default" },
+    {
+      id: "n2",
+      x: 200,
+      y: 60,
+      w: 52,
+      h: 52,
+      geometry: CIRCLE_GEOMETRY,
+      label: "Selected",
+      selected: true,
+    },
     {
       id: "n3",
       x: 320,
       y: 60,
       w: 52,
       h: 52,
-      shape: "circle",
+      geometry: CIRCLE_GEOMETRY,
       label: "Highlighted",
       highlighted: true,
     },
-    { id: "n4", x: 440, y: 60, w: 52, h: 52, shape: "circle", label: "Dashed", dashed: true },
+    {
+      id: "n4",
+      x: 440,
+      y: 60,
+      w: 52,
+      h: 52,
+      geometry: CIRCLE_GEOMETRY,
+      label: "Dashed",
+      dashed: true,
+    },
   ];
   const scene: CanvasScene = { nodes: baseNodes, edges: [] };
 
@@ -357,7 +380,7 @@ function nextEdgeId(): string {
 
 export function FigmaLite() {
   const [nodes, setNodes] = useState<CanvasNode[]>([
-    { id: "n0", x: 200, y: 150, w: 52, h: 52, shape: "circle", label: "Start" },
+    { id: "n0", x: 200, y: 150, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "Start" },
   ]);
   const [edges, setEdges] = useState<CanvasEdge[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -405,7 +428,7 @@ export function FigmaLite() {
           y,
           w: 52,
           h: 52,
-          shape: "circle" as const,
+          geometry: CIRCLE_GEOMETRY,
           label: `N${nodeCounter}`,
         },
       ]);
@@ -417,7 +440,7 @@ export function FigmaLite() {
       // Find clicked node
       const clickedNode = nodes.find((n) => {
         const dx = x - n.x, dy = y - n.y;
-        if (n.shape === "circle") return dx * dx + dy * dy <= (n.w / 2) ** 2;
+        if (n.geometry === CIRCLE_GEOMETRY) return dx * dx + dy * dy <= (n.w / 2) ** 2;
         return Math.abs(dx) <= n.w / 2 && Math.abs(dy) <= n.h / 2;
       });
       if (!clickedNode) return;
@@ -437,7 +460,7 @@ export function FigmaLite() {
     // Select mode — check if clicked on a node
     const clickedNode = nodes.find((n) => {
       const dx = x - n.x, dy = y - n.y;
-      if (n.shape === "circle") return dx * dx + dy * dy <= (n.w / 2) ** 2;
+      if (n.geometry === CIRCLE_GEOMETRY) return dx * dx + dy * dy <= (n.w / 2) ** 2;
       return Math.abs(dx) <= n.w / 2 && Math.abs(dy) <= n.h / 2;
     });
     setSelectedId(clickedNode?.id ?? null);
@@ -452,7 +475,7 @@ export function FigmaLite() {
     const y = e.clientY - rect.top;
     const clickedNode = nodes.find((n) => {
       const dx = x - n.x, dy = y - n.y;
-      if (n.shape === "circle") return dx * dx + dy * dy <= (n.w / 2) ** 2;
+      if (n.geometry === CIRCLE_GEOMETRY) return dx * dx + dy * dy <= (n.w / 2) ** 2;
       return Math.abs(dx) <= n.w / 2 && Math.abs(dy) <= n.h / 2;
     });
     if (clickedNode) {
@@ -642,7 +665,7 @@ export function Hierarchical() {
           y: g.y,
           w: g.w,
           h: g.h,
-          shape: "rect",
+          geometry: RECT_GEOMETRY,
           label: g.label,
           selected: selectedId === g.id,
         });
@@ -654,7 +677,7 @@ export function Hierarchical() {
             y: g.y + c.dy,
             w: 40,
             h: 40,
-            shape: "circle",
+            geometry: CIRCLE_GEOMETRY,
             label: c.label,
             selected: selectedId === c.id,
           });
@@ -668,7 +691,7 @@ export function Hierarchical() {
           y: g.y,
           w: g.w,
           h: g.h,
-          shape: "rect",
+          geometry: RECT_GEOMETRY,
           label: g.label,
           selected: selectedId === g.id,
         });
@@ -682,7 +705,7 @@ export function Hierarchical() {
       y: 50,
       w: 52,
       h: 52,
-      shape: "circle",
+      geometry: CIRCLE_GEOMETRY,
       label: "Solo",
       selected: selectedId === "standalone",
     });

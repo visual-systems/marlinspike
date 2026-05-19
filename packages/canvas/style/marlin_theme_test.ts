@@ -1,5 +1,6 @@
 import { assertEquals } from "@std/assert";
 import { marlinTheme } from "./marlin-theme.ts";
+import { CIRCLE_GEOMETRY } from "../geometry/node-geometry.ts";
 
 Deno.test("marlinTheme — default node style", () => {
   const style = marlinTheme.node({
@@ -8,7 +9,7 @@ Deno.test("marlinTheme — default node style", () => {
     y: 0,
     w: 52,
     h: 52,
-    shape: "circle",
+    geometry: CIRCLE_GEOMETRY,
     label: "N",
   });
   assertEquals(style.fill, "#111125");
@@ -24,7 +25,7 @@ Deno.test("marlinTheme — selected node style", () => {
     y: 0,
     w: 52,
     h: 52,
-    shape: "circle",
+    geometry: CIRCLE_GEOMETRY,
     label: "N",
     selected: true,
   });
@@ -40,7 +41,7 @@ Deno.test("marlinTheme — highlighted node style", () => {
     y: 0,
     w: 52,
     h: 52,
-    shape: "circle",
+    geometry: CIRCLE_GEOMETRY,
     label: "N",
     highlighted: true,
   });
@@ -55,7 +56,7 @@ Deno.test("marlinTheme — dashed node style (ref-like)", () => {
     y: 0,
     w: 52,
     h: 52,
-    shape: "circle",
+    geometry: CIRCLE_GEOMETRY,
     label: "N",
     dashed: true,
   });
@@ -70,7 +71,7 @@ Deno.test("marlinTheme — default node has no opacity", () => {
     y: 0,
     w: 52,
     h: 52,
-    shape: "circle",
+    geometry: CIRCLE_GEOMETRY,
     label: "N",
   });
   assertEquals(style.opacity, undefined);
@@ -92,13 +93,13 @@ Deno.test("marlinTheme — selected edge style", () => {
 Deno.test("marlinTheme — port style", () => {
   const inStyle = marlinTheme.port(
     { name: "in", direction: "in", x: 0, y: 0, nx: -1, ny: 0 },
-    { id: "n", x: 0, y: 0, w: 52, h: 52, shape: "circle", label: "N" },
+    { id: "n", x: 0, y: 0, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "N" },
   );
   assertEquals(inStyle.fill, "#6688cc");
 
   const outStyle = marlinTheme.port(
     { name: "out", direction: "out", x: 0, y: 0, nx: 1, ny: 0 },
-    { id: "n", x: 0, y: 0, w: 52, h: 52, shape: "circle", label: "N" },
+    { id: "n", x: 0, y: 0, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "N" },
   );
   assertEquals(outStyle.fill, "#cc8844");
 });

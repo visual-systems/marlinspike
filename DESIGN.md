@@ -113,15 +113,39 @@ the IDE context.
 - **Integration via types and traversal** — packages provide types as the lingua franca and
   traversal functions (like `walk`) as the integration surface for plugins/codecs/constraints.
 
+### Package READMEs
+
+Every package under `packages/` has a README.md that serves as the primary documentation surface.
+Package READMEs should cover:
+
+- **What it does** — high-level description of the package's purpose
+- **Relationship to Marlinspike** — how the package fits into the broader system
+- **Standalone usage** — quick start with minimal dependencies and runnable examples
+- **API summary** — types, functions, and exports (tables preferred)
+- **Design rationale** — key architectural choices, trade-offs, and why they were made
+- **Deferred concepts** — ideas from the plans that created the package: what was considered, why it
+  was deferred, and under what conditions it should be revisited
+- **Live demos** — links to relevant stories on the production domain
+- **Dependencies** — what the package depends on (or that it has none)
+
+DESIGN.md delegates detailed package documentation to these READMEs. The package sections in
+DESIGN.md provide a brief summary and link to the README for full details. This avoids duplication
+and keeps the authoritative documentation close to the code.
+
+Content should serve a purpose — no filler for the sake of length.
+
 ### Package: `@marlinspike/graph`
 
-**Status: Extracted** (see [PLANS/2026-05-13-lyndon-extract-graph.md](PLANS/2026-05-13-lyndon-extract-graph.md))
+**Status: Extracted** (see
+[PLANS/2026-05-13-lyndon-extract-graph.md](PLANS/2026-05-13-lyndon-extract-graph.md)) |
+[README](packages/graph/README.md)
 
 The foundational package. Contains the rose-tree graph types (`TreeNode`, `Edge`, `Port`), pure tree
 operations (traversal, mutation, query), factory functions, and flat serialization for persistence.
 See [`packages/graph/README.md`](packages/graph/README.md) for the full API.
 
 Key integration points for downstream packages:
+
 - **`walk(nodes, visitor)`** — depth-first traversal with enter/leave callbacks. Codecs use it to
   emit nodes, constraints use it to validate, layout uses it bottom-up via `leave`.
 - **`edgesInScope(parent, edges)`** — returns edges between a parent's direct children, encoding the
@@ -130,30 +154,46 @@ Key integration points for downstream packages:
 
 ### Package: `@marlinspike/canvas`
 
-**Status: Extracted + interaction model** (see [PLANS/2026-05-16-lyndon-extract-canvas.md](PLANS/2026-05-16-lyndon-extract-canvas.md), [PLANS/2026-05-17-lyndon-canvas-interaction.md](PLANS/2026-05-17-lyndon-canvas-interaction.md))
+**Status: Extracted + interaction model + theme system** (see
+[PLANS/2026-05-16-lyndon-extract-canvas.md](PLANS/2026-05-16-lyndon-extract-canvas.md),
+[PLANS/2026-05-17-lyndon-canvas-interaction.md](PLANS/2026-05-17-lyndon-canvas-interaction.md),
+[PLANS/2026-05-19-lyndon-theme-system.md](PLANS/2026-05-19-lyndon-theme-system.md)) |
+[README](packages/canvas/README.md)
 
 Target-agnostic graph canvas rendering with hierarchical scene support and an interaction model.
 
 **Core:**
+
 - **Scene graph** — `CanvasNode<S>`, `CanvasEdge`, `CanvasPort`, `CanvasScene<S>`. Nodes support
   hierarchical nesting via `children`/`expanded`/`edges` for container rendering.
-- **Geometry** — surface clipping, arc math, SDF primitives, port positions.
+- **Geometry** — surface clipping, arc math, SDF primitives, port positions. Shapes are represented
+  as opaque `NodeGeometry` objects with methods for rendering, clipping, SDF queries, and port
+  placement. Built-in singletons: `CIRCLE_GEOMETRY`, `RECT_GEOMETRY`. `resolveGeometry(node)`
+  returns `node.geometry ?? CIRCLE_GEOMETRY`.
 - **Style system** — `CanvasTheme<S>` with pluggable resolvers for nodes, edges, ports, containers,
   and decorations. The generic `S` parameter lets consumers attach typed state to nodes that flows
-  through to theme resolvers without casting.
-- **Render primitives** — `RenderPrimitive` tree + `Renderer<T>` interface with reference SVG renderer.
+  through to theme resolvers without casting. `NodeStyleProps` is the shared vocabulary for both
+  theme definitions and per-element style overrides — same format, sparse merge via spread.
+- **Theme-controlled geometry** — `CanvasTheme.resolveNode` returns both `NodeGeometry` and
+  `NodeStyle` in one call, allowing the theme to control shapes (not just colors). When absent,
+  falls back to `theme.node()` + `resolveGeometry(node)`.
+- **Render primitives** — `RenderPrimitive` tree + `Renderer<T>` interface with reference SVG
+  renderer.
 
 **Interaction:**
+
 - **Interaction hints** — `InteractionHint` metadata on render primitives declaring what gestures
   each element responds to (draggable, clickable, hoverable, etc.).
-- **Hit-testing** — `hitTest(renderRoot, point)` walks the primitive tree with accumulated transforms
-  to find the deepest interactive element under a point. DOM-free.
-- **PointerHandler** — optional state machine (idle → pending → dragging) that manages drag thresholds,
-  hover tracking, and dispatches `CanvasInteraction` hooks. Accepts abstract points, no DOM dependency.
+- **Hit-testing** — `hitTest(renderRoot, point)` walks the primitive tree with accumulated
+  transforms to find the deepest interactive element under a point. DOM-free.
+- **PointerHandler** — optional state machine (idle → pending → dragging) that manages drag
+  thresholds, hover tracking, and dispatches `CanvasInteraction` hooks. Accepts abstract points, no
+  DOM dependency.
 
 Key design decisions:
-- **Render-target agnostic** — abstract `RenderPrimitive` tree + `Renderer<T>` interface.
-  SVG, Canvas2D, WebGL backends implement the same interface.
+
+- **Render-target agnostic** — abstract `RenderPrimitive` tree + `Renderer<T>` interface. SVG,
+  Canvas2D, WebGL backends implement the same interface.
 - **Headless testable** — all tests inspect the primitive tree directly, no DOM needed.
 - **Scene as data** — `CanvasScene<S>` is a plain immutable data structure. Rendering is a pure
   function of scene + theme.
@@ -161,28 +201,73 @@ Key design decisions:
   inspects this state — it passes it through to theme resolvers. Simple consumers use the default
   (`S = unknown`) and the package's `marlinTheme`. Complex consumers (like the IDE) define their own
   state type and theme for full-fidelity visual control.
+- **Theme as parameter, not pre-resolved data** — `renderScene(scene, theme)` takes a theme object
+  rather than requiring styles to be pre-resolved onto scene elements. This keeps application code
+  simpler: build a scene, hand it to canvas with a theme. The theme is just resolver callbacks —
+  canvas doesn't know about roles or palettes, it calls `theme.node(node)` and uses the result.
+  Pragmatic trade-off: slight type-level coupling for significantly less call-site boilerplate.
 - **IDE overlay compatible** — renders only the graph content layer. Chrome (toolbars, panels,
   breadcrumbs) overlays in the consuming application's HTML layer.
 
 **Planned extensions:**
+
 - **Edge style extensibility** — currently edge rendering (straight/arc, arrowhead) is hardcoded.
-  The style system should support pluggable edge endpoint styles (arrow, dot, none) and dash patterns,
-  allowing ref-edge overlays to render through the normal pipeline.
+  The style system should support pluggable edge endpoint styles (arrow, dot, none) and dash
+  patterns, allowing ref-edge overlays to render through the normal pipeline.
 - **Canvas-DOM package** — extract the SVG element management, view transform (pan/zoom), pointer
   event wiring, and hit-test dispatch into a `@marlinspike/canvas-dom` (or `canvas-hono`) package.
   This would let the IDE's canvas component be a thin wrapper: scene + theme + interaction hooks,
   with all DOM plumbing handled by the package.
 
+### Package: `@marlinspike/theme`
+
+**Status: Extracted** (see
+[PLANS/2026-05-19-lyndon-theme-system.md](PLANS/2026-05-19-lyndon-theme-system.md)) |
+[README](packages/theme/README.md)
+
+Generic theme infrastructure — separates theme machinery from domain-specific semantics.
+
+**Core:**
+
+- **`ThemeDefinition`** — interface for what a theme _does_: provides role→`NodeStyleProps` mappings
+  and layout constants (`ThemeConstants`). Domain-agnostic — knows nothing about marlinspike's
+  roles.
+- **`resolveProps(roleDefs, role, overrides)`** — sparse merge of per-element style overrides over
+  role defaults. Same merge semantics used by both theme definitions and constraint-driven
+  overrides.
+- **`resolveGeometryFromProps(geometry)`** — maps geometry string identifiers (`"circle"`, `"rect"`)
+  to `NodeGeometry` singletons from `@marlinspike/canvas`.
+
+**Structural intersection pattern:** A valid marlinspike theme satisfies
+`ThemeDefinition & MarlinSemanticIdentifiers` — the intersection of generic theme machinery and the
+app's domain contract. `MarlinSemanticIdentifiers` (defined in
+`src/ui/lib/marlin-theme-contract.ts`) mandates that the `roles` map includes entries for every
+`MarlinRole` (`"leaf"`, `"container"`, `"collapsed-subgraph"`, `"ref"`, `"leaf-rect"`).
+
+This pattern enables:
+
+- **Open extension** — plugins add `& ExtensionIdentifiers` without touching ThemeDefinition
+- **Multi-app composition** — `ThemeDefinition & AppA & AppB` is additive
+- **Separation of concerns** — mechanism (theme package) vs domain contract (application code)
+
+**CLASSIC theme** (`src/ui/lib/classic-theme.ts`): The default marlinspike theme. Role→style
+mappings are pure data; interaction-dependent styles (hover, selection, error states) are computed
+functions. Exports `classicDefinition` (the pure data satisfying
+`ThemeDefinition & MarlinSemanticIdentifiers`) and `classicTheme` (the full
+`CanvasTheme<MarlinNodeState>` with interaction logic).
+
 ### Planned Extractions
 
-The brainstorm plan ([PLANS/2026-05-11-lyndon-randon-brainstorming-session.md](PLANS/2026-05-11-lyndon-randon-brainstorming-session.md))
+The brainstorm plan
+([PLANS/2026-05-11-lyndon-randon-brainstorming-session.md](PLANS/2026-05-11-lyndon-randon-brainstorming-session.md))
 identifies additional extraction candidates:
 
 - **Judgment system** (constraints/validation) — constraint evaluation, diagnostic generation
 - **Codecs** (code↔graph) — Spike-Clojure and future language representations
-- **Layout** — force simulation, topological grid, and other layout algorithms. Port layout currently
-  lacks physics equilibrium (e.g. "chariot" problem where `A <- B -> C` pulls B off-center). This
-  should be addressed as part of the layout extraction with a proper center-of-mass force model.
+- **Layout** — force simulation, topological grid, and other layout algorithms. Port layout
+  currently lacks physics equilibrium (e.g. "chariot" problem where `A <- B -> C` pulls B
+  off-center). This should be addressed as part of the layout extraction with a proper
+  center-of-mass force model.
 
 These are not yet extracted. Their scope and boundaries will be defined in separate branch plans.
 
@@ -797,8 +882,14 @@ boundary of their parent composite node.
 adapter (`src/ui/lib/canvas-adapter.ts`), then renders it through the `@marlinspike/canvas` package:
 `buildCanvasScene → renderScene → svgRenderer`. Event handling uses `hitTest` against the render
 primitive tree, then looks up the hit node in the scene to access typed state (levelId, isComposite,
-etc.) for workspace mutations. The theme (`marlinIdeTheme`) resolves visual styles from the typed
-`MarlinNodeState` on each node — all IDE-specific color logic lives in the adapter, not the package.
+etc.) for workspace mutations.
+
+**Visual roles:** Each node is assigned a `MarlinRole` during scene building — `"leaf"`,
+`"container"`, `"collapsed-subgraph"`, `"ref"`, or `"leaf-rect"` — derived from node kind, expansion
+state, and constraint overrides. The CLASSIC theme (`src/ui/lib/classic-theme.ts`) maps roles to
+base `NodeStyleProps`, merges per-element style overrides from constraints, resolves geometry
+strings to `NodeGeometry` singletons, and applies interaction-dependent mutations (hover, selection,
+error states). All IDE-specific color logic lives in the theme, not the canvas package.
 
 ### Force Layout
 
@@ -1876,16 +1967,17 @@ tabs are derived from the profile root's children at render time.
 
 Three orthogonal constraints govern workspace identity, connection config, and storage boundaries:
 
-| Constraint         | Type          | Purpose                                         | Data                                                  |
-| ------------------ | ------------- | ----------------------------------------------- | ----------------------------------------------------- |
-| `workspace`        | `workspace`   | Makes a node tab-eligible, renders as rect      | `{ rendering: { shape: "rect" } }`                    |
-| `connections`      | `connections` | Remote connection config (URL, namespace, etc.) | `{}` (entity data schema on `entity.data.connection`) |
-| `storage-location` | —             | Specifies where children are stored             | Not yet implemented                                   |
+| Constraint         | Type          | Purpose                                         | Data | Style                  |
+| ------------------ | ------------- | ----------------------------------------------- | ---- | ---------------------- |
+| `workspace`        | `workspace`   | Makes a node tab-eligible, renders as rect      | `{}` | `{ geometry: "rect" }` |
+| `connections`      | `connections` | Remote connection config (URL, namespace, etc.) | `{}` |                        |
+| `storage-location` | —             | Specifies where children are stored             |      |                        |
 
 **`workspace` constraint** (`WORKSPACE_CONSTRAINT`): Any node carrying this constraint can appear as
-a tab in the session UI. It also drives rectangular rendering on the canvas via
-`data.rendering.shape`. This is not limited to root-level nodes — a deeply nested composite with the
-workspace constraint could be opened as a focused tab.
+a tab in the session UI. It also drives rectangular rendering on the canvas via the constraint's
+`style.geometry` field (using the same `NodeStyleProps` format as themes). This is not limited to
+root-level nodes — a deeply nested composite with the workspace constraint could be opened as a
+focused tab.
 
 **`connections` constraint** (`CONNECTIONS_CONSTRAINT`): Provides schema-driven connection fields
 (`url`, `namespace`, `database`, `username`, `password`) on the entity inspector. Applied

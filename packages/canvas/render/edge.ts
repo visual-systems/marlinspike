@@ -7,7 +7,8 @@
 
 import type { CanvasEdge, CanvasNode } from "../scene/types.ts";
 import type { CanvasTheme } from "../style/types.ts";
-import { arcClipPoint, arcClipRect, arcMidpoint, pathEndTangent } from "../geometry/arc.ts";
+import { arcMidpoint, pathEndTangent } from "../geometry/arc.ts";
+import { resolveGeometry } from "../geometry/node-geometry.ts";
 import { type Point, surfacePoint } from "../geometry/surface.ts";
 import type { RenderPrimitive } from "./primitives.ts";
 
@@ -82,21 +83,11 @@ export function computeEdgePath<S>(
     };
     const arcSweep = h < 0 ? 1 : 0;
 
-    // Clip source
-    if (pa.shape === "circle") {
-      const clipR = Math.min(pa.w, pa.h) / 2 + 5;
-      src = arcClipPoint(edgeArcC, r, pa, clipR, pb);
-    } else {
-      src = arcClipRect(edgeArcC, r, pa, pa.w / 2, pa.h / 2, 5, arcSweep, pb);
-    }
-
-    // Clip destination (gap for endpoint decoration)
-    if (pb.shape === "circle") {
-      const clipR = Math.min(pb.w, pb.h) / 2 + dstGap;
-      dst = arcClipPoint(edgeArcC, r, pb, clipR, pa);
-    } else {
-      dst = arcClipRect(edgeArcC, r, pb, pb.w / 2, pb.h / 2, dstGap, 1 - arcSweep, pa);
-    }
+    // Clip source and destination via node geometry
+    const geoA = resolveGeometry(pa);
+    const geoB = resolveGeometry(pb);
+    src = geoA.arcClip(edgeArcC, r, pa, pa.w, pa.h, 5, arcSweep, pb);
+    dst = geoB.arcClip(edgeArcC, r, pb, pb.w, pb.h, dstGap, 1 - arcSweep, pa);
 
     // Derive SVG sweep from cross product
     const crossZ = (src.x - edgeArcC.x) * (dst.y - edgeArcC.y) -
@@ -119,7 +110,8 @@ export function computeEdgePath<S>(
  * Returns a group containing the path, arrowhead, and optional label.
  */
 export function renderEdge<S>(data: EdgeRenderData, theme: CanvasTheme<S>): RenderPrimitive {
-  const style = theme.edge(data.edge);
+  const themeStyle = theme.edge(data.edge);
+  const style = data.edge.style ? { ...themeStyle, ...data.edge.style } : themeStyle;
   const children: RenderPrimitive[] = [];
   const isInteractive = data.edge.interactive !== false;
 

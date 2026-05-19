@@ -27,6 +27,7 @@ Each example directory contains:
 | [j-program-editor/](j-program-editor/) | Array programming | Tacit J expressions as explicit dataflow, intermediate array values |
 | [kubernetes-services/](kubernetes-services/) | Infrastructure | Typed service ports, topology constraints, manifest generation |
 | [cardano-cubic-roots/](cardano-cubic-roots/) | Mathematics | Complex intermediates, type transitions, casus irreducibilis |
+| [sdf-geometry-algebra/](sdf-geometry-algebra/) | Geometry / Graphics | SDF composition as dataflow, automatic differentiation, shader codegen |
 
 ## Revisiting
 

@@ -12,17 +12,8 @@
 
 import type { Edge, Port, TreeNode } from "@marlinspike/graph";
 import { findNode, isRef } from "@marlinspike/graph";
-import type {
-  CanvasEdge,
-  CanvasNode,
-  CanvasScene,
-  CanvasTheme,
-  EdgeStyle,
-  NodeStyle,
-  PortStyle,
-  RenderPrimitive,
-} from "@marlinspike/canvas";
-import { surfacePoint } from "@marlinspike/canvas";
+import type { CanvasEdge, CanvasNode, CanvasScene } from "@marlinspike/canvas";
+import { CIRCLE_GEOMETRY, RECT_GEOMETRY, surfacePoint } from "@marlinspike/canvas";
 import type { CanvasPort } from "@marlinspike/canvas";
 import type { ForceNode, PortPosition } from "@marlinspike/layout";
 import { rectPortPositions, resolveNodePorts } from "@marlinspike/layout";
@@ -32,16 +23,19 @@ import type { DiagnosticMap } from "../../graph/diagnostics.ts";
 // Constants (matching canvas.tsx values)
 // ---------------------------------------------------------------------------
 
-const LEAF_R = 26;
 const LABEL_H = 22;
 
 // ---------------------------------------------------------------------------
 // Consumer state type
 // ---------------------------------------------------------------------------
 
+/** Visual role — derived from node kind, expansion state, and constraint overrides. */
+export type MarlinRole = "leaf" | "container" | "collapsed-subgraph" | "ref" | "leaf-rect";
+
 /** IDE-specific visual state carried on each CanvasNode. */
 export interface MarlinNodeState {
   levelId: string;
+  role: MarlinRole;
   isRef: boolean;
   isComposite: boolean;
   hasChildren: boolean;
@@ -56,6 +50,8 @@ export interface MarlinNodeState {
   childrenCount: number;
   edgePortDots: Array<{ x: number; y: number; out: boolean }>;
   refTarget?: string;
+  /** Per-element style overrides from constraints, merged over theme defaults. */
+  styleOverrides?: import("@marlinspike/canvas").NodeStyleProps;
   /** True for the background rect of an expanded container (not a real tree node). */
   isContainerBackground: boolean;
   /** Original label for container backgrounds (since node.label is "" to suppress default). */
@@ -95,6 +91,8 @@ export interface BuildSceneOptions {
   allTreeNodes: TreeNode[];
   focusId: string | null;
   showRefEdges?: boolean;
+  /** Per-entity style overrides from constraints. */
+  styleOverrides?: Map<string, import("@marlinspike/canvas").NodeStyleProps>;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,7 +156,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
   // Track world positions for ref edge resolution
   const worldPos = new Map<
     string,
-    { node: TreeNode; wx: number; wy: number; w: number; h: number; shape: "circle" | "rect" }
+    { node: TreeNode; wx: number; wy: number; w: number; h: number }
   >();
 
   // Map labels to node IDs for ref resolution (non-ref nodes only)
@@ -238,12 +236,25 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
       const isInput = inputPortNames.has(node.label);
       const isOutput = outputPortNames.has(node.label) ||
         outputPortNames.has(node.data.outputPort as string);
-      const nodeShape: "circle" | "rect" = isExpanded
-        ? "rect"
-        : (pos.shape === "rect" ? "rect" : "circle");
+      // Derive visual role from structure + constraint style overrides
+      const overrideGeo = opts.styleOverrides?.get(node.id)?.geometry;
+      const role: MarlinRole = isExpanded
+        ? "container"
+        : isRefNode
+        ? "ref"
+        : overrideGeo === "rect"
+        ? "leaf-rect"
+        : (isComposite && hasChildren)
+        ? "collapsed-subgraph"
+        : "leaf";
+
+      // Resolve geometry from role
+      const nodeGeometry = (role === "container" || role === "leaf-rect")
+        ? RECT_GEOMETRY
+        : CIRCLE_GEOMETRY;
 
       // Track world position for ref edge resolution
-      worldPos.set(node.id, { node, wx, wy, w: pos.w, h: pos.h, shape: nodeShape });
+      worldPos.set(node.id, { node, wx, wy, w: pos.w, h: pos.h });
       if (node.type !== "ref") labelToId.set(node.label, node.id);
 
       // Edge-draw interaction state
@@ -263,6 +274,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
 
       const baseState: MarlinNodeState = {
         levelId,
+        role,
         isRef: isRefNode,
         isComposite,
         hasChildren,
@@ -279,6 +291,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
         refTarget: isRefNode && node.ref
           ? (findNode(opts.allTreeNodes, node.ref)?.label ?? node.ref)
           : undefined,
+        styleOverrides: opts.styleOverrides?.get(node.id),
         isContainerBackground: false,
       };
 
@@ -305,7 +318,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
           y: wy,
           w: pos.w,
           h: pos.h,
-          shape: "rect",
+          geometry: RECT_GEOMETRY,
           label: "", // suppresses default centered label
           selected: isSelected,
           highlighted: isHighlighted,
@@ -327,7 +340,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
           y: wy,
           w: pos.w,
           h: pos.h,
-          shape: nodeShape,
+          geometry: nodeGeometry,
           label: node.label,
           selected: isSelected,
           highlighted: isHighlighted,
@@ -395,218 +408,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
 }
 
 // ---------------------------------------------------------------------------
-// Marlinspike IDE theme — typed state access, no casting
+// Theme — re-export from classic-theme.ts
 // ---------------------------------------------------------------------------
 
-function resolveNodeStyle(node: CanvasNode<MarlinNodeState>): NodeStyle {
-  const s = node.state!;
-  const { selected, highlighted } = node;
-
-  // Container backgrounds have distinct styling
-  if (s.isContainerBackground) {
-    let fill = s.isRef ? "#0f0f24" : "#0f0f28";
-    if (s.hasError) fill = "#1a0f0f";
-
-    let stroke = "#1e1e44";
-    if (s.hasError) stroke = "#c04040";
-    else if (s.hasWarning) stroke = "#c08020";
-    else if (selected) stroke = "#4060b0";
-    else if (highlighted) stroke = "#50c070";
-    else if (s.isRef) stroke = "#605080";
-
-    let strokeWidth = 1;
-    if (selected || s.hasError || s.hasWarning || highlighted) strokeWidth = 2;
-
-    return {
-      fill,
-      stroke,
-      strokeWidth,
-      labelFill: "transparent", // label rendered via decorations
-      labelFont: "sans-serif",
-      labelSize: 11,
-    };
-  }
-
-  // Fill
-  let fill = "#111125";
-  if (s.isEdgeSource || s.isHovered) fill = "#1e2a4a";
-  else if (s.hasError) fill = "#2a1a1a";
-  else if (selected) fill = "#1e2a4a";
-  else if (s.isRef) fill = "#141428";
-  else if (s.isComposite) fill = "#141430";
-  else if (s.isInput) fill = "#101828";
-  else if (s.isOutput) fill = "#181410";
-
-  // Stroke
-  let stroke = "#252545";
-  if (s.isEdgeSource) stroke = "#5070c0";
-  else if (s.isHovered) stroke = "#6080e0";
-  else if (s.hasError) stroke = "#c04040";
-  else if (s.hasWarning) stroke = "#c08020";
-  else if (selected) stroke = "#5070c0";
-  else if (s.isCandidate) stroke = "#3050a0";
-  else if (highlighted) stroke = "#50c070";
-  else if (s.isRef) stroke = "#605080";
-  else if (s.isInput) stroke = "#4080c0";
-  else if (s.isOutput) stroke = "#c06040";
-  else if (s.isComposite) stroke = "#303060";
-
-  // Stroke width
-  let strokeWidth = 1;
-  if (s.isEdgeSource || selected || s.isHovered) strokeWidth = 2;
-  else if (s.isCandidate || s.hasError || s.hasWarning || highlighted) strokeWidth = 1.5;
-
-  // Label
-  const labelFill = selected ? "#a0b4e0" : s.isRef ? "#9080b0" : "#777799";
-
-  return {
-    fill,
-    stroke,
-    strokeWidth,
-    labelFill,
-    labelFont: "sans-serif",
-    labelSize: 9,
-    opacity: s.isInactive ? 0.3 : undefined,
-  };
-}
-
-function resolveEdgeStyle(edge: CanvasEdge): EdgeStyle {
-  // Ref edges
-  if (edge.kind === "ref-direct") {
-    return {
-      stroke: "#605080",
-      strokeWidth: 1,
-      arrowSize: 10,
-      labelFill: "#556",
-      labelFont: "sans-serif",
-      labelSize: 10,
-      strokeDash: "4,3",
-      endCap: "dot",
-    };
-  }
-  if (edge.kind === "ref-indirect") {
-    return {
-      stroke: "#403860",
-      strokeWidth: 1,
-      arrowSize: 10,
-      labelFill: "#556",
-      labelFont: "sans-serif",
-      labelSize: 10,
-      strokeDash: "2,4",
-      opacity: 0.6,
-      endCap: "dot",
-    };
-  }
-
-  const stroke = edge.selected ? "#5070c0" : edge.highlighted ? "#50c070" : "#2a2a50";
-  const strokeWidth = edge.selected ? 2 : 1;
-  return {
-    stroke,
-    strokeWidth,
-    arrowSize: 10,
-    labelFill: "#556",
-    labelFont: "sans-serif",
-    labelSize: 10,
-  };
-}
-
-function resolvePortStyle(port: CanvasPort, _node: CanvasNode<MarlinNodeState>): PortStyle {
-  const isOut = port.direction === "out";
-  return {
-    fill: isOut ? "#cc8844" : "#6688cc",
-    stroke: "none",
-    radius: 3,
-  };
-}
-
-/** Produce decorations: diagnostic badges, ref indicators, children count, port dots, container labels. */
-function resolveDecorations(node: CanvasNode<MarlinNodeState>): RenderPrimitive[] {
-  const s = node.state!;
-  const prims: RenderPrimitive[] = [];
-  const isRect = node.shape === "rect";
-  const r = Math.min(node.w, node.h) / 2;
-
-  // Container background: top-left label
-  if (s.isContainerBackground && s.containerLabel) {
-    const halfW = node.w / 2;
-    const halfH = node.h / 2;
-    const labelFill = node.selected ? "#8090c0" : s.hasError ? "#c07070" : "#444466";
-    prims.push({
-      kind: "text",
-      x: -halfW + 10,
-      y: -halfH + 16,
-      text: s.containerLabel,
-      fill: labelFill,
-      fontSize: 11,
-      fontFamily: "sans-serif",
-      anchor: "start",
-    });
-    // Container backgrounds don't get other decorations
-    return prims;
-  }
-
-  // Children count badge
-  if (s.hasChildren && s.childrenCount > 0) {
-    prims.push({
-      kind: "text",
-      x: 0,
-      y: 10,
-      text: `(${s.childrenCount})`,
-      fill: node.selected ? "#6070a0" : "#3a3a60",
-      fontSize: 8,
-      anchor: "middle",
-    });
-  }
-
-  // Error/warning badge
-  if (s.hasError || s.hasWarning) {
-    const badgeY = -(isRect ? LEAF_R * 0.7 - 2 : r - 2);
-    prims.push({
-      kind: "circle",
-      cx: r - 2,
-      cy: badgeY,
-      r: 5,
-      fill: s.hasError ? "#c04040" : "#c08020",
-      stroke: "#0d0d1e",
-      strokeWidth: 1,
-    });
-  }
-
-  // Ref indicator text
-  if (s.refTarget) {
-    const labelY = isRect ? LEAF_R * 0.7 + 9 : r + 9;
-    prims.push({
-      kind: "text",
-      x: 0,
-      y: labelY,
-      text: `\u2197 ${s.refTarget}`,
-      fill: "#605080",
-      fontSize: 7,
-      anchor: "middle",
-    });
-  }
-
-  // Edge-derived port dots
-  for (const dot of s.edgePortDots) {
-    prims.push({
-      kind: "circle",
-      cx: dot.x,
-      cy: dot.y,
-      r: 3,
-      fill: dot.out ? "#cc8844" : "#6688cc",
-      stroke: "none",
-      strokeWidth: 0,
-    });
-  }
-
-  return prims;
-}
-
-/** Full Marlinspike IDE theme — typed state access, no casting. */
-export const marlinIdeTheme: CanvasTheme<MarlinNodeState> = {
-  node: resolveNodeStyle,
-  edge: resolveEdgeStyle,
-  port: resolvePortStyle,
-  decorations: resolveDecorations,
-  background: "#0d0d1e",
-};
+export { classicTheme as marlinIdeTheme } from "./classic-theme.ts";

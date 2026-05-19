@@ -3,12 +3,13 @@ import { hitTest } from "./hit-test.ts";
 import { renderScene } from "../render/scene.ts";
 import { marlinTheme } from "../style/marlin-theme.ts";
 import type { CanvasScene } from "../scene/types.ts";
+import { CIRCLE_GEOMETRY, RECT_GEOMETRY } from "../geometry/node-geometry.ts";
 
 function makeScene(): CanvasScene {
   return {
     nodes: [
-      { id: "a", x: 0, y: 0, w: 52, h: 52, shape: "circle", label: "A" },
-      { id: "b", x: 100, y: 0, w: 52, h: 52, shape: "circle", label: "B" },
+      { id: "a", x: 0, y: 0, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "A" },
+      { id: "b", x: 100, y: 0, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "B" },
     ],
     edges: [{ id: "e1", fromId: "a", toId: "b" }],
   };
@@ -54,8 +55,8 @@ Deno.test("hitTest — flat container: child hit returns child (z-order wins)", 
   // Child comes later in array → rendered on top → hit-test should return child.
   const scene: CanvasScene = {
     nodes: [
-      { id: "container-bg", x: 100, y: 100, w: 200, h: 150, shape: "rect", label: "" },
-      { id: "child", x: 100, y: 100, w: 40, h: 40, shape: "circle", label: "C" },
+      { id: "container-bg", x: 100, y: 100, w: 200, h: 150, geometry: RECT_GEOMETRY, label: "" },
+      { id: "child", x: 100, y: 100, w: 40, h: 40, geometry: CIRCLE_GEOMETRY, label: "C" },
     ],
     edges: [],
   };
@@ -68,8 +69,8 @@ Deno.test("hitTest — flat container: child hit returns child (z-order wins)", 
 Deno.test("hitTest — flat container: clicking background away from child returns background", () => {
   const scene: CanvasScene = {
     nodes: [
-      { id: "container-bg", x: 100, y: 100, w: 200, h: 150, shape: "rect", label: "" },
-      { id: "child", x: 100, y: 100, w: 40, h: 40, shape: "circle", label: "C" },
+      { id: "container-bg", x: 100, y: 100, w: 200, h: 150, geometry: RECT_GEOMETRY, label: "" },
+      { id: "child", x: 100, y: 100, w: 40, h: 40, geometry: CIRCLE_GEOMETRY, label: "C" },
     ],
     edges: [],
   };
@@ -89,7 +90,7 @@ Deno.test("hitTest — rect node hit-testing works", () => {
       y: 50,
       w: 80,
       h: 40,
-      shape: "rect",
+      geometry: RECT_GEOMETRY,
       label: "R",
     }],
     edges: [],
@@ -106,8 +107,8 @@ Deno.test("hitTest — topmost element wins (z-order)", () => {
   // Two overlapping nodes — the later one in the array should be on top
   const scene: CanvasScene = {
     nodes: [
-      { id: "bottom", x: 0, y: 0, w: 60, h: 60, shape: "circle", label: "Bot" },
-      { id: "top", x: 10, y: 0, w: 60, h: 60, shape: "circle", label: "Top" },
+      { id: "bottom", x: 0, y: 0, w: 60, h: 60, geometry: CIRCLE_GEOMETRY, label: "Bot" },
+      { id: "top", x: 10, y: 0, w: 60, h: 60, geometry: CIRCLE_GEOMETRY, label: "Top" },
     ],
     edges: [],
   };

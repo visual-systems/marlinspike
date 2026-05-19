@@ -21,7 +21,10 @@ import {
 } from "@marlinspike/graph";
 import type { Edge, TreeNode } from "@marlinspike/graph";
 
-export const meta = { title: "Package: @marlinspike-graph" };
+export const meta = {
+  title: "Package: @marlinspike-graph",
+  url: "https://github.com/visual-systems/marlinspike/blob/main/packages/graph/README.md",
+};
 
 // ---------------------------------------------------------------------------
 // Styles

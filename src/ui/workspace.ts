@@ -93,6 +93,8 @@ export interface Constraint {
   /** Declared applicability — used by the UI to filter which entities can have this constraint. */
   targets: ConstraintTarget[];
   data: Record<string, unknown>;
+  /** Per-element style overrides — same NodeStyleProps format as themes. */
+  style?: import("@marlinspike/canvas").NodeStyleProps;
   version: number;
 }
 
