@@ -3,12 +3,12 @@
  * produce identical results to the inline code they replace.
  */
 
-import { assertEquals, assertAlmostEquals } from "@std/assert";
+import { assertAlmostEquals, assertEquals } from "@std/assert";
 import {
+  type BodyStyle,
   CIRCLE_GEOMETRY,
   RECT_GEOMETRY,
   resolveGeometry,
-  type BodyStyle,
 } from "./node-geometry.ts";
 import { arcClipPoint, arcClipRect } from "./arc.ts";
 import { circlePortPositions, rectPortPositions } from "./ports.ts";

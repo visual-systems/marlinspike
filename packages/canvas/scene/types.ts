@@ -34,6 +34,8 @@ export interface CanvasNode<S = unknown> {
   w: number;
   h: number;
   shape: "circle" | "rect";
+  /** Opaque geometry. When present, takes precedence over shape for rendering and clipping. */
+  geometry?: import("../geometry/node-geometry.ts").NodeGeometry;
   label: string;
   ports?: CanvasPort[];
   selected?: boolean;

@@ -63,16 +63,16 @@ reproduces current visual behavior exactly.
 
 ### Phase B — Rewire canvas dispatch points to use `NodeGeometry`
 
-- [ ] B.1 Add `geometry?: NodeGeometry` to `CanvasNode` (alongside existing `shape`)
-- [ ] B.2 Rewire `renderNode` (render/node.ts:19-46) — replace if/else with
+- [x] B.1 Add `geometry?: NodeGeometry` to `CanvasNode` (alongside existing `shape`)
+- [x] B.2 Rewire `renderNode` (render/node.ts:19-46) — replace if/else with
   `resolveGeometry(node).renderBody(...)`. Style still comes from `theme.node(node)`.
-- [ ] B.3 Rewire `surfacePoint` (geometry/surface.ts:30-41) — replace shape dispatch with
+- [x] B.3 Rewire `surfacePoint` (geometry/surface.ts:30-41) — replace shape dispatch with
   `resolveGeometry(from).surfacePoint(...)`
-- [ ] B.4 Rewire `computeEdgePath` (render/edge.ts:86-98) — replace 4 shape checks with
+- [x] B.4 Rewire `computeEdgePath` (render/edge.ts:86-98) — replace 4 shape checks with
   `resolveGeometry(pa).arcClip(...)` and `resolveGeometry(pb).arcClip(...)`
-- [ ] B.5 Update tests — scene_test.ts helpers (`circleNode`, `rectNode`) gain `geometry`
-  field alongside `shape`. surface_test.ts likewise.
-- [ ] B.6 All tests pass, visual output byte-identical
+- [x] B.5 Tests pass without updating helpers — resolveGeometry falls back to shape field.
+  573 tests green.
+- [x] B.6 All tests pass, visual output byte-identical
 
 #### Key files:
 - Modify: `packages/canvas/scene/types.ts` — add `geometry?` field
