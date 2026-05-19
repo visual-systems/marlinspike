@@ -222,16 +222,15 @@ definitions in marlinspike application code. Architecture:
   - `resolveProps(roleDefs, role, overrides) → NodeStyleProps` — sparse merge
   - `resolveGeometryFromProps(props) → NodeGeometry` — geometry string → singleton
   - Re-export `NodeStyleProps`, `ThemeConstants` from canvas package
-- **Style data format** — `NodeStyleProps.geometry` is already a string identifier.
-  The theme package resolves strings to `NodeGeometry` via a registry. This means theme
-  definitions are pure data (JSON-serializable role→props maps).
+- **Geometry resolution** — `NodeStyleProps.geometry` is a string identifier. The theme
+  package resolves strings to `NodeGeometry` singletons via a registry.
 - **Semantic identifiers** — marlinspike defines a `MarlinRoles` interface mandating
   required role identifiers (`"leaf"`, `"container"`, `"collapsed-subgraph"`, `"ref"`,
   `"leaf-rect"`). The theme package is generic over role sets. The app-specific schema
   constrains which roles a valid theme must provide.
-- **CLASSIC theme** becomes: a `ThemeDefinition<MarlinRoles>` data object + the CLASSIC
-  theme's interaction-dependent style logic (selection/hover/error states are computed,
-  not declarative — they stay in the theme function).
+- **CLASSIC theme** becomes: a `ThemeDefinition<MarlinRoles>` with base role→props + the
+  CLASSIC theme's interaction-dependent style logic as TS functions (selection/hover/error
+  states are computed, not declarative — they stay in the theme function).
 
 Steps:
 - [ ] H.1 Create `packages/theme/` with `deno.json`, `mod.ts`
@@ -252,26 +251,37 @@ Steps:
 
 ### Phase H design notes
 
-**Style representation layering:**
+**Style representation:**
 - Native representation is a TypeScript interface with functions (computed properties for
   interaction-dependent styles like hover/selection/error state).
 - Base role definitions within a theme are pure data (role→NodeStyleProps maps).
-- `fromJSON()` helper validates and hydrates JSON into the interface.
 - Bundled themes (CLASSIC) are `.ts` files that directly construct the interface.
-- JSON representation enables: documentation, authorship metadata, serialization into the
-  graph for meta-style capabilities, safety via validation.
-- The native interface is the source of truth; JSON is a serialization format with a
-  well-defined builder.
+- The native TS interface is the source of truth and satisfies all immediate needs.
+
+**JSON serialization (deferred):**
+- A `fromJSON()` helper could validate and hydrate JSON into the native interface.
+- JSON representation would enable: documentation, authorship metadata, serialization into
+  the graph for meta-style capabilities, safety via validation.
+- Deferred because the native TS interface covers our current use cases. Worth revisiting
+  when meta-style capabilities (styles stored in the graph) become relevant.
 
 **Bidirectional codec (deferred, design north star):**
 - Single definition yields parser + serializer + schema + TypeScript types. Like Haskell's
   [autodocodec](https://hackage.haskell.org/package/autodocodec) but for the marlinspike
-  ecosystem.
+  ecosystem. Would eliminate the need to define independent schema and parser — validation
+  and type definition unified.
 - Recursive possibility: the codec itself could be a marlinspike graph — a graph that
-  defines how to validate graphs. This connects to the broader vision of domain-specific
-  "apps" represented as graphs + constraints.
-- Would eliminate the need to define independent schema and parser — validation and type
-  definition unified.
+  defines how to validate graphs. This connects to the broader "domain app" vision
+  (see `examples/sdf-geometry-algebra/`).
+
+**SDF geometry algebra (deferred, see `examples/sdf-geometry-algebra/`):**
+- Composing SDF primitives via constructive operations (union, intersection, smooth blend)
+  as a dataflow graph — the graph *is* the shape definition.
+- The graph structure enables: SDF evaluation, Jacobian via reverse-mode AD (chain rule
+  over the computation DAG), and GLSL shader code generation.
+- Demonstrates the "domain app" pattern: domain-specific applications as graph topologies
+  with constraints. Other potential domain apps: signal processing, shader graphs, circuit
+  design, probabilistic programs.
 
 ### Phase I — Update DESIGN.md
 
@@ -333,9 +343,8 @@ I and J are parallel after H.
 - **Constraint migration** — YES, eliminate `data.rendering.shape`. Move to top-level
   `style: NodeStyleProps` on `Constraint`. Same vocabulary as themes.
 - **Theme package extraction** — YES, in scope. Generic machinery in `packages/theme/`,
-  semantic role identifiers mandated by app-specific schema. Theme definitions are pure
-  data (role→NodeStyleProps maps). The style data format's string geometry identifiers
-  enable JSON-serializable theme definitions.
+  semantic role identifiers mandated by app-specific schema. Native TS interface as source
+  of truth. JSON serialization deferred — TS satisfies immediate needs.
 
 ## Verification
 
