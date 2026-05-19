@@ -164,7 +164,7 @@ packages/layout/
 
 One-directional. Canvas and graph never import from layout.
 
-### Phase 8 — Visual roles + SDF primitives (styling system redesign)
+### Phase 8 — Theme system redesign (opaque shapes + visual roles)
 
 **Not in scope for this branch** — future work. Documented here because the extract-layout work
 surfaces the shape boundary question clearly.
@@ -176,28 +176,81 @@ canvas-adapter hardcodes expanded→rect / else→circle, and containers are spe
 `GROUP_PADDING`, `LABEL_H`, etc. The shape enum (`"circle" | "rect"`) is too rigid for a
 flexible styling system.
 
+#### Design decisions
+
+**D1 — Opaque shape type.** After construction, a shape is a single opaque type whose only
+active query mechanism is its SDF: `(px, py) => number`. Primitive constructors (circle, rect,
+rounded-rect, etc.) produce this opaque type. No package outside canvas needs to know *what* a
+shape is — only how to measure distance to it. Serialization is not needed at the shape level
+(graphs are serialized via codecs at the graph layer; shapes are reconstructed on load).
+
+**D2 — Canvas internal shape knowledge.** Canvas may retain internal knowledge of shape
+properties for rendering performance (e.g. drawing borders on SVG requires knowing whether to
+emit `<rect>` vs `<circle>`). This is an implementation detail hidden behind the opaque type —
+external consumers (layout, IDE) never see it.
+
+**D3 — Theme resolves geometry too.** The theme is the single resolution point for both shape
+and style: `(context, semantics) → geometry + visual properties`. A theme could map if-statements
+to diamonds, make everything oval, etc. The information flow is `context, semantics → geometry
+construction` — generic enough to be a judgment in the future.
+
+**D4 — Dynamic dispatch, pre-canvas resolution.** Role→primitive resolution happens dynamically
+(no pre-computation). Once resolved, the result flows into canvas domain as concrete geometry +
+style. `CanvasNode` is NOT role-aware — by the time canvas sees it, the role has been resolved.
+Canvas just renders what it's given. No performance optimization needed yet; keep the design as
+dynamic as clean architecture allows.
+
+**D5 — Style schema as data.** Theme definitions (including extent rules, padding, colors) are
+declarative data — a schema that the theme resolver interprets. This enables:
+- Styles defined as JSON (or similar structured format)
+- Constraint overrides use the same schema (merged at a different layer)
+- Future: style definitions loadable from external files
+
+**D6 — Constraint overrides at top level.** Constraints can override primitive construction
+using the same schema vocabulary as theme definitions. Override properties live at the top level
+of the constraint object (not nested in `data`). This replaces the current
+`data.rendering.shape` pattern. Existing builtin constraints (`WORKSPACE_CONSTRAINT`,
+`PROFILE_CONSTRAINT`) migrate from `{ data: { rendering: { shape: "rect" } } }` to
+top-level style overrides.
+
+**D7 — "Theme" is the name.** The swappable style system is called a "theme". CLASSIC is the
+first theme instance (the current visual style). `CanvasTheme` is already the mechanism — themes
+just formalize the semantic input so the resolver has a clean role to work with.
+
+**D8 — Edges are distinct from nodes.** Node shapes are 2D regions with SDFs; edges are 1D
+paths (lines/curves). They share the theme pipeline (`context → geometry`) but the geometry
+type is fundamentally different. No need to force-unify.
+
+**D9 — ForceNode shape representation (deferred).** Currently `ForceNode.shape?: "circle" |
+"rect"`. In the opaque-shape world, this should evolve to carry the opaque shape (or its SDF).
+For now, canvas can maintain the enum internally. Future: an extensible tagged-record approach
+rather than a `shape` key, allowing richer shape descriptions. References for future design:
+[Haskell Diagrams](https://diagrams.github.io/doc/quickstart.html) (flexible diagram algebra),
+[Inigo Quilez SDF](https://iquilezles.org/articles/distfunctions2d/) (SDF primitives + combinators).
+
 #### Architecture: SDF as the universal geometry contract
 
 ```
-semantic model  →  visual role  →  primitive definition (carries SDF)  →  layout + rendering
-(TreeNode)         (swappable)     (the universal interface)
+semantic model  →  visual role  →  theme resolution  →  opaque shape + style  →  layout + rendering
+(TreeNode)         (derived)       (context → geom)     (SDF is the contract)
 ```
 
-- **Canvas package** = flexible primitives and rendering. No semantic knowledge.
-- **Visual role** = mapping from semantic concepts to primitive instances. Swappable like a
-  stylesheet — changing the role mapping changes the entire visual language, and layout still
-  works because it only talks to SDFs.
-- **Primitive definition** = geometry (SDF function) + visual properties (stroke, fill, etc.) +
-  extent rules (for containers). The SDF is what connects layout to rendering.
-- **Layout** only needs the SDF. It never knows what things look like.
-- **Rendering** only needs the primitive's visual properties. It never knows where things are.
+- **Canvas package** = opaque shape type, SDF geometry, primitive constructors, rendering.
+  Knows nothing about roles or marlinspike semantics. May use internal shape knowledge for
+  render optimization (D2).
+- **Theme** = mapping from `(role, context)` → `(shape, style)`. Declarative schema (D5).
+  Swappable — CLASSIC is the first instance (D7). Lives in `src/` (app-specific).
+- **Layout** only needs the SDF. Never knows what things look like.
+- **Rendering** only needs the shape's visual properties + internal type. Never knows where
+  things are.
 
 #### Container geometry via SDF
 
 Containers are not special — they're primitives whose geometry is computed from children extent:
 
 1. Children settle (siblings laid out via SDF forces — self-contained per level)
-2. Parent's **extent rule** (part of role definition) maps children bbox → parent `(w, h)`
+2. Parent's **extent rule** (part of theme definition, D5) maps children bbox → parent `(w, h)`.
+   Padding, label height, etc. are style properties in the theme schema, not hardcoded constants.
 3. Parent's SDF is computed from `(w, h)` — works for any shape parameterized by width/height
    (rectangles, rounded rects, ellipses, stadiums, etc.)
 4. Parent enters layout with ITS siblings using its new computed geometry
@@ -213,20 +266,26 @@ simple hulls, but this is not needed for the initial implementation.
 
 #### Where it lives
 
-- **`@marlinspike/canvas`** — provides the generic mechanism: `CanvasTheme` interface, primitive
-  types, SDF geometry. Knows nothing about roles or marlinspike semantics.
+- **`@marlinspike/canvas`** — provides the generic mechanism: opaque shape type, primitive
+  constructors, `CanvasTheme` interface, SDF geometry, renderers. Knows nothing about roles or
+  marlinspike semantics.
 - **`src/`** — defines the concrete role types (`"leaf" | "container" | ...`), the role
-  computation function (`TreeNode` + expansion state → role), and the role→primitive mappings.
-  This is application code, not a package — roles are marlinspike-specific semantic concepts.
+  computation function (`TreeNode` + expansion state → role), the theme definitions (CLASSIC),
+  and the constraint→style-override merging. Application code, not a package.
 
-The current `marlinTheme` already follows this pattern (canvas provides the resolver shape,
-IDE fills it in). Roles just formalize the semantic input so the theme resolver has a clean
-role to work with rather than a bag of booleans.
+#### Roles are derived, not prescribed
 
-**CLASSIC** is the name for the current visual style — the first instance of the role→primitive
-mapping. Future styles (e.g. BLUEPRINT, CIRCUIT) would be additional mappings implementing the
-same interface. Naming TBD: "skin", "visual style", or just "theme" (since `CanvasTheme` is
-already the mechanism).
+Visual roles are computed from structure — no prescription needed:
+
+- **leaf** — `kind === "leaf"`
+- **container** — `kind === "composite"` and expanded
+- **collapsed-subgraph** — `kind === "composite"` and not expanded
+- **ref** — `type === "ref"`
+
+Role computation is a pure function of `TreeNode` + expansion state. Constraints don't override
+roles (that would mean making a node *look like* something it structurally isn't). Instead,
+constraints override style properties within a role using the same schema vocabulary as theme
+definitions (D6). The role is a structural fact, not a styling choice.
 
 #### Constructive SDF geometry (deferred)
 
@@ -259,39 +318,34 @@ The current SVG renderer would remain as a lightweight/server-side option.
 
 #### Extension concept (deferred)
 
-Role→primitive mappings fit into a broader "extension" concept: a bundle of role mappings +
-primitive definitions + possibly layout hints. Different extensions could provide entirely
-different visual languages for the same semantic model. Defer until the role system is proven.
-
-#### Roles are derived, not prescribed
-
-Visual roles are computed from structure — no prescription needed:
-
-- **leaf** — `kind === "leaf"`
-- **container** — `kind === "composite"` and expanded
-- **collapsed-subgraph** — `kind === "composite"` and not expanded
-- **ref** — `type === "ref"`
-
-Role computation is a pure function of `TreeNode` + expansion state. Constraints don't need to
-override roles (that would mean making a node *look like* something it structurally isn't).
-Instead, constraints operate at a different layer: **style overrides within a role** (e.g. "this
-leaf should be red", "this container has a thicker border"). The role is a structural fact, not
-a styling choice.
+Theme definitions fit into a broader "extension" concept: a bundle of themes + primitive
+definitions + possibly layout hints. Different extensions could provide entirely different
+visual languages for the same semantic model. Defer until the theme system is proven.
 
 #### Checklist
 
-- [ ] 8.1 Promote SDF from shape-enum dispatch to primitive-carried geometry. Primitives carry
-      their own SDF function rather than dispatching through `sdfOf("circle" | "rect")`.
-- [ ] 8.2 Define visual role type and role→primitive mapping interface in `src/`
-- [ ] 8.3 Role computation function in `src/` (`TreeNode` + expansion state → visual role)
-- [ ] 8.4 Replace canvas-adapter shape hardcoding with role→primitive resolution via theme
-- [ ] 8.5 Container primitives: extent rule (children bbox → parent w,h) + SDF from computed
-      dimensions. Replaces hardcoded GROUP_PADDING / LABEL_H.
-- [ ] 8.6 Constraints provide style overrides within roles (not role or shape overrides)
-- [ ] 8.7 Style-sheet swappability: verify that swapping role mappings works with all layout
-      algorithms (any style + any layout = correct, because SDF is the universal interface)
-- [ ] 8.8 Judgment-ready: future judgments can assign roles (e.g. `"hub"`) without knowing
-      geometry — role mapping resolves them
+- [ ] 8.1 Define opaque shape type in canvas — single type, SDF as only external query (D1).
+      Primitive constructors (circle, rect, rounded-rect) produce this type. Canvas retains
+      internal type knowledge for rendering (D2).
+- [ ] 8.2 Extend `CanvasTheme` to resolve geometry (not just style). Theme maps
+      `(role, context)` → `(shape, style)` (D3).
+- [ ] 8.3 Define style schema as declarative data (D5). Theme definitions interpretable from
+      structured format (JSON or similar). Includes extent rules (padding, label height) for
+      containers.
+- [ ] 8.4 Define visual role type and role computation function in `src/` — pure function of
+      `TreeNode` + expansion state → role.
+- [ ] 8.5 Create CLASSIC theme definition in `src/` — first instance of the theme schema (D7).
+      Reproduces current visual behavior.
+- [ ] 8.6 Replace canvas-adapter shape hardcoding with theme-based resolution (D4). Dynamic
+      dispatch, CanvasNode receives resolved geometry (not role-aware).
+- [ ] 8.7 Container extent rules in theme schema (D5). Replaces hardcoded GROUP_PADDING /
+      LABEL_H with style properties.
+- [ ] 8.8 Migrate constraints to top-level style overrides using theme schema vocabulary (D6).
+      Migrate `WORKSPACE_CONSTRAINT` and `PROFILE_CONSTRAINT` from `data.rendering.shape`.
+- [ ] 8.9 Theme swappability: verify that swapping themes works with all layout algorithms
+      (any theme + any layout = correct, because SDF is the universal interface).
+- [ ] 8.10 Judgment-ready: future judgments can produce roles or style overrides without
+      knowing geometry — theme resolution handles it (D3).
 
 ## Open Questions
 
