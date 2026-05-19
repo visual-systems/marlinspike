@@ -377,6 +377,12 @@ stories are migrated. H is package extraction. I and J are parallel after H.
    *concepts*, only about calling resolver functions. The coupling is at the type level, not
    at the knowledge level.
 
+   **Partial implementation (2026-05-20):** Added optional `style?: Partial<NodeStyle>` to
+   `CanvasNode` and `style?: Partial<EdgeStyle>` to `CanvasEdge`. Renderers merge per-element
+   style over theme defaults. This enables fully ad-hoc standalone usage without defining a
+   custom theme. The theme parameter remains for semantic/role-based styling. Both approaches
+   coexist — per-element overrides take precedence.
+
 ### Resolved
 
 - **SDF on NodeGeometry** — YES, include `sdf(w, h)` now. It's the core of D1.

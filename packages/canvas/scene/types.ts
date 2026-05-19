@@ -42,6 +42,11 @@ export interface CanvasNode<S = unknown> {
   dashed?: boolean;
   /** Consumer-specific state, typed per-consumer. Opaque to the package. */
   state?: S;
+  /**
+   * Per-element style overrides. Merged over theme defaults at render time.
+   * Allows ad-hoc styling without defining a custom theme.
+   */
+  style?: Partial<import("../style/types.ts").NodeStyle>;
 }
 
 /** A directed edge between two nodes. */
@@ -56,6 +61,11 @@ export interface CanvasEdge {
   interactive?: boolean;
   /** Consumer classification for style resolution (e.g. "ref-direct"). Package ignores this. */
   kind?: string;
+  /**
+   * Per-element style overrides. Merged over theme defaults at render time.
+   * Allows ad-hoc styling without defining a custom theme.
+   */
+  style?: Partial<import("../style/types.ts").EdgeStyle>;
 }
 
 /**

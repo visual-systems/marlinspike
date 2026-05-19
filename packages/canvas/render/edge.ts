@@ -110,7 +110,8 @@ export function computeEdgePath<S>(
  * Returns a group containing the path, arrowhead, and optional label.
  */
 export function renderEdge<S>(data: EdgeRenderData, theme: CanvasTheme<S>): RenderPrimitive {
-  const style = theme.edge(data.edge);
+  const themeStyle = theme.edge(data.edge);
+  const style = data.edge.style ? { ...themeStyle, ...data.edge.style } : themeStyle;
   const children: RenderPrimitive[] = [];
   const isInteractive = data.edge.interactive !== false;
 

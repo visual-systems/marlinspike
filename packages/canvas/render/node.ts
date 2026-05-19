@@ -15,7 +15,8 @@ import { resolveGeometry } from "../geometry/node-geometry.ts";
  */
 export function renderNode<S>(node: CanvasNode<S>, theme: CanvasTheme<S>): RenderPrimitive {
   const resolved = theme.resolveNode?.(node);
-  const style = resolved?.style ?? theme.node(node);
+  const themeStyle = resolved?.style ?? theme.node(node);
+  const style = node.style ? { ...themeStyle, ...node.style } : themeStyle;
   const geo = resolved?.geometry ?? resolveGeometry(node);
   const children: RenderPrimitive[] = [];
 
