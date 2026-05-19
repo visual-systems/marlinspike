@@ -60,6 +60,22 @@ export type NodeDecorationsResolver<S = unknown> = (
   node: CanvasNode<S>,
 ) => import("../render/primitives.ts").RenderPrimitive[];
 
+/** Layout constants that themes can override (container padding, label height, etc). */
+export interface ThemeConstants {
+  /** Padding around children in expanded containers. */
+  groupPadding: number;
+  /** Height of label strip at top of expanded containers. */
+  labelH: number;
+  /** Radius of collapsed leaf nodes. */
+  leafRadius: number;
+}
+
+/** Combined geometry + style resolution result from resolveNode. */
+export interface ResolvedNode {
+  geometry: import("../geometry/node-geometry.ts").NodeGeometry;
+  style: NodeStyle;
+}
+
 /** A complete visual theme for the canvas. */
 export interface CanvasTheme<S = unknown> {
   node: NodeStyleResolver<S>;
@@ -68,4 +84,12 @@ export interface CanvasTheme<S = unknown> {
   /** Optional extra primitives rendered after the node shape (badges, indicators, etc). */
   decorations?: NodeDecorationsResolver<S>;
   background: string;
+  /**
+   * Full node resolution: geometry + style in one call.
+   * When present, takes precedence over the separate `node` resolver for both
+   * geometry and style. This is the extension point for theme-controlled shapes.
+   */
+  resolveNode?: (node: CanvasNode<S>) => ResolvedNode;
+  /** Layout constants. When absent, consumers use their own defaults. */
+  constants?: ThemeConstants;
 }

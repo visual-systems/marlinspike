@@ -84,16 +84,15 @@ reproduces current visual behavior exactly.
 
 ### Phase C — Extend `CanvasTheme` with geometry resolution
 
-- [ ] C.1 Add optional `resolveNode` to `CanvasTheme<S>`:
+- [x] C.1 Add optional `resolveNode` to `CanvasTheme<S>`:
   `resolveNode?: (node: CanvasNode<S>) => { geometry: NodeGeometry; style: NodeStyle }`
   When present, takes precedence over the separate `node` resolver.
-- [ ] C.2 Add optional `constants` to `CanvasTheme<S>`:
+- [x] C.2 Add optional `constants` to `CanvasTheme<S>`:
   `constants?: { groupPadding: number; labelH: number; leafRadius: number }`
-- [ ] C.3 Update `renderNode` — if `theme.resolveNode` exists, use it for both geometry and
+- [x] C.3 Update `renderNode` — if `theme.resolveNode` exists, use it for both geometry and
   style; otherwise fall back to `theme.node(node)` + `resolveGeometry(node)`
-- [ ] C.4 Update `marlinTheme` (the simple canvas-package theme) — no change needed, it
-  continues to use the `node` resolver. Nodes must carry `geometry` or `shape`.
-- [ ] C.5 Tests pass
+- [x] C.4 `marlinTheme` unchanged — continues using `node` resolver. Works via fallback.
+- [x] C.5 Tests pass (102 canvas tests)
 
 #### Key files:
 - Modify: `packages/canvas/style/types.ts` — add `resolveNode?`, `constants?`

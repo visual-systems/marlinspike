@@ -31,6 +31,8 @@ export type {
   NodeStyleResolver,
   PortStyle,
   PortStyleResolver,
+  ResolvedNode,
+  ThemeConstants,
 } from "./style/types.ts";
 
 // ---------------------------------------------------------------------------

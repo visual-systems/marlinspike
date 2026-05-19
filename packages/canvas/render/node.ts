@@ -14,8 +14,9 @@ import { resolveGeometry } from "../geometry/node-geometry.ts";
  * Returns a group containing the shape, label, ports, and decorations.
  */
 export function renderNode<S>(node: CanvasNode<S>, theme: CanvasTheme<S>): RenderPrimitive {
-  const style = theme.node(node);
-  const geo = resolveGeometry(node);
+  const resolved = theme.resolveNode?.(node);
+  const style = resolved?.style ?? theme.node(node);
+  const geo = resolved?.geometry ?? resolveGeometry(node);
   const children: RenderPrimitive[] = [];
 
   children.push(...geo.renderBody(node.w, node.h, {
