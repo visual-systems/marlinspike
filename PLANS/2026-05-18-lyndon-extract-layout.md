@@ -218,12 +218,20 @@ mappings + primitive definitions + possibly layout hints. Different extensions c
 entirely different visual languages for the same semantic model (e.g. "blueprint", "circuit
 diagram", "hand-drawn"). Defer until the role system is proven.
 
-#### Constraint system evolution
+#### Roles are derived, not prescribed
 
-Constraints currently force a shape enum (`data.rendering.shape: "rect"`). In the new world,
-constraints would set a *role* or role override, not a shape. The role mapping resolves to a
-primitive. This is more flexible and separates the "what is it" decision from the "what does it
-look like" decision.
+Visual roles are computed from structure — no prescription needed:
+
+- **leaf** — `kind === "leaf"`
+- **container** — `kind === "composite"` and expanded
+- **collapsed-subgraph** — `kind === "composite"` and not expanded
+- **ref** — `type === "ref"`
+
+Role computation is a pure function of `TreeNode` + expansion state. Constraints don't need to
+override roles (that would mean making a node *look like* something it structurally isn't).
+Instead, constraints operate at a different layer: **style overrides within a role** (e.g. "this
+leaf should be red", "this container has a thicker border"). The role is a structural fact, not
+a styling choice.
 
 #### Checklist
 
@@ -234,7 +242,7 @@ look like" decision.
 - [ ] 8.4 Replace canvas-adapter shape hardcoding with role→primitive resolution via theme
 - [ ] 8.5 Container primitives: extent rule (children bbox → parent w,h) + SDF from computed
       dimensions. Replaces hardcoded GROUP_PADDING / LABEL_H.
-- [ ] 8.6 Constraints set roles, not shapes
+- [ ] 8.6 Constraints provide style overrides within roles (not role or shape overrides)
 - [ ] 8.7 Style-sheet swappability: verify that swapping role mappings works with all layout
       algorithms (any style + any layout = correct, because SDF is the universal interface)
 - [ ] 8.8 Judgment-ready: future judgments can assign roles (e.g. `"hub"`) without knowing
