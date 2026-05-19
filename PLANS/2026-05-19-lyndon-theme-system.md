@@ -413,13 +413,13 @@ stories are migrated. H is package extraction. I and J are parallel after H.
 
 ## Verification
 
-- [ ] `NO_COLOR=1 deno task ci` — all tests green
-- [ ] New unit tests for NodeGeometry implementations
-- [ ] CLASSIC theme produces identical styles to current marlinIdeTheme
-- [ ] Visual check: all 5 layout algorithms work
-- [ ] Visual check: port layout correct
-- [ ] Visual check: expanded containers render correctly
-- [ ] Visual check: edge clipping identical for circle and rect nodes
-- [ ] `marlinTheme` (simple canvas-package theme) still works for package stories
-- [ ] Theme package unit tests for resolveProps merge logic
-- [ ] DESIGN.md accurately reflects new architecture
+- [x] `NO_COLOR=1 deno task ci` — all tests green (581 passing)
+- [x] New unit tests for NodeGeometry implementations
+- [x] CLASSIC theme produces identical styles to current marlinIdeTheme
+- [x] Visual check: all 5 layout algorithms work
+- [x] Visual check: port layout correct
+- [x] Visual check: expanded containers render correctly
+- [x] Visual check: edge clipping identical for circle and rect nodes
+- [x] `marlinTheme` (simple canvas-package theme) still works for package stories
+- [x] Theme package unit tests for resolveProps merge logic
+- [x] DESIGN.md accurately reflects new architecture
