@@ -328,6 +328,18 @@ translate directly to GLSL fragment shaders. This would enable:
 
 The current SVG renderer would remain as a lightweight/server-side option.
 
+**Jacobian over control parameters (deferred)**: Constructive SDF shapes have control parameters
+(width, height, corner radius, blend factor, etc.). Since SDFs are differentiable, we can
+compute partial derivatives with respect to these parameters — a Jacobian matrix. This enables
+gradient-based optimization: express a style goal (e.g. "fit children with minimal padding",
+"maximize separation between ports") as a loss function over SDF values, then use the Jacobian
+to efficiently compute parameter adjustments that satisfy the goal. This is much more efficient
+than iterative search over the parameter space.
+
+Natural fit with the judgment system: judgments express goals, the Jacobian provides the
+efficient solver. A judgment like "this container should snugly enclose its children" becomes
+a differentiable optimization problem rather than a heuristic.
+
 #### Extension concept (deferred)
 
 Theme definitions fit into a broader "extension" concept: a bundle of themes + primitive
