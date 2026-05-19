@@ -797,7 +797,7 @@ export function FigmaLiteWithLayout() {
     let tick = 0;
     const step = () => {
       const a = algoRef.current!;
-      const result = a.tick(forceNodesRef.current, forceEdges, tick++);
+      const result = a.tick(forceNodesRef.current!, forceEdges, tick++);
       forceNodesRef.current = result.nodes;
 
       // Sync ForceNode positions back to CanvasNodes
