@@ -218,28 +218,39 @@ Extract generic theme machinery into `packages/theme/` while keeping semantic ro
 definitions in marlinspike application code. Architecture:
 
 - **`packages/theme/`** — generic theme infrastructure:
-  - `ThemeDefinition<Roles>` — maps role identifiers to `NodeStyleProps`
+  - `ThemeDefinition` — interface for theme machinery (resolve, constants, etc.)
   - `resolveProps(roleDefs, role, overrides) → NodeStyleProps` — sparse merge
   - `resolveGeometryFromProps(props) → NodeGeometry` — geometry string → singleton
   - Re-export `NodeStyleProps`, `ThemeConstants` from canvas package
+- **Structural intersection over parameterised generics** — `ThemeDefinition` carries
+  mechanism (what a theme *does*); `MarlinSemanticIdentifiers` carries the domain contract
+  (what roles a marlinspike theme *must provide*). A valid marlinspike theme is
+  `ThemeDefinition & MarlinSemanticIdentifiers`. This separates concerns cleanly:
+  - The theme package doesn't know about marlinspike's roles — just provides mechanism
+  - Open extension: plugins add `& ExtensionIdentifiers` without touching ThemeDefinition
+  - Multi-app composition: `ThemeDefinition & AppA & AppB` — additive, preserves provenance
+  - Follows TS idiom: generics suit containers (`Array<T>`), intersections suit
+    "satisfies multiple contracts"
 - **Geometry resolution** — `NodeStyleProps.geometry` is a string identifier. The theme
   package resolves strings to `NodeGeometry` singletons via a registry.
-- **Semantic identifiers** — marlinspike defines a `MarlinRoles` interface mandating
-  required role identifiers (`"leaf"`, `"container"`, `"collapsed-subgraph"`, `"ref"`,
-  `"leaf-rect"`). The theme package is generic over role sets. The app-specific schema
-  constrains which roles a valid theme must provide.
-- **CLASSIC theme** becomes: a `ThemeDefinition<MarlinRoles>` with base role→props + the
-  CLASSIC theme's interaction-dependent style logic as TS functions (selection/hover/error
+- **Semantic identifiers** — marlinspike defines `MarlinSemanticIdentifiers` mandating
+  required role keys (`"leaf"`, `"container"`, `"collapsed-subgraph"`, `"ref"`,
+  `"leaf-rect"`) each mapping to `NodeStyleProps`. The theme package's resolve function
+  takes a string key and a props map — type safety comes from the app-side interface
+  constraining which strings are valid.
+- **CLASSIC theme** becomes: `ThemeDefinition & MarlinSemanticIdentifiers` with base
+  role→props + interaction-dependent style logic as TS functions (selection/hover/error
   states are computed, not declarative — they stay in the theme function).
 
 Steps:
 - [ ] H.1 Create `packages/theme/` with `deno.json`, `mod.ts`
-- [ ] H.2 Define `ThemeDefinition<R>` — generic record of role→NodeStyleProps
-- [ ] H.3 Implement `resolveProps(definition, role, overrides)` — merge logic
-- [ ] H.4 Implement geometry string→singleton resolution
-- [ ] H.5 Move CLASSIC theme's role→props map to use `ThemeDefinition<MarlinRoles>`
-- [ ] H.6 Import theme package from `src/ui/lib/classic-theme.ts`
-- [ ] H.7 Tests pass
+- [ ] H.2 Define `ThemeDefinition` — theme machinery interface
+- [ ] H.3 Define `MarlinSemanticIdentifiers` in `src/` — required role→props contract
+- [ ] H.4 Implement `resolveProps(roleDefs, role, overrides)` — merge logic
+- [ ] H.5 Implement geometry string→singleton resolution
+- [ ] H.6 Move CLASSIC theme to `ThemeDefinition & MarlinSemanticIdentifiers`
+- [ ] H.7 Import theme package from `src/ui/lib/classic-theme.ts`
+- [ ] H.8 Tests pass
 
 #### Key files:
 - New: `packages/theme/deno.json`
@@ -345,6 +356,10 @@ I and J are parallel after H.
 - **Theme package extraction** — YES, in scope. Generic machinery in `packages/theme/`,
   semantic role identifiers mandated by app-specific schema. Native TS interface as source
   of truth. JSON serialization deferred — TS satisfies immediate needs.
+- **Structural intersection over generics** — `ThemeDefinition & MarlinSemanticIdentifiers`
+  rather than `ThemeDefinition<MarlinRoles>`. Separates mechanism from domain contract,
+  supports open extension and multi-app composition, follows TS idiom for "satisfies
+  multiple contracts".
 
 ## Verification
 
