@@ -340,6 +340,17 @@ Natural fit with the judgment system: judgments express goals, the Jacobian prov
 efficient solver. A judgment like "this container should snugly enclose its children" becomes
 a differentiable optimization problem rather than a heuristic.
 
+**Chain rule over constructive geometry**: Composite shapes built via SDF combinators form a
+computation DAG from meta-parameters → primitive parameters → SDF values. The chain rule
+applies: `∂S/∂θ = ∂S/∂P_i · ∂P_i/∂θ`. For example, two circles unioned touching horizontally
+can be described by `(cx, cy, r)` — 3 meta-parameters instead of 6 primitive parameters.
+`∂S/∂r` captures both the radius change and the center displacement simultaneously. SDF
+combinators have known gradients: `min`/`max` are piecewise (which primitive is active at the
+query point), smooth variants `smin`/`smax` are continuous everywhere — another reason to
+prefer smooth combinators for optimization. This is essentially automatic differentiation
+over the shape construction DAG, and could be implemented as such (dual numbers or tape-based
+AD over SDF expressions).
+
 #### Extension concept (deferred)
 
 Theme definitions fit into a broader "extension" concept: a bundle of themes + primitive
