@@ -5,6 +5,8 @@
 // into single nodes first. Disconnected nodes get charge 0.
 // ---------------------------------------------------------------------------
 
+import type { ForceEdge } from "./types.ts";
+
 /**
  * Compute a charge for each node based on its position in the topological
  * ordering of the directed graph. Sources (no incoming edges) get charge -1,
@@ -15,7 +17,7 @@
  */
 export function topoCharge(
   nodeIds: string[],
-  edges: { a: string; b: string }[],
+  edges: ForceEdge[],
 ): Map<string, number> {
   const result = new Map<string, number>();
   if (nodeIds.length === 0) return result;

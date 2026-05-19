@@ -4,7 +4,7 @@
 // within each layer. Directed edges are a→b; b is placed in a later layer.
 // ---------------------------------------------------------------------------
 
-import type { ForceNode } from "./force.ts";
+import type { ForceEdge, ForceNode } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // Shared: topo sort + layer assignment
@@ -12,7 +12,7 @@ import type { ForceNode } from "./force.ts";
 
 function buildLayerAssignment(
   ids: string[],
-  edges: { a: string; b: string }[],
+  edges: ForceEdge[],
 ): { sortedLayers: [number, string[]][]; layer: Map<string, number> } {
   const idSet = new Set(ids);
 
@@ -72,7 +72,7 @@ function buildLayerAssignment(
 
 export function topoGridLayout(
   nodeIds: string[],
-  edges: { a: string; b: string }[],
+  edges: ForceEdge[],
   leafW: number,
   leafH: number,
   hSpacing: number,
@@ -105,7 +105,7 @@ export function topoGridLayout(
 
 export function topoGridLayoutSized(
   nodes: ForceNode[],
-  edges: { a: string; b: string }[],
+  edges: ForceEdge[],
   hGap: number,
   vGap: number,
 ): ForceNode[] {
@@ -156,7 +156,7 @@ export function topoGridLayoutSized(
 
 export function topoGridLayoutLTR(
   nodeIds: string[],
-  edges: { a: string; b: string }[],
+  edges: ForceEdge[],
   leafW: number,
   leafH: number,
   hSpacing: number,
@@ -189,7 +189,7 @@ export function topoGridLayoutLTR(
 
 export function topoGridLayoutSizedLTR(
   nodes: ForceNode[],
-  edges: { a: string; b: string }[],
+  edges: ForceEdge[],
   hGap: number,
   vGap: number,
 ): ForceNode[] {

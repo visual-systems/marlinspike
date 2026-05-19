@@ -1,6 +1,6 @@
 import { assertEquals } from "@std/assert";
 import { circlePortPositions, rectPortPositions, resolveNodePorts } from "./port-layout.ts";
-import type { Port, TreeNode } from "../workspace.ts";
+import type { Port, TreeNode } from "@marlinspike/graph";
 
 // ---------------------------------------------------------------------------
 // circlePortPositions

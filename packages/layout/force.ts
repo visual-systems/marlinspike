@@ -1,26 +1,8 @@
-/// <reference lib="dom" />
 // ---------------------------------------------------------------------------
 // Force simulation — pure functions, no DOM/JSX dependencies
 // ---------------------------------------------------------------------------
 
-export interface ForceNode {
-  id: string;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  pinned: boolean;
-  /** Effective body width for repulsion calculations */
-  w: number;
-  /** Effective body height for repulsion calculations */
-  h: number;
-  /** Collapsed node shape — drives edge clipping and rendering. Default: "circle". */
-  shape?: "circle" | "rect";
-  /** Topological charge in [-1, +1] for directional field layout. Optional. */
-  charge?: number;
-  /** Target position for port-node anchor spring. Optional. */
-  anchor?: { x: number; y: number };
-}
+import type { BBox, ForceEdge, ForceNode } from "./types.ts";
 
 // ---------------------------------------------------------------------------
 // ForceConfig — tuneable simulation parameters
@@ -53,7 +35,7 @@ export const DEFAULT_FORCE_CONFIG: ForceConfig = {
 
 export function tickLevel(
   nodes: ForceNode[],
-  edges: { a: string; b: string }[],
+  edges: ForceEdge[],
   config: ForceConfig = DEFAULT_FORCE_CONFIG,
 ): ForceNode[] {
   const { repulsion, maxForce, springK, springL, damping } = config;
@@ -144,15 +126,6 @@ export function maxVelocity(nodes: ForceNode[]): number {
 // boundingBox — bounding box of a set of positioned nodes
 // Returns the min corner and total dimensions including body size.
 // ---------------------------------------------------------------------------
-
-export interface BBox {
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
-  w: number;
-  h: number;
-}
 
 export function boundingBox(nodes: ForceNode[], padding: number): BBox {
   // Exclude anchored nodes (port-nodes) from the bounding box so that

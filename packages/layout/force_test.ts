@@ -4,13 +4,14 @@
 // ---------------------------------------------------------------------------
 import { assert, assertEquals, assertGreater, assertLess } from "@std/assert";
 import { boundingBox, initPositions, maxVelocity, tickLevel } from "./force.ts";
+import type { ForceNode } from "./types.ts";
 
 function makeNode(
   id: string,
   x: number,
   y: number,
   opts?: { vx?: number; vy?: number; pinned?: boolean; w?: number; h?: number },
-) {
+): ForceNode {
   return {
     id,
     x,

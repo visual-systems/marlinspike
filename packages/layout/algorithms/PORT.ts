@@ -8,7 +8,7 @@
 // left-to-right ordering.
 // ---------------------------------------------------------------------------
 
-import type { LayoutAlgorithm } from "./types.ts";
+import type { LayoutAlgorithm } from "../types.ts";
 import type { FieldConfig } from "./FIELD.ts";
 import { DEFAULT_FIELD_CONFIG } from "./FIELD.ts";
 import { maxVelocity } from "../force.ts";

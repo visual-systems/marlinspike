@@ -9,7 +9,7 @@ import {
   maxVelocity,
   tickLevel,
 } from "../force.ts";
-import type { LayoutAlgorithm } from "./types.ts";
+import type { LayoutAlgorithm } from "../types.ts";
 
 export interface JankConfig extends ForceConfig {
   /** Initial circular spread radius when placing new nodes */

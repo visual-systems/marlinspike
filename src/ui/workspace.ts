@@ -3,7 +3,7 @@
 // Types
 // ---------------------------------------------------------------------------
 
-import type { AlgorithmId } from "./lib/algorithms/index.ts";
+import type { AlgorithmId } from "@marlinspike/layout";
 
 // Re-export graph types and functions from @marlinspike/graph
 export type { Edge, Port, TreeNode } from "@marlinspike/graph";

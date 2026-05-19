@@ -9,7 +9,7 @@
 
 import type { Constraint, ConstraintApplication, Edge, WorkspaceState } from "../workspace.ts";
 import type { FlatNode } from "@marlinspike/graph";
-import type { AlgorithmId } from "../lib/algorithms/index.ts";
+import type { AlgorithmId } from "@marlinspike/layout";
 import { getDb, NS, useUiDb } from "./surreal.ts";
 import { GRAPH_SCHEMA, UI_SCHEMA } from "./schema.ts";
 
