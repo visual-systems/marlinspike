@@ -299,9 +299,9 @@ Steps:
 
 ### Phase I — Update DESIGN.md
 
-- [ ] I.1 Update DESIGN.md to reflect the theme system architecture
-- [ ] I.2 Document the theme package, role system, style property schema
-- [ ] I.3 Document constraint migration (style overrides instead of data.rendering.shape)
+- [x] I.1 Update DESIGN.md to reflect the theme system architecture
+- [x] I.2 Document the theme package, role system, style property schema
+- [x] I.3 Document constraint migration (style overrides instead of data.rendering.shape)
 
 ### Phase J — Theme system stories + final shape removal
 
