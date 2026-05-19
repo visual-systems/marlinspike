@@ -202,6 +202,11 @@ Key design decisions:
   inspects this state — it passes it through to theme resolvers. Simple consumers use the default
   (`S = unknown`) and the package's `marlinTheme`. Complex consumers (like the IDE) define their own
   state type and theme for full-fidelity visual control.
+- **Theme as parameter, not pre-resolved data** — `renderScene(scene, theme)` takes a theme object
+  rather than requiring styles to be pre-resolved onto scene elements. This keeps application code
+  simpler: build a scene, hand it to canvas with a theme. The theme is just resolver callbacks —
+  canvas doesn't know about roles or palettes, it calls `theme.node(node)` and uses the result.
+  Pragmatic trade-off: slight type-level coupling for significantly less call-site boilerplate.
 - **IDE overlay compatible** — renders only the graph content layer. Chrome (toolbars, panels,
   breadcrumbs) overlays in the consuming application's HTML layer.
 

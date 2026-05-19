@@ -241,6 +241,16 @@ theme resolvers. The package never inspects this state. Simple consumers use `S 
 `marlinTheme`; complex consumers (like the IDE) define their own state type for full-fidelity visual
 control.
 
+**Theme as parameter, not pre-resolved data.** `renderScene(scene, theme)` takes a theme object
+rather than requiring styles to be pre-resolved onto scene elements. An alternative design would
+have the caller resolve all styles externally and pass pre-styled nodes to canvas — making canvas a
+pure renderer with no theme concept. We chose the current approach because it keeps application code
+simpler: the caller builds a scene and hands it to canvas with a theme, rather than manually
+resolving styles for every node, edge, and port before rendering. The theme is really just a bag of
+resolver callbacks — canvas doesn't know about roles, palettes, or theme _concepts_, it just calls
+`theme.node(node)` and uses the result. This is a pragmatic trade-off: slightly more coupling at the
+type level in exchange for significantly less boilerplate at the call site.
+
 ## Dependencies
 
 None. Zero runtime dependencies.
