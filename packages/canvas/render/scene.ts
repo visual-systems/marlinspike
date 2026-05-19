@@ -13,14 +13,19 @@ import type { CanvasTheme } from "../style/types.ts";
 import type { RenderGroup, RenderPrimitive } from "./primitives.ts";
 import { renderNode } from "./node.ts";
 import { computeEdgePath, groupEdges, renderEdge } from "./edge.ts";
+import { marlinTheme } from "../style/marlin-theme.ts";
 
 /**
  * Render a CanvasScene into a render primitive tree.
  *
+ * Theme is optional — defaults to `marlinTheme` (dark palette) when omitted.
  * Rendering order: nodes first (background), then edge paths, then edge labels on top.
  * Multi-edge grouping is handled automatically.
  */
-export function renderScene<S>(scene: CanvasScene<S>, theme: CanvasTheme<S>): RenderGroup {
+export function renderScene<S>(
+  scene: CanvasScene<S>,
+  theme: CanvasTheme<S> = marlinTheme as CanvasTheme<S>,
+): RenderGroup {
   const children: RenderPrimitive[] = [];
   const nodeMap = new Map(scene.nodes.map((n) => [n.id, n]));
 
