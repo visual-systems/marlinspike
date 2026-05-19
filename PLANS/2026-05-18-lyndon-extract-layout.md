@@ -164,34 +164,81 @@ packages/layout/
 
 One-directional. Canvas and graph never import from layout.
 
-### Phase 8 — Visual roles (shape decision refactor)
+### Phase 8 — Visual roles + SDF primitives (styling system redesign)
 
-Extract shape decisions from scattered imperative code in canvas-adapter into a declarative
-role→visual mapping in the theme system. This is a cross-package refactor that touches canvas
-(theme resolver), IDE (role computation), and potentially layout (role passthrough).
+**Not in scope for this branch** — future work. Documented here because the extract-layout work
+surfaces the shape boundary question clearly.
 
-**Key insight:** There's a missing intermediate concept — a "visual role" — between graph
-semantics (leaf/composite/ref) and geometric shape (circle/rect). Currently the IDE decides
-shapes in two scattered places: constraints (`data.rendering.shape`) and canvas-adapter
-(hardcoded expanded→rect, else→circle). This should collapse into:
+#### Problem
+
+Shape knowledge is currently scattered: constraints carry `data.rendering.shape: "rect"`,
+canvas-adapter hardcodes expanded→rect / else→circle, and containers are special-cased with
+`GROUP_PADDING`, `LABEL_H`, etc. The shape enum (`"circle" | "rect"`) is too rigid for a
+flexible styling system.
+
+#### Architecture: SDF as the universal geometry contract
 
 ```
-graph semantics  →  visual role  →  geometric shape + style
-(leaf, composite)    (IDE computes)   (theme resolves)
+semantic model  →  visual role  →  primitive definition (carries SDF)  →  layout + rendering
+(TreeNode)         (swappable)     (the universal interface)
 ```
 
-- [ ] 8.1 Define visual role type (e.g. `"leaf" | "container" | "collapsed-subgraph" | "ref"`)
-      and a role→visual mapping type in `@marlinspike/canvas` theme system
-- [ ] 8.2 Add role computation function in IDE (`TreeNode` + expansion state → visual role)
-- [ ] 8.3 Move shape decision from canvas-adapter hardcoding into theme resolver
-      (theme maps role → shape + stroke + fill + dashed etc.)
-- [ ] 8.4 Constraints become theme overrides rather than primary shape source
-- [ ] 8.5 MarlinNodeState carries role; theme resolver reads role from state to pick visuals
-- [ ] 8.6 Judgment-ready: future judgments can assign roles (e.g. `"hub"`) without knowing
-      geometry — theme resolves them
+- **Canvas package** = flexible primitives and rendering. No semantic knowledge.
+- **Visual role** = mapping from semantic concepts to primitive instances. Swappable like a
+  stylesheet — changing the role mapping changes the entire visual language, and layout still
+  works because it only talks to SDFs.
+- **Primitive definition** = geometry (SDF function) + visual properties (stroke, fill, etc.) +
+  extent rules (for containers). The SDF is what connects layout to rendering.
+- **Layout** only needs the SDF. It never knows what things look like.
+- **Rendering** only needs the primitive's visual properties. It never knows where things are.
 
-**Not in scope for this branch** — this is future work for when we refactor the theme system.
-Documented here because the extract-layout work surfaces the shape boundary question clearly.
+#### Container geometry via SDF
+
+Containers are not special — they're primitives whose geometry is computed from children extent:
+
+1. Children settle (siblings laid out via SDF forces — self-contained per level)
+2. Parent's **extent rule** (part of role definition) maps children bbox → parent `(w, h)`
+3. Parent's SDF is computed from `(w, h)` — works for any shape parameterized by width/height
+   (rectangles, rounded rects, ellipses, stadiums, etc.)
+4. Parent enters layout with ITS siblings using its new computed geometry
+
+This is hierarchical and parallel per level. Each level only needs sibling context. Parent
+geometry adjustment is a between-level data flow, not part of any level's layout process.
+Settlement is per-level with upward invalidation — a child resize ripples up only as far as it
+affects sibling layout.
+
+**Open question (deferred):** More complex container geometry beyond `(w, h)` parameterization.
+There may be an SDF algorithm for containing arbitrary collections of shapes with arbitrary
+simple hulls, but this is not needed for the initial implementation.
+
+#### Extension concept (deferred)
+
+Visual role mappings fit into a broader "extension" concept: a package that bundles role
+mappings + primitive definitions + possibly layout hints. Different extensions could provide
+entirely different visual languages for the same semantic model (e.g. "blueprint", "circuit
+diagram", "hand-drawn"). Defer until the role system is proven.
+
+#### Constraint system evolution
+
+Constraints currently force a shape enum (`data.rendering.shape: "rect"`). In the new world,
+constraints would set a *role* or role override, not a shape. The role mapping resolves to a
+primitive. This is more flexible and separates the "what is it" decision from the "what does it
+look like" decision.
+
+#### Checklist
+
+- [ ] 8.1 Promote SDF from shape-enum dispatch to primitive-carried geometry. Primitives carry
+      their own SDF function rather than dispatching through `sdfOf("circle" | "rect")`.
+- [ ] 8.2 Define visual role type and role→primitive mapping type in `@marlinspike/canvas`
+- [ ] 8.3 Add role computation function in IDE (`TreeNode` + expansion state → visual role)
+- [ ] 8.4 Replace canvas-adapter shape hardcoding with role→primitive resolution via theme
+- [ ] 8.5 Container primitives: extent rule (children bbox → parent w,h) + SDF from computed
+      dimensions. Replaces hardcoded GROUP_PADDING / LABEL_H.
+- [ ] 8.6 Constraints set roles, not shapes
+- [ ] 8.7 Style-sheet swappability: verify that swapping role mappings works with all layout
+      algorithms (any style + any layout = correct, because SDF is the universal interface)
+- [ ] 8.8 Judgment-ready: future judgments can assign roles (e.g. `"hub"`) without knowing
+      geometry — role mapping resolves them
 
 ## Open Questions
 
