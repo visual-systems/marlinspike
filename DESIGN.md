@@ -169,8 +169,7 @@ Target-agnostic graph canvas rendering with hierarchical scene support and an in
 - **Geometry** — surface clipping, arc math, SDF primitives, port positions. Shapes are represented
   as opaque `NodeGeometry` objects with methods for rendering, clipping, SDF queries, and port
   placement. Built-in singletons: `CIRCLE_GEOMETRY`, `RECT_GEOMETRY`. `resolveGeometry(node)`
-  bridges the `geometry` field (preferred) with the deprecated `shape` field for backwards
-  compatibility.
+  returns `node.geometry ?? CIRCLE_GEOMETRY`.
 - **Style system** — `CanvasTheme<S>` with pluggable resolvers for nodes, edges, ports, containers,
   and decorations. The generic `S` parameter lets consumers attach typed state to nodes that flows
   through to theme resolvers without casting. `NodeStyleProps` is the shared vocabulary for both

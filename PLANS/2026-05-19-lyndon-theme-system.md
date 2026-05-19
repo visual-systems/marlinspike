@@ -24,8 +24,9 @@ reproduces current visual behavior exactly.
 
 ### Not in scope (deferred from extract-layout Phase 8)
 
-- **ForceNode shape representation (D9)** — layout package unchanged. Future: extensible
-  tagged-record approach (see Haskell Diagrams, Inigo Quilez references in extract-layout plan).
+- ~~**ForceNode shape representation (D9)**~~ — DONE. `ForceNode.shape` removed entirely.
+  Geometry is now resolved in the canvas adapter from role + constraint style overrides, not
+  passed through the layout system. The `shapeMap` pipeline was eliminated.
 - **New shape types** (diamond, hexagon, etc.) — the infrastructure enables them but we don't
   add any yet.
 - **Constructive SDF geometry** — union, intersection, subtraction combinators. Deferred.
@@ -382,6 +383,15 @@ stories are migrated. H is package extraction. I and J are parallel after H.
    style over theme defaults. This enables fully ad-hoc standalone usage without defining a
    custom theme. The theme parameter remains for semantic/role-based styling. Both approaches
    coexist — per-element overrides take precedence.
+
+   **Render-target coupling (2026-05-20):** The per-element `style` fields (and `NodeStyle`/
+   `EdgeStyle` themselves) use CSS-oriented values — color strings, font family names,
+   `strokeDash` patterns. These are render-target-specific: they work for SVG and CSS-based
+   renderers but wouldn't translate directly to WebGL uniforms or Canvas2D calls. This is
+   another argument for an abstract style interface if canvas ever targets non-CSS renderers.
+   A fully decoupled design would define style in render-target-agnostic terms (e.g. colour
+   as `[r, g, b, a]`, stroke as numeric patterns) and let each `Renderer<T>` implementation
+   map to its target's conventions.
 
 ### Resolved
 

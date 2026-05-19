@@ -33,7 +33,6 @@ import {
   isCircleShape,
   lineSdfDist,
   marlinTheme,
-  RECT_GEOMETRY,
   renderScene,
   renderWith,
   svgRenderer,
@@ -93,7 +92,7 @@ function toCanvasScene(nodes: ForceNode[], edges: ForceEdge[]): CanvasScene {
     y: n.y,
     w: n.w,
     h: n.h,
-    geometry: n.shape === "rect" ? RECT_GEOMETRY : CIRCLE_GEOMETRY,
+    geometry: CIRCLE_GEOMETRY,
     label: n.id,
   }));
   const canvasEdges: CanvasEdge[] = edges.map((e, i) => ({
@@ -593,7 +592,7 @@ export function Utilities() {
   const offCenter: ForceNode[] = [
     { id: "A", x: 200, y: 300, vx: 0, vy: 0, pinned: false, w: 52, h: 52 },
     { id: "B", x: 350, y: 250, vx: 0, vy: 0, pinned: false, w: 52, h: 52 },
-    { id: "C", x: 280, y: 400, vx: 0, vy: 0, pinned: false, w: 80, h: 60, shape: "rect" },
+    { id: "C", x: 280, y: 400, vx: 0, vy: 0, pinned: false, w: 80, h: 60 },
   ];
   const centered = centerNodes(offCenter);
   const edges: ForceEdge[] = [{ a: "A", b: "B" }, { a: "B", b: "C" }];

@@ -242,7 +242,6 @@ function buildLevel(
   pinnedPositions: Record<string, { x: number; y: number; pinned?: boolean }>,
   levelEdges: { a: string; b: string }[],
   algorithm: LayoutAlgorithm,
-  shapeMap?: Map<string, "circle" | "rect">,
   portChildIds?: Set<string>,
 ): LevelState {
   const prevMap = new Map(prev?.nodes.map((n) => [n.id, n]) ?? []);
@@ -279,9 +278,8 @@ function buildLevel(
     const w = isExpanded ? (existing?.w ?? LEAF_W * 3) : LEAF_W;
     const h = isExpanded ? (existing?.h ?? LEAF_H * 3) : LEAF_H;
     const charge = charges.get(fn.id);
-    const shape = shapeMap?.get(fn.id);
-    if (existing && algorithm.preservesPositions) return { ...existing, w, h, charge, shape };
-    return { ...fn, w, h, charge, shape };
+    if (existing && algorithm.preservesPositions) return { ...existing, w, h, charge };
+    return { ...fn, w, h, charge };
   });
 
   return { nodes, settled: false, ticks: 0, bbox: null };
@@ -294,7 +292,6 @@ function syncLayout(
   pinnedPositions: Record<string, { x: number; y: number; pinned?: boolean }>,
   allEdges: Edge[],
   algorithm: LayoutAlgorithm,
-  shapeMap?: Map<string, "circle" | "rect">,
 ): LayoutMap {
   const expandedSet = new Set(canvasExpandedNodes);
   const next = new Map<string, LevelState>();
@@ -311,7 +308,6 @@ function syncLayout(
       pinnedPositions,
       rootEdges,
       algorithm,
-      shapeMap,
     ),
   );
 
@@ -332,7 +328,6 @@ function syncLayout(
         pinnedPositions,
         levelEdges,
         algorithm,
-        shapeMap,
         portChildren,
       ),
     );
@@ -907,13 +902,6 @@ export function Canvas(
       );
     }
   }
-  // Derive shapeMap for layout system (needs "circle"|"rect" for ForceNode.shape)
-  const shapeMap = new Map<string, "circle" | "rect">();
-  for (const [id, props] of styleOverridesMap) {
-    if (props.geometry === "rect" || props.geometry === "circle") {
-      shapeMap.set(id, props.geometry);
-    }
-  }
   const focusedEdges = focusNode
     ? (() => {
       const ids = collectSubtreeIds(focusNode);
@@ -929,7 +917,6 @@ export function Canvas(
       ws.canvasNodePositions,
       focusedEdges,
       makeCanvasAlgorithm(ws.canvasAlgorithm),
-      shapeMap,
     )
   );
 
@@ -965,7 +952,6 @@ export function Canvas(
         ws.canvasNodePositions,
         edges,
         makeCanvasAlgorithm(ws.canvasAlgorithm),
-        shapeMap,
       )
     );
   }, [ws.treeNodes, ws.canvasExpandedNodes, ws.edges, ws.canvasAlgorithm, ws.focusId]);

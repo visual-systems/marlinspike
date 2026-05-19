@@ -156,7 +156,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
   // Track world positions for ref edge resolution
   const worldPos = new Map<
     string,
-    { node: TreeNode; wx: number; wy: number; w: number; h: number; shape: "circle" | "rect" }
+    { node: TreeNode; wx: number; wy: number; w: number; h: number }
   >();
 
   // Map labels to node IDs for ref resolution (non-ref nodes only)
@@ -236,26 +236,25 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
       const isInput = inputPortNames.has(node.label);
       const isOutput = outputPortNames.has(node.label) ||
         outputPortNames.has(node.data.outputPort as string);
-      const nodeShape: "circle" | "rect" = isExpanded
-        ? "rect"
-        : (pos.shape === "rect" ? "rect" : "circle");
-
-      // Derive visual role from structure + constraints
+      // Derive visual role from structure + constraint style overrides
+      const overrideGeo = opts.styleOverrides?.get(node.id)?.geometry;
       const role: MarlinRole = isExpanded
         ? "container"
         : isRefNode
         ? "ref"
-        : pos.shape === "rect"
+        : overrideGeo === "rect"
         ? "leaf-rect"
         : (isComposite && hasChildren)
         ? "collapsed-subgraph"
         : "leaf";
 
-      // Resolve geometry from role (containers always rect, leaf-rect from constraints)
-      const nodeGeometry = nodeShape === "rect" ? RECT_GEOMETRY : CIRCLE_GEOMETRY;
+      // Resolve geometry from role
+      const nodeGeometry = (role === "container" || role === "leaf-rect")
+        ? RECT_GEOMETRY
+        : CIRCLE_GEOMETRY;
 
       // Track world position for ref edge resolution
-      worldPos.set(node.id, { node, wx, wy, w: pos.w, h: pos.h, shape: nodeShape });
+      worldPos.set(node.id, { node, wx, wy, w: pos.w, h: pos.h });
       if (node.type !== "ref") labelToId.set(node.label, node.id);
 
       // Edge-draw interaction state

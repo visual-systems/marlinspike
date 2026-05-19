@@ -17,8 +17,6 @@ export interface ForceNode {
   w: number;
   /** Effective body height for repulsion calculations */
   h: number;
-  /** Collapsed node shape — drives edge clipping and rendering. Default: "circle". */
-  shape?: "circle" | "rect";
   /** Topological charge in [-1, +1] for directional field layout. Optional. */
   charge?: number;
   /** Target position for port-node anchor spring. Optional. */
