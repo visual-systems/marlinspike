@@ -305,9 +305,9 @@ Steps:
 
 ### Phase J — Theme system stories + final shape removal
 
-- [ ] J.1 Write canvas-package stories exercising theme.resolveNode
-- [ ] J.2 Write a story showing custom NodeGeometry (demonstrates extensibility)
-- [ ] J.3 Write a theme-package story showing ThemeDefinition + resolveProps
+- [x] J.1 Write canvas-package stories exercising theme.resolveNode
+- [x] J.2 Write a story showing custom NodeGeometry (diamond — demonstrates extensibility)
+- [x] J.3 Write a theme-package story showing ThemeDefinition + resolveProps
 - [x] J.4 Migrate all story files from `shape` to `geometry` (completes G.5)
 - [x] J.5 Remove `shape` field from `CanvasNode` entirely. Remove shape branch
   from `resolveGeometry`. Remove `shape` assignments in canvas-adapter.ts.
@@ -350,6 +350,32 @@ stories are migrated. H is package extraction. I and J are parallel after H.
    Should the theme package provide a combinator for layering interaction state over base
    role styles, or leave that entirely to consumers? Lean: leave to consumers initially,
    extract patterns if they emerge.
+
+4. **Decouple canvas from theme (deferred refactor)** — currently `renderScene`, `renderNode`,
+   and `renderEdge` take a `CanvasTheme<S>` parameter and call style resolvers internally
+   during rendering. The original architectural intent was that canvas would be a pure renderer
+   of pre-styled primitives: the caller resolves all styles *above* canvas (through a theme
+   layer), then passes pre-resolved style properties on the scene elements themselves.
+
+   **Current:** `renderScene(scene, theme)` — canvas calls `theme.node(node)` internally.
+   **Alternative:** styles live on `CanvasNode` directly — canvas renders what it's given.
+
+   The current approach is convenient because the theme sees the full `CanvasNode<S>` at
+   resolution time (geometry, selection state, neighbours). But it creates a circular concern:
+   `CanvasTheme<S>` takes `CanvasNode<S>`, coupling the theme API to the canvas element type.
+   If styles were pre-resolved, themes would only need the *application's* types
+   (MarlinNodeState), not canvas's.
+
+   **Tradeoffs:**
+   - Pre-resolved: cleaner layering, canvas has fewer concepts, theme doesn't need canvas types
+   - Current: convenient single-call API, theme sees full context during rendering
+   - Incremental migration is possible: add optional `style` field to CanvasNode, make
+     renderers check it before calling theme resolvers, deprecate theme parameter
+
+   Lean: worth doing eventually for architectural cleanliness, but not blocking. The current
+   `CanvasTheme<S>` is really just a callback pattern — canvas doesn't know about theme
+   *concepts*, only about calling resolver functions. The coupling is at the type level, not
+   at the knowledge level.
 
 ### Resolved
 
