@@ -28,6 +28,7 @@ export type {
   EdgeStyleResolver,
   NodeDecorationsResolver,
   NodeStyle,
+  NodeStyleProps,
   NodeStyleResolver,
   PortStyle,
   PortStyleResolver,

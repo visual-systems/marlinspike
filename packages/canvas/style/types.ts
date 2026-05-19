@@ -60,6 +60,27 @@ export type NodeDecorationsResolver<S = unknown> = (
   node: CanvasNode<S>,
 ) => import("../render/primitives.ts").RenderPrimitive[];
 
+/**
+ * Declarative style properties — the shared vocabulary for themes and per-element overrides.
+ * All fields optional: themes define defaults per role, elements override sparsely.
+ * Same format in both contexts — merge with spread: `{ ...themeDefaults, ...overrides }`.
+ */
+export interface NodeStyleProps {
+  /** Geometry identifier resolved to NodeGeometry by theme ("circle", "rect", etc). */
+  geometry?: string;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+  labelFill?: string;
+  labelFont?: string;
+  labelSize?: number;
+  opacity?: number;
+  /** Container extent rule: padding around children. */
+  groupPadding?: number;
+  /** Container extent rule: label strip height. */
+  labelH?: number;
+}
+
 /** Layout constants that themes can override (container padding, label height, etc). */
 export interface ThemeConstants {
   /** Padding around children in expanded containers. */

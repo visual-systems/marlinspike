@@ -105,7 +105,7 @@ Define the shared vocabulary for style properties used by both themes and per-el
 overrides. Same data format in both contexts — themes define defaults per role, elements
 override specific properties.
 
-- [ ] D.1 Define `NodeStyleProps` in `packages/canvas/style/types.ts` — the declarative
+- [x] D.1 Define `NodeStyleProps` in `packages/canvas/style/types.ts` — the declarative
   property bag shared by themes and element overrides:
   ```
   interface NodeStyleProps {
@@ -122,8 +122,8 @@ override specific properties.
   }
   ```
   All fields optional — overrides merge sparsely over theme defaults.
-- [ ] D.2 Export from `packages/canvas/mod.ts`
-- [ ] D.3 Tests pass
+- [x] D.2 Export from `packages/canvas/mod.ts`
+- [x] D.3 Tests pass
 
 #### Key files:
 - Modify: `packages/canvas/style/types.ts` — add `NodeStyleProps`
