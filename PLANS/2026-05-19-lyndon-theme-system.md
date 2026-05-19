@@ -134,12 +134,12 @@ override specific properties.
 Roles and the CLASSIC theme live in `src/` (application code, not a package). The canvas
 package provides the generic mechanism; roles are marlinspike-specific semantics.
 
-- [ ] E.1 Add `role` field to `MarlinNodeState` in `src/ui/lib/canvas-adapter.ts`:
+- [x] E.1 Add `role` field to `MarlinNodeState` in `src/ui/lib/canvas-adapter.ts`:
   `role: "leaf" | "container" | "collapsed-subgraph" | "ref" | "leaf-rect"`
   Derived from: `kind`, expansion state, constraint overrides.
-- [ ] E.2 Add `styleOverrides?: NodeStyleProps` to `MarlinNodeState` — per-element style
+- [x] E.2 Add `styleOverrides?: NodeStyleProps` to `MarlinNodeState` — per-element style
   overrides from constraints, merged over theme defaults during resolution.
-- [ ] E.3 Create `src/ui/lib/classic-theme.ts` — the CLASSIC theme implementing
+- [x] E.3 Create `src/ui/lib/classic-theme.ts` — the CLASSIC theme implementing
   `CanvasTheme<MarlinNodeState>` with `resolveNode` that:
   1. Maps role to default `NodeStyleProps` (the theme definition)
   2. Merges `node.state.styleOverrides` over the defaults (sparse merge)
@@ -147,7 +147,7 @@ package provides the generic mechanism; roles are marlinspike-specific semantics
   4. Returns `{ geometry, style }`
   Also includes `resolveEdgeStyle`, `resolvePortStyle`, `resolveDecorations`,
   and `constants: { groupPadding: 32, labelH: 22, leafRadius: 26 }`.
-- [ ] E.4 Role computation in `emitLevel()` — replace shape determination
+- [x] E.4 Role computation in `emitLevel()` — replace shape determination
   (canvas-adapter.ts:241-243) with role derivation:
   ```
   isExpanded → "container"
@@ -156,10 +156,10 @@ package provides the generic mechanism; roles are marlinspike-specific semantics
   else → "leaf"
   ```
   Set `geometry` on CanvasNode based on role + overrides.
-- [ ] E.5 Replace `marlinIdeTheme` in canvas-adapter.ts with import of CLASSIC theme
-- [ ] E.6 Update `canvas.tsx` — read `GROUP_PADDING` and `LABEL_H` from
+- [x] E.5 Replace `marlinIdeTheme` in canvas-adapter.ts with import of CLASSIC theme
+- [x] E.6 Update `canvas.tsx` — read `GROUP_PADDING` and `LABEL_H` from
   `theme.constants` instead of hardcoded constants
-- [ ] E.7 Tests pass, visual behavior identical
+- [x] E.7 Tests pass (573 tests), visual behavior identical
 
 #### Key files:
 - New: `src/ui/lib/classic-theme.ts`

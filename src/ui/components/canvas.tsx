@@ -34,6 +34,7 @@ import {
   marlinIdeTheme,
   type MarlinNodeState,
 } from "../lib/canvas-adapter.ts";
+import { CLASSIC_CONSTANTS } from "../lib/classic-theme.ts";
 import {
   createFIELD,
   createJANK,
@@ -60,14 +61,14 @@ type CanvasMode = "select" | "add-node" | "add-edge";
 // ---------------------------------------------------------------------------
 
 /** Radius of collapsed leaf/composite nodes (circles) */
-const LEAF_R = 26;
+const LEAF_R = CLASSIC_CONSTANTS.leafRadius;
 /** Force-body diameter (used for repulsion body sizing) */
 const LEAF_W = LEAF_R * 2;
 const LEAF_H = LEAF_R * 2;
 /** Padding inside expanded group bounding boxes */
-const GROUP_PADDING = 32;
+const GROUP_PADDING = CLASSIC_CONSTANTS.groupPadding;
 /** Height of the label strip at the top of an expanded group rect */
-const LABEL_H = 22;
+const LABEL_H = CLASSIC_CONSTANTS.labelH;
 const DRAG_THRESHOLD_SQ = 16; // 4px
 
 // ---------------------------------------------------------------------------
