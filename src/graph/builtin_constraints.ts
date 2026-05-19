@@ -43,7 +43,8 @@ export const WORKSPACE_CONSTRAINT: Constraint = {
   uri: "spike://builtin/constraints/workspace",
   type: "workspace",
   targets: [{ type: "entity", class: "node" }],
-  data: { rendering: { shape: "rect" } },
+  data: {},
+  style: { geometry: "rect" },
   version: 1,
 };
 
@@ -63,7 +64,8 @@ export const PROFILE_CONSTRAINT: Constraint = {
   uri: "spike://builtin/constraints/profile",
   type: "profile",
   targets: [{ type: "entity", class: "node" }],
-  data: { rendering: { shape: "rect" } },
+  data: {},
+  style: { geometry: "rect" },
   version: 1,
 };
 

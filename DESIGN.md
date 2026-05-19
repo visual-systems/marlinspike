@@ -1876,16 +1876,17 @@ tabs are derived from the profile root's children at render time.
 
 Three orthogonal constraints govern workspace identity, connection config, and storage boundaries:
 
-| Constraint         | Type          | Purpose                                         | Data                                                  |
-| ------------------ | ------------- | ----------------------------------------------- | ----------------------------------------------------- |
-| `workspace`        | `workspace`   | Makes a node tab-eligible, renders as rect      | `{ rendering: { shape: "rect" } }`                    |
-| `connections`      | `connections` | Remote connection config (URL, namespace, etc.) | `{}` (entity data schema on `entity.data.connection`) |
-| `storage-location` | —             | Specifies where children are stored             | Not yet implemented                                   |
+| Constraint         | Type          | Purpose                                         | Data | Style                      |
+| ------------------ | ------------- | ----------------------------------------------- | ---- | -------------------------- |
+| `workspace`        | `workspace`   | Makes a node tab-eligible, renders as rect      | `{}` | `{ geometry: "rect" }`     |
+| `connections`      | `connections` | Remote connection config (URL, namespace, etc.) | `{}` |                            |
+| `storage-location` | —             | Specifies where children are stored             |      |                            |
 
 **`workspace` constraint** (`WORKSPACE_CONSTRAINT`): Any node carrying this constraint can appear as
-a tab in the session UI. It also drives rectangular rendering on the canvas via
-`data.rendering.shape`. This is not limited to root-level nodes — a deeply nested composite with the
-workspace constraint could be opened as a focused tab.
+a tab in the session UI. It also drives rectangular rendering on the canvas via the constraint's
+`style.geometry` field (using the same `NodeStyleProps` format as themes). This is not limited to
+root-level nodes — a deeply nested composite with the workspace constraint could be opened as a
+focused tab.
 
 **`connections` constraint** (`CONNECTIONS_CONSTRAINT`): Provides schema-driven connection fields
 (`url`, `namespace`, `database`, `username`, `password`) on the entity inspector. Applied

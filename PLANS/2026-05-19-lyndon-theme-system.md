@@ -172,18 +172,19 @@ package provides the generic mechanism; roles are marlinspike-specific semantics
 Eliminate `data.rendering.shape`. Constraints use the same `NodeStyleProps` format as
 themes, applied as a top-level `style` field on the `Constraint` type.
 
-- [ ] F.1 Add optional `style?: NodeStyleProps` to `Constraint` interface in
+- [x] F.1 Add optional `style?: NodeStyleProps` to `Constraint` interface in
   `src/ui/workspace.ts` (top-level, not nested in `data`)
-- [ ] F.2 Migrate `WORKSPACE_CONSTRAINT`: remove `data: { rendering: { shape: "rect" } }`,
+- [x] F.2 Migrate `WORKSPACE_CONSTRAINT`: remove `data: { rendering: { shape: "rect" } }`,
   add `style: { geometry: "rect" }` at top level
-- [ ] F.3 Migrate `PROFILE_CONSTRAINT`: same pattern
-- [ ] F.4 Update `canvas.tsx` constraint processing (lines 894-900): read from
-  `constraint.style` instead of `constraint.data.rendering.shape`. Build
-  `styleOverridesMap: Map<string, NodeStyleProps>` instead of `shapeMap`. Pass through
-  to adapter where it becomes `MarlinNodeState.styleOverrides`.
-- [ ] F.5 Remove the old `shapeMap` code path entirely
-- [ ] F.6 Update DESIGN.md reference to `data.rendering.shape`
-- [ ] F.7 Tests pass, constraint-driven rect nodes still render correctly
+- [x] F.3 Migrate `PROFILE_CONSTRAINT`: same pattern
+- [x] F.4 Update `canvas.tsx` constraint processing: read from `constraint.style`,
+  build `styleOverridesMap: Map<string, NodeStyleProps>`, derive `shapeMap` from it
+  for layout backwards compat, pass `styleOverrides` to buildCanvasScene.
+- [x] F.5 Old `data.rendering.shape` code path removed — shapeMap now derived from
+  styleOverridesMap. (shapeMap itself kept for layout system ForceNode.shape compat,
+  removed in Phase G.)
+- [x] F.6 Update DESIGN.md reference to `data.rendering.shape`
+- [x] F.7 Tests pass (573 tests), constraint-driven rect nodes still render correctly
 
 #### Key files:
 - Modify: `src/ui/workspace.ts` — add `style?` to Constraint

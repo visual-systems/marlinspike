@@ -892,12 +892,27 @@ export function Canvas(
     });
   }
 
-  // Compute node shapes driven by constraint data.rendering.shape
-  const shapeMap = new Map<string, "circle" | "rect">();
+  // Compute per-entity style overrides from constraint.style
+  const styleOverridesMap = new Map<
+    string,
+    import("@marlinspike/canvas").NodeStyleProps
+  >();
   for (const app of ws.constraintApplications) {
     const constraint = ws.constraints.find((c) => c.id === app.constraintId);
-    const shape = (constraint?.data?.rendering as { shape?: string } | undefined)?.shape;
-    if (shape === "circle" || shape === "rect") shapeMap.set(app.entityId, shape);
+    if (constraint?.style) {
+      const existing = styleOverridesMap.get(app.entityId);
+      styleOverridesMap.set(
+        app.entityId,
+        existing ? { ...existing, ...constraint.style } : constraint.style,
+      );
+    }
+  }
+  // Derive shapeMap for layout system (needs "circle"|"rect" for ForceNode.shape)
+  const shapeMap = new Map<string, "circle" | "rect">();
+  for (const [id, props] of styleOverridesMap) {
+    if (props.geometry === "rect" || props.geometry === "circle") {
+      shapeMap.set(id, props.geometry);
+    }
   }
   const focusedEdges = focusNode
     ? (() => {
@@ -1490,6 +1505,7 @@ export function Canvas(
     allTreeNodes: ws.treeNodes,
     focusId: ws.focusId,
     showRefEdges: ws.canvasShowRefEdges,
+    styleOverrides: styleOverridesMap,
   };
   const canvasScene = buildCanvasScene(sceneOpts);
   const renderRoot: RenderGroup = renderScene(canvasScene, marlinIdeTheme);

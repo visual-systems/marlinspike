@@ -91,6 +91,8 @@ export interface BuildSceneOptions {
   allTreeNodes: TreeNode[];
   focusId: string | null;
   showRefEdges?: boolean;
+  /** Per-entity style overrides from constraints. */
+  styleOverrides?: Map<string, import("@marlinspike/canvas").NodeStyleProps>;
 }
 
 // ---------------------------------------------------------------------------
@@ -290,6 +292,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
         refTarget: isRefNode && node.ref
           ? (findNode(opts.allTreeNodes, node.ref)?.label ?? node.ref)
           : undefined,
+        styleOverrides: opts.styleOverrides?.get(node.id),
         isContainerBackground: false,
       };
 
