@@ -24,7 +24,10 @@ import type { RenderPrimitive } from "@marlinspike/canvas";
 import type { ThemeDefinition } from "@marlinspike/theme";
 import { resolveGeometryFromProps, resolveProps } from "@marlinspike/theme";
 
-export const meta = { title: "Package: @marlinspike-theme" };
+export const meta = {
+  title: "Package: @marlinspike-theme",
+  url: "https://github.com/visual-systems/marlinspike/blob/main/packages/theme/README.md",
+};
 
 // ---------------------------------------------------------------------------
 // Styles

@@ -39,7 +39,10 @@ import {
 } from "@marlinspike/canvas";
 import type { Port } from "../workspace.ts";
 
-export const meta = { title: "Package: @marlinspike-layout" };
+export const meta = {
+  title: "Package: @marlinspike-layout",
+  url: "https://github.com/visual-systems/marlinspike/blob/main/packages/layout/README.md",
+};
 
 // ---------------------------------------------------------------------------
 // Styles

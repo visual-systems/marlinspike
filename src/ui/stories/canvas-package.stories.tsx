@@ -14,7 +14,10 @@ import {
   svgRenderer,
 } from "@marlinspike/canvas";
 
-export const meta = { title: "Package: @marlinspike-canvas" };
+export const meta = {
+  title: "Package: @marlinspike-canvas",
+  url: "https://github.com/visual-systems/marlinspike/blob/main/packages/canvas/README.md",
+};
 
 // ---------------------------------------------------------------------------
 // Styles
