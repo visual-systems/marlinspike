@@ -24,13 +24,10 @@ reproduces current visual behavior exactly.
 
 ### Not in scope (deferred from extract-layout Phase 8)
 
-- **Constraint schema migration (D6)** — constraints keep `data.rendering.shape` for now; the
-  adapter interprets them. Full migration to top-level style overrides deferred.
 - **ForceNode shape representation (D9)** — layout package unchanged. Future: extensible
   tagged-record approach (see Haskell Diagrams, Inigo Quilez references in extract-layout plan).
 - **New shape types** (diamond, hexagon, etc.) — the infrastructure enables them but we don't
   add any yet.
-- **Style schema as JSON (D5)** — deferred until themes-as-code evolution path is clearer.
 - **Constructive SDF geometry** — union, intersection, subtraction combinators. Deferred.
 - **WebGL rendering target** — natural follow-on from SDF-based shapes. Deferred.
 - **Extension concept** — bundles of themes + primitives + layout hints. Deferred.
@@ -103,53 +100,110 @@ reproduces current visual behavior exactly.
 - Modify: `packages/canvas/render/node.ts` — theme.resolveNode support
 - Modify: `packages/canvas/mod.ts` — export new types if any
 
-### Phase D — Visual roles and CLASSIC theme
+### Phase D — Style property schema
+
+Define the shared vocabulary for style properties used by both themes and per-element
+overrides. Same data format in both contexts — themes define defaults per role, elements
+override specific properties.
+
+- [ ] D.1 Define `NodeStyleProps` in `packages/canvas/style/types.ts` — the declarative
+  property bag shared by themes and element overrides:
+  ```
+  interface NodeStyleProps {
+    geometry?: "circle" | "rect";    // resolved to NodeGeometry by theme
+    fill?: string;
+    stroke?: string;
+    strokeWidth?: number;
+    labelFill?: string;
+    labelFont?: string;
+    labelSize?: number;
+    opacity?: number;
+    groupPadding?: number;           // container extent rule
+    labelH?: number;                 // container label strip height
+  }
+  ```
+  All fields optional — overrides merge sparsely over theme defaults.
+- [ ] D.2 Export from `packages/canvas/mod.ts`
+- [ ] D.3 Tests pass
+
+#### Key files:
+- Modify: `packages/canvas/style/types.ts` — add `NodeStyleProps`
+- Modify: `packages/canvas/mod.ts`
+
+### Phase E — Visual roles and CLASSIC theme
 
 Roles and the CLASSIC theme live in `src/` (application code, not a package). The canvas
 package provides the generic mechanism; roles are marlinspike-specific semantics.
 
-- [ ] D.1 Add `role` field to `MarlinNodeState` in `src/ui/lib/canvas-adapter.ts`:
+- [ ] E.1 Add `role` field to `MarlinNodeState` in `src/ui/lib/canvas-adapter.ts`:
   `role: "leaf" | "container" | "collapsed-subgraph" | "ref" | "leaf-rect"`
   Derived from: `kind`, expansion state, constraint overrides.
-- [ ] D.2 Create `src/ui/lib/classic-theme.ts` — the CLASSIC theme implementing
-  `CanvasTheme<MarlinNodeState>` with `resolveNode` that maps roles to geometry + style.
-  Moves the style logic from canvas-adapter.ts's `resolveNodeStyle` (lines 401-471) into
-  the theme. Also includes `resolveEdgeStyle`, `resolvePortStyle`, `resolveDecorations`,
+- [ ] E.2 Add `styleOverrides?: NodeStyleProps` to `MarlinNodeState` — per-element style
+  overrides from constraints, merged over theme defaults during resolution.
+- [ ] E.3 Create `src/ui/lib/classic-theme.ts` — the CLASSIC theme implementing
+  `CanvasTheme<MarlinNodeState>` with `resolveNode` that:
+  1. Maps role to default `NodeStyleProps` (the theme definition)
+  2. Merges `node.state.styleOverrides` over the defaults (sparse merge)
+  3. Resolves `geometry` string to `NodeGeometry` (CIRCLE/RECT)
+  4. Returns `{ geometry, style }`
+  Also includes `resolveEdgeStyle`, `resolvePortStyle`, `resolveDecorations`,
   and `constants: { groupPadding: 32, labelH: 22, leafRadius: 26 }`.
-- [ ] D.3 Role computation in `emitLevel()` — replace shape determination
+- [ ] E.4 Role computation in `emitLevel()` — replace shape determination
   (canvas-adapter.ts:241-243) with role derivation:
   ```
   isExpanded → "container"
   isRef → "ref"
   isComposite && hasChildren → "collapsed-subgraph"
-  pos.shape === "rect" → "leaf-rect"
   else → "leaf"
   ```
-  Set `geometry` on CanvasNode based on role (rect geometries for container/leaf-rect,
-  circle for everything else).
-- [ ] D.4 Replace `marlinIdeTheme` in canvas-adapter.ts with import of CLASSIC theme from
-  `classic-theme.ts`
-- [ ] D.5 Update `canvas.tsx` — read `GROUP_PADDING` and `LABEL_H` from
+  Set `geometry` on CanvasNode based on role + overrides.
+- [ ] E.5 Replace `marlinIdeTheme` in canvas-adapter.ts with import of CLASSIC theme
+- [ ] E.6 Update `canvas.tsx` — read `GROUP_PADDING` and `LABEL_H` from
   `theme.constants` instead of hardcoded constants
-- [ ] D.6 Tests pass, visual behavior identical
+- [ ] E.7 Tests pass, visual behavior identical
 
 #### Key files:
 - New: `src/ui/lib/classic-theme.ts`
-- Modify: `src/ui/lib/canvas-adapter.ts` — add role to state, remove style resolvers,
-  use CLASSIC theme
+- Modify: `src/ui/lib/canvas-adapter.ts` — add role + styleOverrides to state, remove
+  style resolvers, use CLASSIC theme
 - Modify: `src/ui/components/canvas.tsx` — theme constants for GROUP_PADDING/LABEL_H
 
-### Phase E — Remove deprecated `shape` field
+### Phase F — Migrate constraints to style overrides
 
-- [ ] E.1 Make `shape` optional on `CanvasNode` with deprecation comment
-- [ ] E.2 Remove all remaining `shape` assignments in canvas-adapter.ts — nodes only carry
+Eliminate `data.rendering.shape`. Constraints use the same `NodeStyleProps` format as
+themes, applied as a top-level `style` field on the `Constraint` type.
+
+- [ ] F.1 Add optional `style?: NodeStyleProps` to `Constraint` interface in
+  `src/ui/workspace.ts` (top-level, not nested in `data`)
+- [ ] F.2 Migrate `WORKSPACE_CONSTRAINT`: remove `data: { rendering: { shape: "rect" } }`,
+  add `style: { geometry: "rect" }` at top level
+- [ ] F.3 Migrate `PROFILE_CONSTRAINT`: same pattern
+- [ ] F.4 Update `canvas.tsx` constraint processing (lines 894-900): read from
+  `constraint.style` instead of `constraint.data.rendering.shape`. Build
+  `styleOverridesMap: Map<string, NodeStyleProps>` instead of `shapeMap`. Pass through
+  to adapter where it becomes `MarlinNodeState.styleOverrides`.
+- [ ] F.5 Remove the old `shapeMap` code path entirely
+- [ ] F.6 Update DESIGN.md reference to `data.rendering.shape`
+- [ ] F.7 Tests pass, constraint-driven rect nodes still render correctly
+
+#### Key files:
+- Modify: `src/ui/workspace.ts` — add `style?` to Constraint
+- Modify: `src/graph/builtin_constraints.ts` — migrate WORKSPACE + PROFILE constraints
+- Modify: `src/ui/components/canvas.tsx` — new constraint→style processing
+- Modify: `src/ui/lib/canvas-adapter.ts` — receive styleOverrides from canvas.tsx
+- Modify: `DESIGN.md` — update constraint docs
+
+### Phase G — Remove deprecated `shape` field
+
+- [ ] G.1 Make `shape` optional on `CanvasNode` with deprecation comment
+- [ ] G.2 Remove all remaining `shape` assignments in canvas-adapter.ts — nodes only carry
   `geometry`
-- [ ] E.3 Update `resolveGeometry` fallback — warn/error if neither geometry nor shape present
-- [ ] E.4 Update all test helpers to use `geometry` only
-- [ ] E.5 Update layout-package stories and canvas-package stories if they construct
+- [ ] G.3 Update `resolveGeometry` fallback — warn/error if neither geometry nor shape present
+- [ ] G.4 Update all test helpers to use `geometry` only
+- [ ] G.5 Update layout-package stories and canvas-package stories if they construct
   CanvasNodes with `shape`
-- [ ] E.6 `NO_COLOR=1 deno task ci` — all tests green
-- [ ] E.7 Consider: keep `shape` as truly optional for simple/external consumers who don't
+- [ ] G.6 `NO_COLOR=1 deno task ci` — all tests green
+- [ ] G.7 Consider: keep `shape` as truly optional for simple/external consumers who don't
   care about the theme system? Or remove entirely? Decision at implementation time based on
   how many external touch points exist.
 
@@ -165,12 +219,14 @@ package provides the generic mechanism; roles are marlinspike-specific semantics
 A (NodeGeometry type)
   → B (rewire canvas dispatch)
     → C (extend CanvasTheme)
-      → D (roles + CLASSIC theme + rewire IDE)
-        → E (remove shape field)
+      → D (style property schema)
+        → E (roles + CLASSIC theme + rewire IDE)
+          → F (migrate constraints to style overrides)
+            → G (remove shape field)
 ```
 
-Each phase is independently committable. A–C are purely within `packages/canvas/`.
-D is the integration step. E is cleanup.
+Each phase is independently committable. A–D are within `packages/canvas/`.
+E–F are the integration steps. G is cleanup.
 
 ## Open Questions
 
@@ -189,7 +245,11 @@ D is the integration step. E is cleanup.
 - **SDF on NodeGeometry** — YES, include `sdf(w, h)` now. It's the core of D1.
 - **Port positioning on NodeGeometry** — YES, `portPositions(ports, w, h, labelH)` as a
   method. Centralizes shape-specific dispatch.
-- **Scope** — full (A–E). All 5 phases in this branch.
+- **Scope** — full (A–G). All 7 phases in this branch.
+- **Style schema** — YES, implement now as `NodeStyleProps`. Same property format for theme
+  definitions and per-element overrides. Sparse merge: element overrides ← theme defaults.
+- **Constraint migration** — YES, eliminate `data.rendering.shape`. Move to top-level
+  `style: NodeStyleProps` on `Constraint`. Same vocabulary as themes.
 
 ## Verification
 
