@@ -200,11 +200,20 @@ style. `CanvasNode` is NOT role-aware — by the time canvas sees it, the role h
 Canvas just renders what it's given. No performance optimization needed yet; keep the design as
 dynamic as clean architecture allows.
 
-**D5 — Style schema as data.** Theme definitions (including extent rules, padding, colors) are
-declarative data — a schema that the theme resolver interprets. This enables:
+**D5 — Style schema as data (initial).** Theme definitions (including extent rules, padding,
+colors) start as declarative data — a schema that the theme resolver interprets. This enables:
 - Styles defined as JSON (or similar structured format)
 - Constraint overrides use the same schema (merged at a different layer)
 - Future: style definitions loadable from external files
+
+**Limitation:** Declarative data works for static properties but breaks down for computed
+attributes (e.g. border thickness proportional to node degree, color derived from topology
+charge). Functions can't be represented or type-checked in JSON schemas, and threading computed
+values through a declarative schema gets awkward. The initial implementation should use
+declarative data for the simple cases, but the design must accommodate an evolution path toward
+themes-as-code — where theme resolution can involve arbitrary computation, not just data
+lookup. This may converge with the judgment system (D3 notes theme resolution resembles a
+judgment).
 
 **D6 — Constraint overrides at top level.** Constraints can override primitive construction
 using the same schema vocabulary as theme definitions. Override properties live at the top level
