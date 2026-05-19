@@ -9,10 +9,12 @@ import {
   connectedComponents,
   createFIELD,
   createJANK,
+  createPORT,
   createSDF,
   createTOPOGRID,
   DEFAULT_FIELD_CONFIG,
   DEFAULT_JANK_CONFIG,
+  DEFAULT_PORT_CONFIG,
   DEFAULT_SDF_CONFIG,
   DEFAULT_TOPOGRID_CONFIG,
   type ForceEdge,
@@ -1140,7 +1142,39 @@ interface FieldAlgConfig {
   showSdfs: boolean;
 }
 
-type AlgorithmConfig = JankAlgConfig | TopogridAlgConfig | SdfAlgConfig | FieldAlgConfig;
+interface PortAlgConfig {
+  id: "PORT";
+  leafR: number;
+  repulsionStrength: number;
+  restGap: number;
+  maxRepulsionDist: number;
+  sdfGradientEps: number;
+  springK: number;
+  springRestLength: number;
+  edgeClearance: number;
+  edgeRepulsionK: number;
+  componentRepulsionK: number;
+  damping: number;
+  maxVelocity: number;
+  circleThreshold: number;
+  spread: number;
+  settleV: number;
+  fieldStrength: number;
+  fieldDirection: [number, number];
+  anchorK: number;
+  anchorRampTicks: number;
+  ltrHSpacing: number;
+  ltrVSpacing: number;
+  showComponents: boolean;
+  showSdfs: boolean;
+}
+
+type AlgorithmConfig =
+  | JankAlgConfig
+  | TopogridAlgConfig
+  | SdfAlgConfig
+  | FieldAlgConfig
+  | PortAlgConfig;
 
 const DEFAULT_JANK_STORY: JankAlgConfig = {
   id: "JANK",
@@ -1209,16 +1243,54 @@ const DEFAULT_FIELD_STORY: FieldAlgConfig = {
   showSdfs: false,
 };
 
+const DEFAULT_PORT_STORY: PortAlgConfig = {
+  id: "PORT",
+  leafR: 26,
+  repulsionStrength: DEFAULT_PORT_CONFIG.repulsionStrength,
+  restGap: DEFAULT_PORT_CONFIG.restGap,
+  maxRepulsionDist: DEFAULT_PORT_CONFIG.maxRepulsionDist,
+  sdfGradientEps: DEFAULT_PORT_CONFIG.sdfGradientEps,
+  springK: DEFAULT_PORT_CONFIG.springK,
+  springRestLength: DEFAULT_PORT_CONFIG.springRestLength,
+  edgeClearance: DEFAULT_PORT_CONFIG.edgeClearance,
+  edgeRepulsionK: DEFAULT_PORT_CONFIG.edgeRepulsionK,
+  componentRepulsionK: DEFAULT_PORT_CONFIG.componentRepulsionK,
+  damping: DEFAULT_PORT_CONFIG.damping,
+  maxVelocity: DEFAULT_PORT_CONFIG.maxVelocity,
+  circleThreshold: DEFAULT_PORT_CONFIG.circleThreshold,
+  spread: DEFAULT_PORT_CONFIG.spread,
+  settleV: DEFAULT_PORT_CONFIG.settleV,
+  fieldStrength: DEFAULT_PORT_CONFIG.fieldStrength,
+  fieldDirection: DEFAULT_PORT_CONFIG.fieldDirection,
+  anchorK: DEFAULT_PORT_CONFIG.anchorK,
+  anchorRampTicks: DEFAULT_PORT_CONFIG.anchorRampTicks,
+  ltrHSpacing: DEFAULT_PORT_CONFIG.ltrHSpacing,
+  ltrVSpacing: DEFAULT_PORT_CONFIG.ltrVSpacing,
+  showComponents: false,
+  showSdfs: false,
+};
+
 function defaultAlgConfig(id: AlgorithmId): AlgorithmConfig {
   if (id === "JANK") return DEFAULT_JANK_STORY;
   if (id === "TOPOGRID") return DEFAULT_TOPOGRID_STORY;
   if (id === "FIELD") return DEFAULT_FIELD_STORY;
+  if (id === "PORT") return DEFAULT_PORT_STORY;
   return DEFAULT_SDF_STORY;
 }
 
 function makeAlgorithm(cfg: AlgorithmConfig): LayoutAlgorithm {
   if (cfg.id === "TOPOGRID") {
     return createTOPOGRID({ hSpacing: cfg.hSpacing, vSpacing: cfg.vSpacing });
+  }
+  if (cfg.id === "PORT") {
+    const {
+      id: _id,
+      leafR: _r,
+      showComponents: _sc,
+      showSdfs: _ss,
+      ...portParams
+    } = cfg;
+    return createPORT({ ...portParams, maxTicks: Infinity });
   }
   if (cfg.id === "FIELD") {
     const {
@@ -1818,7 +1890,9 @@ function renderLevel(
         const a = posMap.get(e.a);
         const b = posMap.get(e.b);
         if (!a || !b) return null;
-        if ((cfg.id === "SDF" || cfg.id === "FIELD") && cfg.edgeClearance > 0) {
+        if (
+          (cfg.id === "SDF" || cfg.id === "FIELD" || cfg.id === "PORT") && cfg.edgeClearance > 0
+        ) {
           const pts = bentEdgePoints(
             a.x,
             a.y,
@@ -1855,20 +1929,47 @@ function renderLevel(
         );
       })}
       {/* SDF debug: component bounding circles */}
-      {cfg.id === "SDF" && cfg.showComponents && parentId === "" && (() => {
-        const ids = level.nodes.map((n) => n.id);
-        const edgesAB = edges.map((e) => ({ a: e.a, b: e.b }));
-        const comps = connectedComponents(ids, edgesAB);
-        return comps.map((comp, i) => {
-          if (comp.length === 1) {
-            const n = posMap.get(comp[0]);
-            if (!n) return null;
-            const cr = Math.sqrt(n.w * n.w + n.h * n.h) / 2;
+      {(cfg.id === "SDF" || cfg.id === "FIELD" || cfg.id === "PORT") && cfg.showComponents &&
+        parentId === "" && (() => {
+          const ids = level.nodes.map((n) => n.id);
+          const edgesAB = edges.map((e) => ({ a: e.a, b: e.b }));
+          const comps = connectedComponents(ids, edgesAB);
+          return comps.map((comp, i) => {
+            if (comp.length === 1) {
+              const n = posMap.get(comp[0]);
+              if (!n) return null;
+              const cr = Math.sqrt(n.w * n.w + n.h * n.h) / 2;
+              return (
+                <circle
+                  key={`comp-${i}`}
+                  cx={n.x}
+                  cy={n.y}
+                  r={cr}
+                  fill="none"
+                  stroke="#3a5a3a"
+                  stroke-width={invScale}
+                  stroke-dasharray={`${4 * invScale},${4 * invScale}`}
+                  opacity={0.5}
+                />
+              );
+            }
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const id of comp) {
+              const n = posMap.get(id);
+              if (!n) continue;
+              minX = Math.min(minX, n.x - n.w / 2);
+              minY = Math.min(minY, n.y - n.h / 2);
+              maxX = Math.max(maxX, n.x + n.w / 2);
+              maxY = Math.max(maxY, n.y + n.h / 2);
+            }
+            const cx = (minX + maxX) / 2;
+            const cy = (minY + maxY) / 2;
+            const cr = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2) / 2;
             return (
               <circle
                 key={`comp-${i}`}
-                cx={n.x}
-                cy={n.y}
+                cx={cx}
+                cy={cy}
                 r={cr}
                 fill="none"
                 stroke="#3a5a3a"
@@ -1877,36 +1978,10 @@ function renderLevel(
                 opacity={0.5}
               />
             );
-          }
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-          for (const id of comp) {
-            const n = posMap.get(id);
-            if (!n) continue;
-            minX = Math.min(minX, n.x - n.w / 2);
-            minY = Math.min(minY, n.y - n.h / 2);
-            maxX = Math.max(maxX, n.x + n.w / 2);
-            maxY = Math.max(maxY, n.y + n.h / 2);
-          }
-          const cx = (minX + maxX) / 2;
-          const cy = (minY + maxY) / 2;
-          const cr = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2) / 2;
-          return (
-            <circle
-              key={`comp-${i}`}
-              cx={cx}
-              cy={cy}
-              r={cr}
-              fill="none"
-              stroke="#3a5a3a"
-              stroke-width={invScale}
-              stroke-dasharray={`${4 * invScale},${4 * invScale}`}
-              opacity={0.5}
-            />
-          );
-        });
-      })()}
+          });
+        })()}
       {/* SDF debug: draw each node's SDF shape (zero-level set) as a translucent overlay */}
-      {cfg.id === "SDF" && cfg.showSdfs && (() => {
+      {(cfg.id === "SDF" || cfg.id === "FIELD" || cfg.id === "PORT") && cfg.showSdfs && (() => {
         const palette = [
           "#ff5555",
           "#55ff55",
@@ -2144,6 +2219,7 @@ export function Configurator() {
             <option value="TOPOGRID" selected={algCfg.id === "TOPOGRID"}>TOPOGRID</option>
             <option value="SDF" selected={algCfg.id === "SDF"}>SDF</option>
             <option value="FIELD" selected={algCfg.id === "FIELD"}>FIELD</option>
+            <option value="PORT" selected={algCfg.id === "PORT"}>PORT</option>
           </select>
         </div>
 
