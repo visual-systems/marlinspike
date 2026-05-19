@@ -250,6 +250,29 @@ Steps:
 - Modify: `src/ui/lib/classic-theme.ts` — use theme package for resolution
 - Modify: `deno.json` — workspace member
 
+### Phase H design notes
+
+**Style representation layering:**
+- Native representation is a TypeScript interface with functions (computed properties for
+  interaction-dependent styles like hover/selection/error state).
+- Base role definitions within a theme are pure data (role→NodeStyleProps maps).
+- `fromJSON()` helper validates and hydrates JSON into the interface.
+- Bundled themes (CLASSIC) are `.ts` files that directly construct the interface.
+- JSON representation enables: documentation, authorship metadata, serialization into the
+  graph for meta-style capabilities, safety via validation.
+- The native interface is the source of truth; JSON is a serialization format with a
+  well-defined builder.
+
+**Bidirectional codec (deferred, design north star):**
+- Single definition yields parser + serializer + schema + TypeScript types. Like Haskell's
+  [autodocodec](https://hackage.haskell.org/package/autodocodec) but for the marlinspike
+  ecosystem.
+- Recursive possibility: the codec itself could be a marlinspike graph — a graph that
+  defines how to validate graphs. This connects to the broader vision of domain-specific
+  "apps" represented as graphs + constraints.
+- Would eliminate the need to define independent schema and parser — validation and type
+  definition unified.
+
 ### Phase I — Update DESIGN.md
 
 - [ ] I.1 Update DESIGN.md to reflect the theme system architecture
