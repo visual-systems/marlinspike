@@ -36,7 +36,7 @@ reproduces current visual behavior exactly.
 
 ### Phase A — `NodeGeometry` type and implementations
 
-- [ ] A.1 Create `packages/canvas/geometry/node-geometry.ts`:
+- [x] A.1 Create `packages/canvas/geometry/node-geometry.ts`:
   - `NodeGeometry` interface with methods:
     - `renderBody(w, h, style) → RenderPrimitive[]` — produce shape primitives relative to
       node center
@@ -51,10 +51,10 @@ reproduces current visual behavior exactly.
   - `RECT_GEOMETRY: NodeGeometry` singleton — wraps current rect logic from renderNode
     (line 19-33), surfacePoint (line 35-41), arcClipRect
   - `resolveGeometry(node) → NodeGeometry` — bridge function: `geometry ?? shape fallback`
-- [ ] A.2 Create `packages/canvas/geometry/node-geometry_test.ts` — verify implementations
+- [x] A.2 Create `packages/canvas/geometry/node-geometry_test.ts` — verify implementations
   match existing inline behavior exactly (same inputs → same outputs)
-- [ ] A.3 Export from `packages/canvas/mod.ts`
-- [ ] A.4 `deno check` passes
+- [x] A.3 Export from `packages/canvas/mod.ts`
+- [x] A.4 `deno check` passes
 
 #### Key files:
 - New: `packages/canvas/geometry/node-geometry.ts`
