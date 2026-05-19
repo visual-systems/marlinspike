@@ -16,16 +16,17 @@ rendering, no framework dependencies.
 ## Quick start
 
 ```ts
-import { createSDF, DEFAULT_SDF_CONFIG, type ForceNode } from "@marlinspike/layout";
+import { createSDF, DEFAULT_SDF_CONFIG } from "@marlinspike/layout";
 
 const algo = createSDF(DEFAULT_SDF_CONFIG);
 const ids = ["A", "B", "C"];
 const edges = [{ a: "A", b: "B" }, { a: "B", b: "C" }];
 
 let nodes = algo.initNodes(ids, edges, 52, 52, new Map());
-for (let t = 0; !result.settled; t++) {
+for (let t = 0; t < 500; t++) {
   const result = algo.tick(nodes, edges, t);
   nodes = result.nodes;
+  if (result.settled) break;
 }
 // nodes now have settled x, y positions
 ```
@@ -45,6 +46,53 @@ const myAlgorithm: LayoutAlgorithm = {
   tick(nodes, edges, ticks) { ... },
 };
 ```
+
+## Adding layout to an existing canvas app
+
+The most common integration pattern: you already have a canvas with manually positioned nodes and
+want to add an "auto-layout" button. The glue code is minimal — extract IDs and edges, run the
+algorithm, copy positions back.
+
+```ts
+import { createSDF, DEFAULT_SDF_CONFIG, type ForceEdge } from "@marlinspike/layout";
+import type { CanvasNode } from "@marlinspike/canvas";
+
+// Your existing canvas state
+let canvasNodes: CanvasNode[] = [/* ... */];
+let canvasEdges: { id: string; fromId: string; toId: string }[] = [/* ... */];
+
+// 1. Extract IDs and edges for the layout engine
+const ids = canvasNodes.map((n) => n.id);
+const forceEdges: ForceEdge[] = canvasEdges.map((e) => ({ a: e.fromId, b: e.toId }));
+
+// 2. Create algorithm and initialize (seeds from current positions)
+const algo = createSDF(DEFAULT_SDF_CONFIG);
+const defaults = new Map(canvasNodes.map((n) => [n.id, { x: n.x, y: n.y }]));
+let forceNodes = algo.initNodes(ids, forceEdges, 52, 52, defaults);
+
+// 3. Run in a rAF loop (or run synchronously for instant layout)
+function step(tick: number) {
+  const result = algo.tick(forceNodes, forceEdges, tick);
+  forceNodes = result.nodes;
+
+  // 4. Write positions back to canvas nodes
+  const posMap = new Map(result.nodes.map((n) => [n.id, { x: n.x, y: n.y }]));
+  canvasNodes = canvasNodes.map((n) => {
+    const pos = posMap.get(n.id);
+    return pos ? { ...n, x: pos.x, y: pos.y } : n;
+  });
+
+  // 5. Re-render your canvas (your existing render path)
+  renderMyCanvas(canvasNodes, canvasEdges);
+
+  if (!result.settled) requestAnimationFrame(() => step(tick + 1));
+}
+step(0);
+```
+
+See the [Figma Lite with Layout](https://marlinspike.sordina.deno.net/stories) story for a complete
+interactive example — it's the canvas package's FigmaLite demo with ~30 lines of layout integration
+added.
 
 ## Composing with @marlinspike/canvas
 
@@ -77,7 +125,7 @@ const scene = {
 
 // 3. Render
 const root = renderScene(scene, marlinTheme);
-const svg = renderWith(svgRenderer(), root);
+const [svg] = renderWith(svgRenderer, root);
 ```
 
 ## SDF as geometry interface
@@ -98,8 +146,10 @@ See the layout algorithms in action at the Marlinspike stories:
 
 - [Layout stories](https://marlinspike.sordina.deno.net/stories) — all algorithms with interactive
   controls
-- [Package: @marlinspike-layout](https://marlinspike.sordina.deno.net/stories) — layout + canvas
-  composition demo
+- [Package: @marlinspike-layout](https://marlinspike.sordina.deno.net/stories) — algorithm
+  comparison, topology analysis, settlement dynamics, and canvas composition
+- [Figma Lite with Layout](https://marlinspike.sordina.deno.net/stories) — adding auto-layout to an
+  interactive canvas app
 
 ## Exports
 

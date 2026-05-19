@@ -164,6 +164,35 @@ packages/layout/
 
 One-directional. Canvas and graph never import from layout.
 
+### Phase 8 — Visual roles (shape decision refactor)
+
+Extract shape decisions from scattered imperative code in canvas-adapter into a declarative
+role→visual mapping in the theme system. This is a cross-package refactor that touches canvas
+(theme resolver), IDE (role computation), and potentially layout (role passthrough).
+
+**Key insight:** There's a missing intermediate concept — a "visual role" — between graph
+semantics (leaf/composite/ref) and geometric shape (circle/rect). Currently the IDE decides
+shapes in two scattered places: constraints (`data.rendering.shape`) and canvas-adapter
+(hardcoded expanded→rect, else→circle). This should collapse into:
+
+```
+graph semantics  →  visual role  →  geometric shape + style
+(leaf, composite)    (IDE computes)   (theme resolves)
+```
+
+- [ ] 8.1 Define visual role type (e.g. `"leaf" | "container" | "collapsed-subgraph" | "ref"`)
+      and a role→visual mapping type in `@marlinspike/canvas` theme system
+- [ ] 8.2 Add role computation function in IDE (`TreeNode` + expansion state → visual role)
+- [ ] 8.3 Move shape decision from canvas-adapter hardcoding into theme resolver
+      (theme maps role → shape + stroke + fill + dashed etc.)
+- [ ] 8.4 Constraints become theme overrides rather than primary shape source
+- [ ] 8.5 MarlinNodeState carries role; theme resolver reads role from state to pick visuals
+- [ ] 8.6 Judgment-ready: future judgments can assign roles (e.g. `"hub"`) without knowing
+      geometry — theme resolves them
+
+**Not in scope for this branch** — this is future work for when we refactor the theme system.
+Documented here because the extract-layout work surfaces the shape boundary question clearly.
+
 ## Open Questions
 
 1. **`ForceEdge` named type** — currently all code uses anonymous `{ a: string; b: string }`.
