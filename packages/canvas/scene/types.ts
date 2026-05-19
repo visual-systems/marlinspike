@@ -33,8 +33,9 @@ export interface CanvasNode<S = unknown> {
   y: number;
   w: number;
   h: number;
-  shape: "circle" | "rect";
-  /** Opaque geometry. When present, takes precedence over shape for rendering and clipping. */
+  /** @deprecated Use `geometry` instead. Kept for backwards compatibility. */
+  shape?: "circle" | "rect";
+  /** Opaque geometry for rendering and clipping. Falls back to shape if absent. */
   geometry?: import("../geometry/node-geometry.ts").NodeGeometry;
   label: string;
   ports?: CanvasPort[];

@@ -2,13 +2,14 @@ import { assertEquals } from "@std/assert";
 import { assertAlmostEquals } from "@std/assert/assert-almost-equals";
 import type { CanvasNode } from "../scene/types.ts";
 import { surfacePoint } from "./surface.ts";
+import { CIRCLE_GEOMETRY, RECT_GEOMETRY } from "./node-geometry.ts";
 
 function circleNode(id: string, x: number, y: number, r = 26): CanvasNode {
-  return { id, x, y, w: r * 2, h: r * 2, shape: "circle", label: id };
+  return { id, x, y, w: r * 2, h: r * 2, geometry: CIRCLE_GEOMETRY, label: id };
 }
 
 function rectNode(id: string, x: number, y: number, w = 100, h = 60): CanvasNode {
-  return { id, x, y, w, h, shape: "rect", label: id };
+  return { id, x, y, w, h, geometry: RECT_GEOMETRY, label: id };
 }
 
 Deno.test("surfacePoint — circle clips at radius", () => {

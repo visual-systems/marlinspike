@@ -3,12 +3,13 @@ import { hitTest } from "./hit-test.ts";
 import { renderScene } from "../render/scene.ts";
 import { marlinTheme } from "../style/marlin-theme.ts";
 import type { CanvasScene } from "../scene/types.ts";
+import { CIRCLE_GEOMETRY } from "../geometry/node-geometry.ts";
 
 function makeScene(): CanvasScene {
   return {
     nodes: [
-      { id: "a", x: 0, y: 0, w: 52, h: 52, shape: "circle", label: "A" },
-      { id: "b", x: 100, y: 0, w: 52, h: 52, shape: "circle", label: "B" },
+      { id: "a", x: 0, y: 0, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "A" },
+      { id: "b", x: 100, y: 0, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "B" },
     ],
     edges: [{ id: "e1", fromId: "a", toId: "b" }],
   };

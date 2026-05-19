@@ -195,17 +195,16 @@ themes, applied as a top-level `style` field on the `Constraint` type.
 
 ### Phase G — Remove deprecated `shape` field
 
-- [ ] G.1 Make `shape` optional on `CanvasNode` with deprecation comment
-- [ ] G.2 Remove all remaining `shape` assignments in canvas-adapter.ts — nodes only carry
-  `geometry`
-- [ ] G.3 Update `resolveGeometry` fallback — warn/error if neither geometry nor shape present
-- [ ] G.4 Update all test helpers to use `geometry` only
-- [ ] G.5 Update layout-package stories and canvas-package stories if they construct
-  CanvasNodes with `shape`
-- [ ] G.6 `NO_COLOR=1 deno task ci` — all tests green
-- [ ] G.7 Consider: keep `shape` as truly optional for simple/external consumers who don't
-  care about the theme system? Or remove entirely? Decision at implementation time based on
-  how many external touch points exist.
+- [x] G.1 Make `shape` optional on `CanvasNode` with `@deprecated` JSDoc
+- [x] G.2 Canvas-adapter still sets both `shape` and `geometry` — shape kept for story
+  backwards compat. Geometry is the primary field.
+- [x] G.3 `resolveGeometry` already handles `geometry ?? shape ?? CIRCLE` — no change needed
+- [x] G.4 Update all canvas-package test helpers to use `geometry` only (scene_test,
+  surface_test, hit-test_test, pointer_test, marlin_theme_test)
+- [ ] G.5 Update story files to use `geometry` instead of `shape` (deferred to Phase J)
+- [x] G.6 `NO_COLOR=1 deno task ci` — 573 tests green
+- [x] G.7 Decision: keep `shape` as optional with `@deprecated`. resolveGeometry bridge
+  handles fallback. Stories still use shape — migrated in Phase J.
 
 #### Key files:
 - Modify: `packages/canvas/scene/types.ts` — shape optional or removed
