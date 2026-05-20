@@ -55,7 +55,7 @@ function resolveNodeStyle(node: CanvasNode<unknown>): NodeStyle {
 
 function resolveEdgeStyle(edge: CanvasEdge): EdgeStyle {
   const colour = nodeColour(edge.fromId);
-  const strokeWidth = edge.selected ? 4 : 3;
+  const strokeWidth = edge.selected ? 6 : 4.5;
   return {
     stroke: edge.selected ? darken(colour) : colour,
     strokeWidth,
@@ -87,6 +87,6 @@ export const transitTheme: CanvasTheme<unknown> = {
   node: resolveNodeStyle,
   edge: resolveEdgeStyle,
   port: resolvePortStyle,
-  background: "#f4f0e8",
+  background: "#e8e4dc",
   edgeRouter: route,
 };
