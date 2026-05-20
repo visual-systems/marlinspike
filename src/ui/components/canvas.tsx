@@ -25,8 +25,24 @@ import { Dropdown } from "./dropdown.tsx";
 import { SmallBtn } from "./widgets.tsx";
 import { type BBox, boundingBox, centerNodes, type ForceNode } from "@marlinspike/layout";
 import { rectPortPositions } from "@marlinspike/layout";
-import { hitTest, renderScene, renderWith, svgRenderer } from "@marlinspike/canvas";
-import type { CanvasNode, CanvasScene, RenderGroup, RenderPrimitive } from "@marlinspike/canvas";
+import {
+  agentTheme,
+  containerFlowTheme,
+  hitTest,
+  marlinTheme,
+  renderScene,
+  renderWith,
+  shenzhenTheme,
+  svgRenderer,
+  transitTheme,
+} from "@marlinspike/canvas";
+import type {
+  CanvasNode,
+  CanvasScene,
+  CanvasTheme,
+  RenderGroup,
+  RenderPrimitive,
+} from "@marlinspike/canvas";
 import {
   buildCanvasScene,
   type BuildSceneOptions,
@@ -34,6 +50,7 @@ import {
   marlinIdeTheme,
   type MarlinNodeState,
 } from "../lib/canvas-adapter.ts";
+import type { CanvasThemeId } from "../workspace.ts";
 import { CLASSIC_CONSTANTS } from "../lib/classic-theme.ts";
 import {
   createFIELD,
@@ -41,6 +58,7 @@ import {
   createPORT,
   createSDF,
   createTOPOGRID,
+  createTOPOLTR,
   DEFAULT_FIELD_CONFIG,
   DEFAULT_JANK_CONFIG,
   DEFAULT_PORT_CONFIG,
@@ -48,6 +66,33 @@ import {
   type LayoutAlgorithm,
   topoCharge,
 } from "@marlinspike/layout";
+
+// ---------------------------------------------------------------------------
+// Theme resolver
+// ---------------------------------------------------------------------------
+
+// deno-lint-ignore no-explicit-any
+const THEME_MAP: Record<CanvasThemeId, CanvasTheme<any>> = {
+  classic: marlinIdeTheme,
+  marlin: marlinTheme,
+  containerFlow: containerFlowTheme,
+  shenzhen: shenzhenTheme,
+  transit: transitTheme,
+  agent: agentTheme,
+};
+
+function resolveTheme(id: CanvasThemeId): CanvasTheme<MarlinNodeState> {
+  return (THEME_MAP[id] ?? marlinIdeTheme) as CanvasTheme<MarlinNodeState>;
+}
+
+const THEME_ITEMS: { value: string; label: string }[] = [
+  { value: "classic", label: "Classic" },
+  { value: "marlin", label: "Marlin" },
+  { value: "containerFlow", label: "Container Flow" },
+  { value: "shenzhen", label: "Shenzhen" },
+  { value: "transit", label: "Transit" },
+  { value: "agent", label: "Agent" },
+];
 
 // ---------------------------------------------------------------------------
 // Types
@@ -467,6 +512,7 @@ function stepLayout(
 
 function makeCanvasAlgorithm(id: WorkspaceState["canvasAlgorithm"]): LayoutAlgorithm {
   if (id === "TOPOGRID") return createTOPOGRID({ hSpacing: 160, vSpacing: 130 });
+  if (id === "TOPOLTR") return createTOPOLTR({ hSpacing: 160, vSpacing: 130 });
   if (id === "SDF") return createSDF(DEFAULT_SDF_CONFIG);
   if (id === "FIELD") return createFIELD(DEFAULT_FIELD_CONFIG);
   if (id === "PORT") return createPORT(DEFAULT_PORT_CONFIG);
@@ -756,6 +802,7 @@ function CanvasTopBar(
         items={[
           { value: "JANK", label: "JANK" },
           { value: "TOPOGRID", label: "TOPOGRID" },
+          { value: "TOPOLTR", label: "TOPOLTR" },
           { value: "SDF", label: "SDF" },
           { value: "FIELD", label: "FIELD" },
           { value: "PORT", label: "PORT" },
@@ -765,6 +812,16 @@ function CanvasTopBar(
         onSelect={(id) =>
           update((s) => ({ ...s, canvasAlgorithm: id as WorkspaceState["canvasAlgorithm"] }))}
         width={90}
+      />
+      <div style={dividerStyle} />
+      <span style="color:#404466; user-select:none;">theme</span>
+      <Dropdown
+        items={THEME_ITEMS}
+        selectedValue={ws.canvasThemeId}
+        placeholder="theme"
+        onSelect={(id) =>
+          update((s) => ({ ...s, canvasThemeId: id as WorkspaceState["canvasThemeId"] }))}
+        width={120}
       />
       <ToggleDropdown ws={ws} update={update} />
       <span
@@ -1494,7 +1551,8 @@ export function Canvas(
     styleOverrides: styleOverridesMap,
   };
   const canvasScene = buildCanvasScene(sceneOpts);
-  const renderRoot: RenderGroup = renderScene(canvasScene, marlinIdeTheme);
+  const activeTheme = resolveTheme(ws.canvasThemeId);
+  const renderRoot: RenderGroup = renderScene(canvasScene, activeTheme);
 
   // Append ghost edge (UI-layer, changes every mouse move)
   const ghost = ghostEdgePrimitive(mode, edgeDraw, mouseCanvas);
@@ -1510,7 +1568,9 @@ export function Canvas(
       ref={containerRef}
       // deno-lint-ignore no-explicit-any
       tabIndex={0 as any}
-      style="position:absolute; inset:0; overflow:hidden; background:#0d0d1e; outline:none; touch-action:none;"
+      style={`position:absolute; inset:0; overflow:hidden; background:${
+        activeTheme.background ?? "#0d0d1e"
+      }; outline:none; touch-action:none;`}
       onKeyDown={(e: KeyboardEvent) => {
         if (e.key === "Escape") {
           setMode("select");

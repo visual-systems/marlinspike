@@ -77,6 +77,18 @@ export type { BodyStyle, NodeGeometry } from "./geometry/node-geometry.ts";
 export { CIRCLE_GEOMETRY, RECT_GEOMETRY, resolveGeometry } from "./geometry/node-geometry.ts";
 
 // ---------------------------------------------------------------------------
+// Geometry — edge routing
+// ---------------------------------------------------------------------------
+
+export type { EdgeRoutingResult } from "./geometry/edge-routing.ts";
+export {
+  angularRoute,
+  angularRouter,
+  MANHATTAN_ANGLES,
+  TRANSIT_ANGLES,
+} from "./geometry/edge-routing.ts";
+
+// ---------------------------------------------------------------------------
 // Geometry — port positions
 // ---------------------------------------------------------------------------
 
@@ -124,6 +136,10 @@ export { svgRenderer } from "./render/svg.ts";
 // ---------------------------------------------------------------------------
 
 export { marlinTheme } from "./style/marlin-theme.ts";
+export { containerFlowTheme } from "./style/container-flow-theme.ts";
+export { shenzhenTheme } from "./style/shenzhen-theme.ts";
+export { transitTheme } from "./style/transit-theme.ts";
+export { agentTheme } from "./style/agent-theme.ts";
 
 // ---------------------------------------------------------------------------
 // Interaction
