@@ -51,6 +51,9 @@ export { createSDF, DEFAULT_SDF_CONFIG } from "./algorithms/SDF.ts";
 export type { TopogridConfig } from "./algorithms/TOPOGRID.ts";
 export { createTOPOGRID, DEFAULT_TOPOGRID_CONFIG } from "./algorithms/TOPOGRID.ts";
 
+export type { TopoltrConfig } from "./algorithms/TOPOLTR.ts";
+export { createTOPOLTR, DEFAULT_TOPOLTR_CONFIG } from "./algorithms/TOPOLTR.ts";
+
 export type { FieldConfig } from "./algorithms/FIELD.ts";
 export { createFIELD, DEFAULT_FIELD_CONFIG } from "./algorithms/FIELD.ts";
 

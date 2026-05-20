@@ -58,6 +58,7 @@ import {
   createPORT,
   createSDF,
   createTOPOGRID,
+  createTOPOLTR,
   DEFAULT_FIELD_CONFIG,
   DEFAULT_JANK_CONFIG,
   DEFAULT_PORT_CONFIG,
@@ -511,6 +512,7 @@ function stepLayout(
 
 function makeCanvasAlgorithm(id: WorkspaceState["canvasAlgorithm"]): LayoutAlgorithm {
   if (id === "TOPOGRID") return createTOPOGRID({ hSpacing: 160, vSpacing: 130 });
+  if (id === "TOPOLTR") return createTOPOLTR({ hSpacing: 160, vSpacing: 130 });
   if (id === "SDF") return createSDF(DEFAULT_SDF_CONFIG);
   if (id === "FIELD") return createFIELD(DEFAULT_FIELD_CONFIG);
   if (id === "PORT") return createPORT(DEFAULT_PORT_CONFIG);
@@ -800,6 +802,7 @@ function CanvasTopBar(
         items={[
           { value: "JANK", label: "JANK" },
           { value: "TOPOGRID", label: "TOPOGRID" },
+          { value: "TOPOLTR", label: "TOPOLTR" },
           { value: "SDF", label: "SDF" },
           { value: "FIELD", label: "FIELD" },
           { value: "PORT", label: "PORT" },

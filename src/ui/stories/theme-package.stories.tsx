@@ -876,6 +876,72 @@ const GALLERY_SCENARIOS: { name: string; scene: CanvasScene }[] = [
       ],
     },
   },
+  {
+    name: "Subgraphs",
+    scene: {
+      nodes: [
+        // Container A background
+        {
+          id: "gA",
+          x: 150,
+          y: 100,
+          w: 200,
+          h: 120,
+          geometry: RECT_GEOMETRY,
+          label: "Group A",
+          style: { strokeWidth: 1 },
+        },
+        // Children inside container A
+        { id: "a1", x: 100, y: 80, w: 40, h: 40, geometry: CIRCLE_GEOMETRY, label: "A1" },
+        {
+          id: "a2",
+          x: 200,
+          y: 80,
+          w: 40,
+          h: 40,
+          geometry: CIRCLE_GEOMETRY,
+          label: "A2",
+          selected: true,
+        },
+        { id: "a3", x: 150, y: 140, w: 40, h: 40, geometry: CIRCLE_GEOMETRY, label: "A3" },
+        // Container B background
+        {
+          id: "gB",
+          x: 400,
+          y: 100,
+          w: 160,
+          h: 120,
+          geometry: RECT_GEOMETRY,
+          label: "Group B",
+          highlighted: true,
+          style: { strokeWidth: 1 },
+        },
+        // Children inside container B
+        { id: "b1", x: 360, y: 80, w: 40, h: 40, geometry: CIRCLE_GEOMETRY, label: "B1" },
+        { id: "b2", x: 440, y: 80, w: 40, h: 40, geometry: CIRCLE_GEOMETRY, label: "B2" },
+        {
+          id: "b3",
+          x: 400,
+          y: 140,
+          w: 40,
+          h: 40,
+          geometry: CIRCLE_GEOMETRY,
+          label: "B3",
+          dashed: true,
+        },
+      ],
+      edges: [
+        { id: "e1", fromId: "a1", toId: "a2" },
+        { id: "e2", fromId: "a1", toId: "a3" },
+        { id: "e3", fromId: "a2", toId: "a3" },
+        { id: "e4", fromId: "b1", toId: "b2" },
+        { id: "e5", fromId: "b1", toId: "b3" },
+        // Cross-group edge
+        { id: "e6", fromId: "a2", toId: "b1" },
+        { id: "e7", fromId: "a3", toId: "b3" },
+      ],
+    },
+  },
 ];
 
 export function Gallery() {
@@ -896,7 +962,9 @@ export function Gallery() {
       </div>
 
       {/* Column headers */}
-      <div style="display:grid; grid-template-columns:90px repeat(5, 1fr); gap:1px; margin-bottom:1px;">
+      <div
+        style={`display:grid; grid-template-columns:90px repeat(${GALLERY_SCENARIOS.length}, 1fr); gap:1px; margin-bottom:1px;`}
+      >
         <div />
         {GALLERY_SCENARIOS.map((s) => (
           <div
@@ -912,7 +980,7 @@ export function Gallery() {
       {BUNDLED_THEMES.map((t, ti) => (
         <div
           key={t.name}
-          style="display:grid; grid-template-columns:90px repeat(5, 1fr); gap:1px; margin-bottom:1px;"
+          style={`display:grid; grid-template-columns:90px repeat(${GALLERY_SCENARIOS.length}, 1fr); gap:1px; margin-bottom:1px;`}
         >
           <div style="font-size:11px; color:#a0a0d0; font-family:monospace; display:flex; align-items:center;">
             {t.name}
