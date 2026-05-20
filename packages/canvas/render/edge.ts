@@ -22,6 +22,8 @@ export interface EdgeRenderData {
   r: number;
   sweep: number;
   arcC?: Point;
+  /** Override arrival direction (unit vector) from custom edge router. */
+  endTangent?: Point;
 }
 
 /**
@@ -141,7 +143,7 @@ export function renderEdge<S>(data: EdgeRenderData, theme: CanvasTheme<S>): Rend
   // Endpoint decoration
   const endCap = style.endCap ?? "arrow";
   if (endCap === "arrow") {
-    const tangent = pathEndTangent(
+    const tangent = data.endTangent ?? pathEndTangent(
       data.src,
       data.dst,
       data.isArc,

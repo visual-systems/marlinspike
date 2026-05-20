@@ -12,8 +12,9 @@ import type { CanvasScene } from "../scene/types.ts";
 import type { CanvasTheme } from "../style/types.ts";
 import type { RenderGroup, RenderPrimitive } from "./primitives.ts";
 import { renderNode } from "./node.ts";
-import { computeEdgePath, groupEdges, renderEdge } from "./edge.ts";
+import { computeEdgePath, type EdgeRenderData, groupEdges, renderEdge } from "./edge.ts";
 import { marlinTheme } from "../style/marlin-theme.ts";
+import { surfacePoint } from "../geometry/surface.ts";
 
 /**
  * Render a CanvasScene into a render primitive tree.
@@ -36,12 +37,44 @@ export function renderScene<S>(
 
   // Compute edge paths with parallel-edge grouping
   const { indexMap, countMap, keyMap } = groupEdges(scene.edges);
-  const edgePaths: ReturnType<typeof computeEdgePath>[] = [];
+  const edgePaths: (EdgeRenderData | null)[] = [];
   for (const edge of scene.edges) {
     const key = keyMap.get(edge.id)!;
     const idx = indexMap.get(edge.id) ?? 0;
     const count = countMap.get(key) ?? 1;
-    edgePaths.push(computeEdgePath(edge, nodeMap, idx, count));
+
+    // Use custom edge router when available (single edges only — multi-edges keep arcs)
+    if (theme.edgeRouter && count === 1) {
+      const pa = nodeMap.get(edge.fromId);
+      const pb = nodeMap.get(edge.toId);
+      if (!pa || !pb) {
+        edgePaths.push(null);
+        continue;
+      }
+      const dx = pb.x - pa.x, dy = pb.y - pa.y;
+      if (dx * dx + dy * dy < 0.001) {
+        edgePaths.push(null);
+        continue;
+      }
+      const edgeStyle = theme.edge(edge);
+      const endCap = (edge.style?.endCap ?? edgeStyle.endCap) ?? "arrow";
+      const dstGap = endCap === "none" ? 5 : 15;
+      const src = surfacePoint(pa, pb, 5);
+      const dst = surfacePoint(pb, pa, dstGap);
+      const result = theme.edgeRouter(src, dst, edge);
+      edgePaths.push({
+        edge,
+        src,
+        dst,
+        d: result.d,
+        isArc: false,
+        r: 0,
+        sweep: 0,
+        endTangent: result.endDirection,
+      });
+    } else {
+      edgePaths.push(computeEdgePath(edge, nodeMap, idx, count));
+    }
   }
 
   // Two-pass edge rendering: paths first, then labels on top

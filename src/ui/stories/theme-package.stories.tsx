@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
+import { useState } from "@hono/hono/jsx/dom";
 import type {
   BodyStyle,
   CanvasNode,
@@ -10,12 +11,17 @@ import type {
   ResolvedNode,
 } from "@marlinspike/canvas";
 import {
+  agentTheme,
   CIRCLE_GEOMETRY,
+  containerFlowTheme,
+  marlinTheme,
   RECT_GEOMETRY,
   renderScene,
   renderWith,
+  shenzhenTheme,
   surfacePoint,
   svgRenderer,
+  transitTheme,
 } from "@marlinspike/canvas";
 import type { CanvasPort } from "@marlinspike/canvas";
 import type { PortDescriptor } from "@marlinspike/canvas";
@@ -54,11 +60,37 @@ function renderSvg<S>(
   theme: CanvasTheme<S>,
   w: number,
   h: number,
+  viewBox?: string,
 ): string {
   const group = renderScene(scene, theme);
   const [svgContent] = renderWith(svgRenderer, group);
-  return `<svg width="${w}" height="${h}" style="background:${theme.background}; border-radius:4px;">${svgContent}</svg>`;
+  const vb = viewBox ? ` viewBox="${viewBox}"` : "";
+  return `<svg width="${w}" height="${h}"${vb} style="background:${theme.background}; border-radius:4px;">${svgContent}</svg>`;
 }
+
+/** Compute a viewBox string that contains all nodes with padding. */
+function sceneBounds(scene: CanvasScene, pad = 20): string {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const n of scene.nodes) {
+    x0 = Math.min(x0, n.x - n.w / 2);
+    y0 = Math.min(y0, n.y - n.h / 2);
+    x1 = Math.max(x1, n.x + n.w / 2);
+    y1 = Math.max(y1, n.y + n.h / 2);
+  }
+  return `${x0 - pad} ${y0 - pad} ${x1 - x0 + pad * 2} ${y1 - y0 + pad * 2}`;
+}
+
+// ---------------------------------------------------------------------------
+// Bundled themes for gallery
+// ---------------------------------------------------------------------------
+
+const BUNDLED_THEMES: { name: string; theme: CanvasTheme<unknown> }[] = [
+  { name: "marlin", theme: marlinTheme },
+  { name: "containerFlow", theme: containerFlowTheme },
+  { name: "shenzhen", theme: shenzhenTheme },
+  { name: "transit", theme: transitTheme },
+  { name: "agent", theme: agentTheme },
+];
 
 // ---------------------------------------------------------------------------
 // Story: ResolveNode — theme-controlled geometry + style
@@ -625,6 +657,333 @@ resolveGeometryFromProps(undefined) → CIRCLE_GEOMETRY (default)
 resolveGeometryFromProps("hexagon") → CIRCLE_GEOMETRY (unknown → default)`}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Story: Gallery — theme comparison matrix
+// ---------------------------------------------------------------------------
+
+const GALLERY_SCENARIOS: { name: string; scene: CanvasScene }[] = [
+  {
+    name: "States",
+    scene: {
+      nodes: [
+        { id: "n", x: 60, y: 80, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "Normal" },
+        {
+          id: "s",
+          x: 180,
+          y: 80,
+          w: 52,
+          h: 52,
+          geometry: CIRCLE_GEOMETRY,
+          label: "Selected",
+          selected: true,
+        },
+        {
+          id: "h",
+          x: 300,
+          y: 80,
+          w: 52,
+          h: 52,
+          geometry: CIRCLE_GEOMETRY,
+          label: "Highlighted",
+          highlighted: true,
+        },
+        {
+          id: "d",
+          x: 420,
+          y: 80,
+          w: 52,
+          h: 52,
+          geometry: CIRCLE_GEOMETRY,
+          label: "Dashed",
+          dashed: true,
+        },
+      ],
+      edges: [
+        { id: "e1", fromId: "n", toId: "s" },
+        { id: "e2", fromId: "s", toId: "h" },
+        { id: "e3", fromId: "h", toId: "d" },
+      ],
+    },
+  },
+  {
+    name: "Mixed shapes",
+    scene: {
+      nodes: [
+        { id: "a", x: 80, y: 80, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "Input" },
+        {
+          id: "b",
+          x: 240,
+          y: 60,
+          w: 100,
+          h: 50,
+          geometry: RECT_GEOMETRY,
+          label: "Process",
+          selected: true,
+        },
+        { id: "c", x: 240, y: 150, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "Filter" },
+        {
+          id: "d",
+          x: 420,
+          y: 100,
+          w: 100,
+          h: 50,
+          geometry: RECT_GEOMETRY,
+          label: "Output",
+          highlighted: true,
+        },
+      ],
+      edges: [
+        { id: "e1", fromId: "a", toId: "b", label: "data" },
+        { id: "e2", fromId: "a", toId: "c" },
+        { id: "e3", fromId: "b", toId: "d" },
+        { id: "e4", fromId: "c", toId: "d" },
+      ],
+    },
+  },
+  {
+    name: "Fan-out",
+    scene: {
+      nodes: [
+        {
+          id: "hub",
+          x: 100,
+          y: 120,
+          w: 80,
+          h: 40,
+          geometry: RECT_GEOMETRY,
+          label: "Hub",
+          selected: true,
+        },
+        { id: "t1", x: 320, y: 40, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "A" },
+        { id: "t2", x: 320, y: 120, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "B" },
+        {
+          id: "t3",
+          x: 320,
+          y: 200,
+          w: 52,
+          h: 52,
+          geometry: CIRCLE_GEOMETRY,
+          label: "C",
+          highlighted: true,
+        },
+        {
+          id: "sink",
+          x: 460,
+          y: 120,
+          w: 52,
+          h: 52,
+          geometry: CIRCLE_GEOMETRY,
+          label: "Sink",
+          dashed: true,
+        },
+      ],
+      edges: [
+        { id: "e1", fromId: "hub", toId: "t1" },
+        { id: "e2", fromId: "hub", toId: "t2" },
+        { id: "e3", fromId: "hub", toId: "t3" },
+        { id: "e4", fromId: "t1", toId: "sink" },
+        { id: "e5", fromId: "t2", toId: "sink" },
+        { id: "e6", fromId: "t3", toId: "sink" },
+      ],
+    },
+  },
+  {
+    name: "Chain",
+    scene: {
+      nodes: [
+        { id: "c1", x: 60, y: 50, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "1" },
+        {
+          id: "c2",
+          x: 180,
+          y: 140,
+          w: 80,
+          h: 40,
+          geometry: RECT_GEOMETRY,
+          label: "2",
+          selected: true,
+        },
+        { id: "c3", x: 320, y: 50, w: 52, h: 52, geometry: CIRCLE_GEOMETRY, label: "3" },
+        {
+          id: "c4",
+          x: 440,
+          y: 140,
+          w: 80,
+          h: 40,
+          geometry: RECT_GEOMETRY,
+          label: "4",
+          highlighted: true,
+        },
+      ],
+      edges: [
+        { id: "e1", fromId: "c1", toId: "c2" },
+        { id: "e2", fromId: "c2", toId: "c3" },
+        { id: "e3", fromId: "c3", toId: "c4" },
+      ],
+    },
+  },
+  {
+    name: "Dense",
+    scene: {
+      nodes: [
+        { id: "a", x: 80, y: 60, w: 44, h: 44, geometry: CIRCLE_GEOMETRY, label: "A" },
+        {
+          id: "b",
+          x: 200,
+          y: 40,
+          w: 44,
+          h: 44,
+          geometry: CIRCLE_GEOMETRY,
+          label: "B",
+          selected: true,
+        },
+        { id: "c", x: 320, y: 60, w: 44, h: 44, geometry: CIRCLE_GEOMETRY, label: "C" },
+        {
+          id: "d",
+          x: 140,
+          y: 150,
+          w: 72,
+          h: 36,
+          geometry: RECT_GEOMETRY,
+          label: "D",
+          highlighted: true,
+        },
+        { id: "e", x: 280, y: 150, w: 72, h: 36, geometry: RECT_GEOMETRY, label: "E" },
+        {
+          id: "f",
+          x: 420,
+          y: 100,
+          w: 44,
+          h: 44,
+          geometry: CIRCLE_GEOMETRY,
+          label: "F",
+          dashed: true,
+        },
+      ],
+      edges: [
+        { id: "e1", fromId: "a", toId: "b" },
+        { id: "e2", fromId: "b", toId: "c" },
+        { id: "e3", fromId: "a", toId: "d" },
+        { id: "e4", fromId: "b", toId: "d" },
+        { id: "e5", fromId: "b", toId: "e" },
+        { id: "e6", fromId: "c", toId: "e" },
+        { id: "e7", fromId: "c", toId: "f" },
+        { id: "e8", fromId: "d", toId: "e" },
+        { id: "e9", fromId: "e", toId: "f" },
+      ],
+    },
+  },
+];
+
+export function Gallery() {
+  const [expanded, setExpanded] = useState<
+    { theme: number; scenario: number } | null
+  >(null);
+
+  const expandedTheme = expanded ? BUNDLED_THEMES[expanded.theme] : null;
+  const expandedScenario = expanded ? GALLERY_SCENARIOS[expanded.scenario] : null;
+
+  return (
+    <div style="padding:16px; color:#c0c0e0; font-family:sans-serif; position:relative;">
+      <div style={HEADING}>Bundled Theme Gallery</div>
+      <div style={DESCRIPTION}>
+        Each column is a scenario, each row is a bundled canvas theme. Click any cell to expand.
+        Themes with angular edge routing (containerFlow, shenzhen, transit) show constrained-angle
+        paths.
+      </div>
+
+      {/* Column headers */}
+      <div style="display:grid; grid-template-columns:90px repeat(5, 1fr); gap:1px; margin-bottom:1px;">
+        <div />
+        {GALLERY_SCENARIOS.map((s) => (
+          <div
+            key={s.name}
+            style="font-size:10px; color:#888; text-align:center; padding:2px 0;"
+          >
+            {s.name}
+          </div>
+        ))}
+      </div>
+
+      {/* Matrix */}
+      {BUNDLED_THEMES.map((t, ti) => (
+        <div
+          key={t.name}
+          style="display:grid; grid-template-columns:90px repeat(5, 1fr); gap:1px; margin-bottom:1px;"
+        >
+          <div style="font-size:11px; color:#a0a0d0; font-family:monospace; display:flex; align-items:center;">
+            {t.name}
+          </div>
+          {GALLERY_SCENARIOS.map((s, si) => (
+            <div
+              key={s.name}
+              style={`cursor:pointer; border-radius:2px; overflow:hidden; opacity:${
+                expanded?.theme === ti && expanded?.scenario === si ? "0.7" : "1"
+              };`}
+              onClick={() =>
+                setExpanded(
+                  expanded?.theme === ti && expanded?.scenario === si
+                    ? null
+                    : { theme: ti, scenario: si },
+                )}
+            >
+              <div
+                dangerouslySetInnerHTML={{
+                  __html: renderSvg(s.scene, t.theme, 100, 100, sceneBounds(s.scene))
+                    .replace(`width="100"`, `width="100%"`)
+                    .replace(`height="100"`, ""),
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {/* Expanded modal */}
+      {expanded && expandedTheme && expandedScenario && (
+        <div
+          style="position:fixed; inset:0; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; z-index:1000; padding:24px;"
+          onClick={() => setExpanded(null)}
+        >
+          <div
+            style="background:#1a1a2e; border:1px solid #3a3a5a; border-radius:8px; padding:16px; width:90vw; max-width:900px;"
+            onClick={(e: Event) => e.stopPropagation()}
+          >
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <div>
+                <span style="font-size:13px; font-weight:600; color:#a0a0d0; font-family:monospace;">
+                  {expandedTheme.name}
+                </span>
+                <span style="font-size:11px; color:#666; margin-left:8px;">
+                  {expandedScenario.name}
+                </span>
+              </div>
+              <div
+                style="cursor:pointer; color:#888; font-size:16px; padding:0 4px;"
+                onClick={() => setExpanded(null)}
+              >
+                x
+              </div>
+            </div>
+            <div
+              dangerouslySetInnerHTML={{
+                __html: renderSvg(
+                  expandedScenario.scene,
+                  expandedTheme.theme,
+                  100,
+                  100,
+                  sceneBounds(expandedScenario.scene),
+                )
+                  .replace(`width="100"`, `width="100%"`)
+                  .replace(`height="100"`, ""),
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

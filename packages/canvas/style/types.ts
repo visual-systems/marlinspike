@@ -10,6 +10,8 @@
  */
 
 import type { CanvasEdge, CanvasNode, CanvasPort } from "../scene/types.ts";
+import type { EdgeRoutingResult } from "../geometry/edge-routing.ts";
+import type { Point } from "../geometry/surface.ts";
 
 /** Visual properties for rendering a node. */
 export interface NodeStyle {
@@ -113,4 +115,9 @@ export interface CanvasTheme<S = unknown> {
   resolveNode?: (node: CanvasNode<S>) => ResolvedNode;
   /** Layout constants. When absent, consumers use their own defaults. */
   constants?: ThemeConstants;
+  /**
+   * Custom edge routing. When present, replaces default straight/arc path computation.
+   * Receives surface-clipped endpoints and returns an SVG path with arrival direction.
+   */
+  edgeRouter?: (src: Point, dst: Point, edge: CanvasEdge) => EdgeRoutingResult;
 }
