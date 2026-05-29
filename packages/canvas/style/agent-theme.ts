@@ -7,6 +7,9 @@
 
 import type { CanvasEdge, CanvasNode, CanvasPort } from "../scene/types.ts";
 import type { CanvasTheme, EdgeStyle, NodeStyle, PortStyle } from "./types.ts";
+import { containerFill } from "./color.ts";
+
+const BACKGROUND = "#1a1a1a";
 
 function resolveNodeStyle(node: CanvasNode<unknown>): NodeStyle {
   const { selected, highlighted, dashed } = node;
@@ -15,7 +18,10 @@ function resolveNodeStyle(node: CanvasNode<unknown>): NodeStyle {
   let stroke = "#444444";
   let strokeWidth = 1;
 
-  if (selected) {
+  if (node.containerLabel != null) {
+    fill = containerFill("#2a2a2a", BACKGROUND, node.depth ?? 0);
+    strokeWidth = 1;
+  } else if (selected) {
     stroke = "#ffffff";
     strokeWidth = 2;
   } else if (highlighted) {
@@ -65,5 +71,18 @@ export const agentTheme: CanvasTheme<unknown> = {
   node: resolveNodeStyle,
   edge: resolveEdgeStyle,
   port: resolvePortStyle,
-  background: "#1a1a1a",
+  background: BACKGROUND,
+  decorations: (node) => {
+    if (!node.containerLabel) return [];
+    return [{
+      kind: "text" as const,
+      x: -node.w / 2 + 10,
+      y: -node.h / 2 + 16,
+      text: node.containerLabel,
+      fill: "#666666",
+      fontSize: 11,
+      fontFamily: "sans-serif",
+      anchor: "start" as const,
+    }];
+  },
 };

@@ -118,6 +118,21 @@ export interface CanvasTheme<S = unknown> {
   /**
    * Custom edge routing. When present, replaces default straight/arc path computation.
    * Receives surface-clipped endpoints and returns an SVG path with arrival direction.
+   * Optional context provides obstacle bounding boxes and previously routed paths
+   * for obstacle avoidance and co-linearity prevention.
    */
-  edgeRouter?: (src: Point, dst: Point, edge: CanvasEdge) => EdgeRoutingResult;
+  edgeRouter?: (
+    src: Point,
+    dst: Point,
+    edge: CanvasEdge,
+    ctx?: EdgeRoutingContext,
+  ) => EdgeRoutingResult;
+}
+
+/** Context passed to edge routers for obstacle and co-linearity awareness. */
+export interface EdgeRoutingContext {
+  /** Bounding boxes of all nodes in the scene. */
+  obstacles: ReadonlyArray<{ x: number; y: number; w: number; h: number }>;
+  /** Previously routed edge paths (accumulated as edges are processed). */
+  routedPaths: ReadonlyArray<{ src: Point; dst: Point; d: string }>;
 }

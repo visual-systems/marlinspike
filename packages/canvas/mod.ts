@@ -24,6 +24,7 @@ export type { CanvasEdge, CanvasNode, CanvasPort, CanvasScene } from "./scene/ty
 
 export type {
   CanvasTheme,
+  EdgeRoutingContext,
   EdgeStyle,
   EdgeStyleResolver,
   NodeDecorationsResolver,
@@ -140,6 +141,7 @@ export { containerFlowTheme } from "./style/container-flow-theme.ts";
 export { shenzhenTheme } from "./style/shenzhen-theme.ts";
 export { transitTheme } from "./style/transit-theme.ts";
 export { agentTheme } from "./style/agent-theme.ts";
+export { blendHex, containerFill } from "./style/color.ts";
 
 // ---------------------------------------------------------------------------
 // Interaction

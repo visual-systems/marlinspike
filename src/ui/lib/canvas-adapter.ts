@@ -167,6 +167,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
     levelId: string,
     worldOffset: { x: number; y: number },
     parentComposite: TreeNode | null,
+    depth = 0,
   ): void {
     // Port role identification from the parent composite's declared ports
     const inputPortNames = new Set(
@@ -320,6 +321,8 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
           h: pos.h,
           geometry: RECT_GEOMETRY,
           label: "", // suppresses default centered label
+          depth,
+          containerLabel: node.label,
           selected: isSelected,
           highlighted: isHighlighted,
           dashed: isDashed,
@@ -332,7 +335,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
         });
 
         // Recurse into children (they'll be emitted after the background)
-        emitLevel(node.children, node.id, { x: wx, y: wy }, node);
+        emitLevel(node.children, node.id, { x: wx, y: wy }, node, depth + 1);
       } else {
         allNodes.push({
           id: node.id,
@@ -342,6 +345,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
           h: pos.h,
           geometry: nodeGeometry,
           label: node.label,
+          depth,
           selected: isSelected,
           highlighted: isHighlighted,
           dashed: isDashed,

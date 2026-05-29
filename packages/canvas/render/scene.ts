@@ -9,7 +9,8 @@
  */
 
 import type { CanvasScene } from "../scene/types.ts";
-import type { CanvasTheme } from "../style/types.ts";
+import type { CanvasTheme, EdgeRoutingContext } from "../style/types.ts";
+import type { Point } from "../geometry/surface.ts";
 import type { RenderGroup, RenderPrimitive } from "./primitives.ts";
 import { renderNode } from "./node.ts";
 import { computeEdgePath, type EdgeRenderData, groupEdges, renderEdge } from "./edge.ts";
@@ -34,6 +35,11 @@ export function renderScene<S>(
   for (const node of scene.nodes) {
     children.push(renderNode(node, theme));
   }
+
+  // Build routing context for obstacle / co-linearity awareness
+  const obstacles = scene.nodes.map((n) => ({ x: n.x, y: n.y, w: n.w, h: n.h }));
+  const routedPaths: Array<{ src: Point; dst: Point; d: string }> = [];
+  const routingCtx: EdgeRoutingContext = { obstacles, routedPaths };
 
   // Compute edge paths with parallel-edge grouping
   const { indexMap, countMap, keyMap } = groupEdges(scene.edges);
@@ -61,7 +67,8 @@ export function renderScene<S>(
       const dstGap = endCap === "none" ? 5 : 15;
       const src = surfacePoint(pa, pb, 5);
       const dst = surfacePoint(pb, pa, dstGap);
-      const result = theme.edgeRouter(src, dst, edge);
+      const result = theme.edgeRouter(src, dst, edge, routingCtx);
+      routedPaths.push({ src, dst, d: result.d });
       edgePaths.push({
         edge,
         src,

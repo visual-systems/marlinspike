@@ -9,6 +9,9 @@
 import type { CanvasEdge, CanvasNode, CanvasPort } from "../scene/types.ts";
 import type { CanvasTheme, EdgeStyle, NodeStyle, PortStyle } from "./types.ts";
 import { angularRouter, TRANSIT_ANGLES } from "../geometry/edge-routing.ts";
+import { containerFill } from "./color.ts";
+
+const BACKGROUND = "#e8e4dc";
 
 const route = angularRouter(TRANSIT_ANGLES, 8);
 
@@ -34,6 +37,10 @@ function resolveNodeStyle(node: CanvasNode<unknown>): NodeStyle {
   let fill = base;
   let stroke = "#3a3530";
   let strokeWidth = 1;
+
+  if (node.containerLabel != null) {
+    fill = containerFill(base, BACKGROUND, node.depth ?? 0);
+  }
 
   if (selected) {
     strokeWidth = 3;
@@ -87,6 +94,19 @@ export const transitTheme: CanvasTheme<unknown> = {
   node: resolveNodeStyle,
   edge: resolveEdgeStyle,
   port: resolvePortStyle,
-  background: "#e8e4dc",
+  background: BACKGROUND,
   edgeRouter: route,
+  decorations: (node) => {
+    if (!node.containerLabel) return [];
+    return [{
+      kind: "text" as const,
+      x: -node.w / 2 + 10,
+      y: -node.h / 2 + 16,
+      text: node.containerLabel,
+      fill: "#3a3530",
+      fontSize: 11,
+      fontFamily: "sans-serif",
+      anchor: "start" as const,
+    }];
+  },
 };

@@ -9,6 +9,9 @@ import type { CanvasEdge, CanvasNode, CanvasPort } from "../scene/types.ts";
 import type { CanvasTheme, EdgeStyle, PortStyle, ResolvedNode } from "./types.ts";
 import { RECT_GEOMETRY } from "../geometry/node-geometry.ts";
 import { angularRouter, MANHATTAN_ANGLES } from "../geometry/edge-routing.ts";
+import { containerFill } from "./color.ts";
+
+const BACKGROUND = "#0a1628";
 
 const route = angularRouter(MANHATTAN_ANGLES, 0);
 
@@ -19,7 +22,10 @@ function resolveNode(node: CanvasNode<unknown>): ResolvedNode {
   let stroke = "#2a8a8a";
   let strokeWidth = 1;
 
-  if (selected) {
+  if (node.containerLabel != null) {
+    fill = containerFill("#0d1f2d", BACKGROUND, node.depth ?? 0);
+    strokeWidth = 1;
+  } else if (selected) {
     stroke = "#40c0c0";
     strokeWidth = 2;
   } else if (highlighted) {
@@ -72,7 +78,20 @@ export const containerFlowTheme: CanvasTheme<unknown> = {
   node: (n) => resolveNode(n).style,
   edge: resolveEdgeStyle,
   port: resolvePortStyle,
-  background: "#0a1628",
+  background: BACKGROUND,
   resolveNode,
   edgeRouter: route,
+  decorations: (node) => {
+    if (!node.containerLabel) return [];
+    return [{
+      kind: "text" as const,
+      x: -node.w / 2 + 10,
+      y: -node.h / 2 + 16,
+      text: node.containerLabel,
+      fill: "#5a9a9a",
+      fontSize: 11,
+      fontFamily: "sans-serif",
+      anchor: "start" as const,
+    }];
+  },
 };

@@ -10,13 +10,18 @@
 
 import type { CanvasEdge, CanvasNode, CanvasPort } from "../scene/types.ts";
 import type { CanvasTheme, EdgeStyle, NodeStyle, PortStyle } from "./types.ts";
+import { containerFill } from "./color.ts";
+
+const BACKGROUND = "#0d0d1e";
 
 function resolveNodeStyle(node: CanvasNode<unknown>): NodeStyle {
   const { selected, highlighted, dashed } = node;
 
   // Fill
   let fill = "#111125";
-  if (selected) fill = "#1e2a4a";
+  if (node.containerLabel != null) {
+    fill = containerFill("#111125", BACKGROUND, node.depth ?? 0);
+  } else if (selected) fill = "#1e2a4a";
   else if (highlighted) fill = "#111125";
   else if (dashed) fill = "#141428"; // ref-like nodes
 
@@ -71,5 +76,18 @@ export const marlinTheme: CanvasTheme<unknown> = {
   node: resolveNodeStyle,
   edge: resolveEdgeStyle,
   port: resolvePortStyle,
-  background: "#0d0d1e",
+  background: BACKGROUND,
+  decorations: (node) => {
+    if (!node.containerLabel) return [];
+    return [{
+      kind: "text" as const,
+      x: -node.w / 2 + 10,
+      y: -node.h / 2 + 16,
+      text: node.containerLabel,
+      fill: "#444466",
+      fontSize: 11,
+      fontFamily: "sans-serif",
+      anchor: "start" as const,
+    }];
+  },
 };
