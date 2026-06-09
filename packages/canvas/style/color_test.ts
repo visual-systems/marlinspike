@@ -1,5 +1,16 @@
 import { assertEquals, assertNotEquals } from "@std/assert";
-import { blendHex, containerFill, hslToRgb, parseHex, rgbToHsl, toHex } from "./color.ts";
+import {
+  blendHex,
+  containerFill,
+  contrastRatio,
+  contrastText,
+  ensureContrast,
+  hslToRgb,
+  parseHex,
+  relativeLuminance,
+  rgbToHsl,
+  toHex,
+} from "./color.ts";
 
 Deno.test("parseHex — parses hex color to RGB components", () => {
   assertEquals(parseHex("#ff0000"), [255, 0, 0]);
@@ -79,4 +90,46 @@ Deno.test("containerFill — deep nesting doesn't converge to background", () =>
   const fill = "#111125";
   const deep = containerFill(fill, bg, 10);
   assertNotEquals(deep, bg);
+});
+
+// ---------------------------------------------------------------------------
+// Contrast utilities
+// ---------------------------------------------------------------------------
+
+Deno.test("relativeLuminance — black is 0, white is 1", () => {
+  assertEquals(relativeLuminance("#000000"), 0);
+  const white = relativeLuminance("#ffffff");
+  assertEquals(Math.abs(white - 1) < 0.001, true);
+});
+
+Deno.test("contrastRatio — black/white is ~21", () => {
+  const ratio = contrastRatio("#000000", "#ffffff");
+  assertEquals(Math.abs(ratio - 21) < 0.1, true);
+});
+
+Deno.test("contrastRatio — same color is 1", () => {
+  assertEquals(contrastRatio("#ff0000", "#ff0000"), 1);
+});
+
+Deno.test("contrastText — dark text on light background", () => {
+  assertEquals(contrastText("#ffffff"), "#1a1a1a");
+  assertEquals(contrastText("#e8e4dc"), "#1a1a1a");
+});
+
+Deno.test("contrastText — light text on dark background", () => {
+  assertEquals(contrastText("#000000"), "#e0e0e0");
+  assertEquals(contrastText("#0d0d1e"), "#e0e0e0");
+});
+
+Deno.test("ensureContrast — keeps text when contrast is sufficient", () => {
+  // Light text on dark background — good contrast
+  assertEquals(ensureContrast("#111125", "#777799"), "#777799");
+});
+
+Deno.test("ensureContrast — replaces text when contrast is poor", () => {
+  // Dark text on dark background — poor contrast, should auto-fix
+  const result = ensureContrast("#111125", "#111125");
+  assertNotEquals(result, "#111125");
+  // Should pick a light color since background is dark
+  assertEquals(result, "#e0e0e0");
 });

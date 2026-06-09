@@ -1,8 +1,10 @@
 /**
- * Color blending utilities for depth-aware container styling.
+ * Color utilities for theming: blending, depth-aware fills, and contrast.
  *
  * Provides functions to blend colors toward a background at increasing
  * nesting depths, with hue rotation to prevent visual convergence.
+ * Also provides WCAG-based relative luminance and contrast text selection
+ * so that labels remain readable against any background fill.
  */
 
 /** Parse "#rrggbb" to [r, g, b] in 0–255. */
@@ -82,6 +84,65 @@ export function hslToRgb(
     Math.round(hue2rgb(p, q, h / 360) * 255),
     Math.round(hue2rgb(p, q, h / 360 - 1 / 3) * 255),
   ];
+}
+
+/**
+ * WCAG relative luminance of a hex color (0 = black, 1 = white).
+ * Uses the sRGB linearisation specified in WCAG 2.x.
+ */
+export function relativeLuminance(hex: string): number {
+  const [r, g, b] = parseHex(hex);
+  const linearise = (v: number) => {
+    const s = v / 255;
+    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * linearise(r) + 0.7152 * linearise(g) + 0.0722 * linearise(b);
+}
+
+/**
+ * WCAG contrast ratio between two colors (1–21).
+ */
+export function contrastRatio(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  const lighter = Math.max(la, lb);
+  const darker = Math.min(la, lb);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/**
+ * Pick a readable text color for a given background.
+ *
+ * Returns `light` when the background is dark and `dark` when the
+ * background is light, using WCAG relative luminance with a threshold
+ * tuned for comfortable reading (not minimum compliance).
+ *
+ * @param bgHex  Background color as "#rrggbb"
+ * @param light  Color to use on dark backgrounds (default "#e0e0e0")
+ * @param dark   Color to use on light backgrounds (default "#1a1a1a")
+ */
+export function contrastText(
+  bgHex: string,
+  light = "#e0e0e0",
+  dark = "#1a1a1a",
+): string {
+  return relativeLuminance(bgHex) > 0.18 ? dark : light;
+}
+
+/**
+ * Ensure `textHex` is readable against `bgHex`.
+ *
+ * If the contrast ratio is at least `minRatio` (default 3, WCAG AA for
+ * large text / UI components), returns `textHex` unchanged. Otherwise
+ * falls back to `contrastText(bgHex)` for a guaranteed-readable alternative.
+ */
+export function ensureContrast(
+  bgHex: string,
+  textHex: string,
+  minRatio = 3,
+): string {
+  if (contrastRatio(bgHex, textHex) >= minRatio) return textHex;
+  return contrastText(bgHex);
 }
 
 /**

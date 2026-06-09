@@ -65,12 +65,17 @@ export interface MarlinThemePalette {
     refStroke?: string;
   };
 
-  /** Port direction colors. */
-  ports: {
+  /** Port dot accent colors (small dots on node surfaces and port resolver). */
+  portDots: {
+    in: string;
+    out: string;
+    radius: number;
+  };
+
+  /** Port-direction node styling (nodes representing input/output ports). */
+  portNodes: {
     in: { fill: string; stroke: string };
     out: { fill: string; stroke: string };
-    /** Radius for edge-derived port dots. */
-    dotRadius: number;
   };
 
   /** Edge style palette. */

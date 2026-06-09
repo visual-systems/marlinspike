@@ -96,10 +96,10 @@ export const CLASSIC_PALETTE: MarlinThemePalette = {
     highlightedStroke: "#50c070",
     refStroke: "#605080",
   },
-  ports: {
-    in: { fill: "#6688cc", stroke: "#4080c0" },
-    out: { fill: "#cc8844", stroke: "#c06040" },
-    dotRadius: 3,
+  portDots: { in: "#6688cc", out: "#cc8844", radius: 3 },
+  portNodes: {
+    in: { fill: "#101828", stroke: "#4080c0" },
+    out: { fill: "#181410", stroke: "#c06040" },
   },
   edges: {
     default: { stroke: "#2a2a50", strokeWidth: 1, arrowSize: 10 },
@@ -202,10 +202,10 @@ export const CONTAINER_FLOW_PALETTE: MarlinThemePalette = {
     selectedStroke: "#40c0c0",
     highlightedStroke: "#d4a030",
   },
-  ports: {
-    in: { fill: "#40c0c0", stroke: "#40c0c0" },
-    out: { fill: "#d4a030", stroke: "#d4a030" },
-    dotRadius: 3,
+  portDots: { in: "#40c0c0", out: "#d4a030", radius: 3 },
+  portNodes: {
+    in: { fill: "#0a1a2d", stroke: "#40c0c0" },
+    out: { fill: "#1a1a10", stroke: "#d4a030" },
   },
   edges: {
     default: { stroke: "#2a8a8a", strokeWidth: 1, arrowSize: 10 },
@@ -300,10 +300,10 @@ export const SHENZHEN_PALETTE: MarlinThemePalette = {
     selectedStroke: "#30d060",
     highlightedStroke: "#e0c040",
   },
-  ports: {
-    in: { fill: "#1a6a5a", stroke: "#30a090" },
-    out: { fill: "#c8a832", stroke: "#e0c060" },
-    dotRadius: 3,
+  portDots: { in: "#1a6a5a", out: "#c8a832", radius: 3 },
+  portNodes: {
+    in: { fill: "#2a6a5a", stroke: "#30a090" },
+    out: { fill: "#d4b040", stroke: "#e0c060" },
   },
   edges: {
     default: { stroke: "#1a6a5a", strokeWidth: 2, arrowSize: 10 },
@@ -424,10 +424,10 @@ export const TRANSIT_PALETTE: MarlinThemePalette = {
     selectedStroke: "#1a1510",
     highlightedStroke: "#1a1510",
   },
-  ports: {
-    in: { fill: "#2060c0", stroke: "#2060c0" },
-    out: { fill: "#d03030", stroke: "#d03030" },
-    dotRadius: 3,
+  portDots: { in: "#2060c0", out: "#d03030", radius: 3 },
+  portNodes: {
+    in: { fill: "#ffffff", stroke: "#2060c0" },
+    out: { fill: "#ffffff", stroke: "#d03030" },
   },
   edges: {
     default: { stroke: "#d03030", strokeWidth: 4.5, arrowSize: 0 },
@@ -523,10 +523,10 @@ export const AGENT_PALETTE: MarlinThemePalette = {
     selectedStroke: "#ffffff",
     highlightedStroke: "#4488ff",
   },
-  ports: {
-    in: { fill: "#4488ff", stroke: "#4488ff" },
-    out: { fill: "#ffffff", stroke: "#ffffff" },
-    dotRadius: 3,
+  portDots: { in: "#4488ff", out: "#ffffff", radius: 3 },
+  portNodes: {
+    in: { fill: "#1a2030", stroke: "#4488ff" },
+    out: { fill: "#2a2a2a", stroke: "#ffffff" },
   },
   edges: {
     default: { stroke: "#555555", strokeWidth: 1, arrowSize: 8 },

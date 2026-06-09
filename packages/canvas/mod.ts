@@ -141,7 +141,14 @@ export { containerFlowTheme } from "./style/container-flow-theme.ts";
 export { shenzhenTheme } from "./style/shenzhen-theme.ts";
 export { transitTheme } from "./style/transit-theme.ts";
 export { agentTheme } from "./style/agent-theme.ts";
-export { blendHex, containerFill } from "./style/color.ts";
+export {
+  blendHex,
+  containerFill,
+  contrastRatio,
+  contrastText,
+  ensureContrast,
+  relativeLuminance,
+} from "./style/color.ts";
 
 // ---------------------------------------------------------------------------
 // Interaction

@@ -21,7 +21,7 @@ import type {
   RenderPrimitive,
   ResolvedNode,
 } from "@marlinspike/canvas";
-import { containerFill, RECT_GEOMETRY } from "@marlinspike/canvas";
+import { containerFill, ensureContrast, RECT_GEOMETRY } from "@marlinspike/canvas";
 import { resolveGeometryFromProps, resolveProps } from "@marlinspike/theme";
 import type { MarlinNodeState, MarlinRole } from "./canvas-adapter.ts";
 import type { MarlinThemePalette } from "./marlin-theme-palette.ts";
@@ -82,8 +82,8 @@ export function createMarlinTheme(palette: MarlinThemePalette): CanvasTheme<Marl
         fill = palette.selectedColorFn
           ? palette.selectedColorFn(fill)
           : palette.interaction.selected.fill;
-      } else if (node.portDirection === "in") fill = palette.ports.in.fill;
-      else if (node.portDirection === "out") fill = palette.ports.out.fill;
+      } else if (node.portDirection === "in") fill = palette.portNodes.in.fill;
+      else if (node.portDirection === "out") fill = palette.portNodes.out.fill;
 
       if (s.isEdgeSource) stroke = palette.interaction.edgeSource.stroke;
       else if (s.isHovered) stroke = palette.interaction.hovered.stroke;
@@ -92,8 +92,8 @@ export function createMarlinTheme(palette: MarlinThemePalette): CanvasTheme<Marl
       else if (selected) stroke = palette.interaction.selected.stroke;
       else if (s.isCandidate) stroke = palette.interaction.candidate.stroke;
       else if (highlighted) stroke = palette.interaction.highlighted.stroke;
-      else if (node.portDirection === "in") stroke = palette.ports.in.stroke;
-      else if (node.portDirection === "out") stroke = palette.ports.out.stroke;
+      else if (node.portDirection === "in") stroke = palette.portNodes.in.stroke;
+      else if (node.portDirection === "out") stroke = palette.portNodes.out.stroke;
 
       if (s.isEdgeSource || selected || s.isHovered) {
         strokeWidth = palette.interaction.selected.strokeWidth;
@@ -107,6 +107,9 @@ export function createMarlinTheme(palette: MarlinThemePalette): CanvasTheme<Marl
 
       if (s.isInactive) opacity = palette.interaction.inactiveOpacity;
     }
+
+    // Auto-contrast safety net: ensure label is readable against computed fill
+    labelFill = ensureContrast(fill, labelFill);
 
     return {
       geometry,
@@ -185,9 +188,9 @@ export function createMarlinTheme(palette: MarlinThemePalette): CanvasTheme<Marl
   function resolvePortStyle(port: CanvasPort, _node: CanvasNode<MarlinNodeState>): PortStyle {
     const isOut = port.direction === "out";
     return {
-      fill: isOut ? palette.ports.out.fill : palette.ports.in.fill,
+      fill: isOut ? palette.portDots.out : palette.portDots.in,
       stroke: "none",
-      radius: palette.ports.dotRadius,
+      radius: palette.portDots.radius,
     };
   }
 
@@ -203,17 +206,23 @@ export function createMarlinTheme(palette: MarlinThemePalette): CanvasTheme<Marl
     if (s.isContainerBackground && s.containerLabel) {
       const halfW = node.w / 2;
       const halfH = node.h / 2;
-      const labelFill = node.selected
+      // Recompute container fill for contrast check
+      const baseFill = palette.nodeColorFn
+        ? palette.nodeColorFn(node.id)
+        : palette.roles[s.role].fill;
+      const bgFill = containerFill(baseFill, palette.background, node.depth ?? 0);
+      let labelColor = node.selected
         ? palette.container.selectedLabelFill
         : s.hasError
         ? palette.container.errorLabelFill
         : palette.container.labelFill;
+      labelColor = ensureContrast(bgFill, labelColor);
       prims.push({
         kind: "text",
         x: -halfW + 10,
         y: -halfH + 16,
         text: s.containerLabel,
-        fill: labelFill,
+        fill: labelColor,
         fontSize: 11,
         fontFamily: palette.roles.container.labelFont,
         anchor: "start",
@@ -268,8 +277,8 @@ export function createMarlinTheme(palette: MarlinThemePalette): CanvasTheme<Marl
         kind: "circle",
         cx: dot.x,
         cy: dot.y,
-        r: palette.ports.dotRadius,
-        fill: dot.out ? palette.ports.out.fill : palette.ports.in.fill,
+        r: palette.portDots.radius,
+        fill: dot.out ? palette.portDots.out : palette.portDots.in,
         stroke: "none",
         strokeWidth: 0,
       });
