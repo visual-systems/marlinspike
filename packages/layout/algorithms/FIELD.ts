@@ -10,8 +10,9 @@
 // ---------------------------------------------------------------------------
 
 import type { LayoutAlgorithm } from "../types.ts";
-import { initPositions, maxVelocity } from "../force.ts";
+import { maxVelocity } from "../force.ts";
 import { applyAnchorForces, type SdfPhysicsConfig, tickSdfLevel } from "../sdf-force.ts";
+import { topoGridLayout } from "../topo-grid.ts";
 
 // ---------------------------------------------------------------------------
 // FieldConfig
@@ -42,8 +43,6 @@ export const DEFAULT_FIELD_CONFIG: FieldConfig = {
   sdfGradientEps: 0.5,
   springK: 0.04,
   springRestLength: 80,
-  edgeClearance: 30,
-  edgeRepulsionK: 5,
   componentRepulsionK: 20,
   damping: 0.80,
   maxVelocity: 20,
@@ -69,11 +68,18 @@ export function createFIELD(config: FieldConfig): LayoutAlgorithm {
     id: "FIELD",
     name: "FIELD",
     preservesPositions: true,
-    initNodes(ids, _edges, leafW, leafH, defaults) {
-      return initPositions(ids, config.spread, defaults, leafW, leafH);
+    initNodes(ids, edges, leafW, leafH, defaults) {
+      // Seed from topological grid so nodes start in roughly the right
+      // topological order, avoiding local minima in the force simulation.
+      const topo = topoGridLayout(ids, edges, leafW, leafH, config.spread * 1.5, config.spread);
+      return topo.map((n) => {
+        const d = defaults.get(n.id);
+        if (d) return { ...n, x: d.x, y: d.y, pinned: d.pinned ?? false };
+        return n;
+      });
     },
     tick(nodes, edges, ticks) {
-      // Run all SDF forces (repulsion, springs, edge clearance, components)
+      // Run all SDF forces (repulsion, springs, components)
       const afterSdf = tickSdfLevel(nodes, edges, config);
 
       // Apply directional field force based on charge

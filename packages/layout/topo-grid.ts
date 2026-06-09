@@ -10,6 +10,102 @@ import type { ForceEdge, ForceNode } from "./types.ts";
 // Shared: topo sort + layer assignment
 // ---------------------------------------------------------------------------
 
+/** Count edge crossings between two adjacent layers given their node orderings. */
+function countCrossings(
+  prevLayer: string[],
+  currLayer: string[],
+  edgesBetween: { a: string; b: string }[],
+): number {
+  const posA = new Map(prevLayer.map((id, i) => [id, i]));
+  const posB = new Map(currLayer.map((id, i) => [id, i]));
+  let crossings = 0;
+  for (let i = 0; i < edgesBetween.length; i++) {
+    const e1 = edgesBetween[i];
+    const a1 = posA.get(e1.a)!, b1 = posB.get(e1.b)!;
+    for (let j = i + 1; j < edgesBetween.length; j++) {
+      const e2 = edgesBetween[j];
+      const a2 = posA.get(e2.a)!, b2 = posB.get(e2.b)!;
+      if ((a1 < a2 && b1 > b2) || (a1 > a2 && b1 < b2)) crossings++;
+    }
+  }
+  return crossings;
+}
+
+/** Generate all permutations of an array (for small arrays only). */
+function* permutations<T>(arr: T[]): Generator<T[]> {
+  if (arr.length <= 1) {
+    yield arr.slice();
+    return;
+  }
+  for (let i = 0; i < arr.length; i++) {
+    const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
+    for (const perm of permutations(rest)) {
+      perm.unshift(arr[i]);
+      yield perm;
+    }
+  }
+}
+
+/**
+ * Reorder nodes within each layer to minimize edge crossings with predecessor layers.
+ *
+ * Layer 0 stays fixed. For each subsequent layer:
+ * - ≤7 nodes: exact permutation search (7! = 5040)
+ * - >7 nodes: barycenter heuristic (order by mean predecessor position)
+ */
+function minimizeCrossings(
+  sortedLayers: [number, string[]][],
+  edges: ForceEdge[],
+): [number, string[]][] {
+  // Build lookup: for each node, edges arriving from any earlier layer
+  const srcSet = new Map<number, Set<string>>();
+  for (const [layerNum, ids] of sortedLayers) {
+    const s = new Set(ids);
+    srcSet.set(layerNum, s);
+  }
+
+  const result: [number, string[]][] = sortedLayers.map(([l, ids]) => [l, [...ids]]);
+
+  for (let li = 1; li < result.length; li++) {
+    const [, prevIds] = result[li - 1];
+    const [layerNum, currIds] = result[li];
+    const prevSet = new Set(prevIds);
+
+    // Edges between prev and curr layers
+    const edgesBetween = edges.filter((e) => prevSet.has(e.a) && srcSet.get(layerNum)?.has(e.b));
+    if (edgesBetween.length === 0) continue;
+
+    if (currIds.length <= 7) {
+      // Exact: try all permutations
+      let bestOrder = currIds;
+      let bestCost = countCrossings(prevIds, currIds, edgesBetween);
+      if (bestCost > 0) {
+        for (const perm of permutations(currIds)) {
+          const cost = countCrossings(prevIds, perm, edgesBetween);
+          if (cost < bestCost) {
+            bestCost = cost;
+            bestOrder = perm;
+            if (bestCost === 0) break;
+          }
+        }
+      }
+      result[li] = [layerNum, bestOrder];
+    } else {
+      // Barycenter heuristic
+      const posOf = new Map(prevIds.map((id, i) => [id, i]));
+      const bary = new Map<string, number>();
+      for (const id of currIds) {
+        const preds = edgesBetween.filter((e) => e.b === id).map((e) => posOf.get(e.a)!);
+        bary.set(id, preds.length > 0 ? preds.reduce((s, v) => s + v, 0) / preds.length : Infinity);
+      }
+      const sorted = [...currIds].sort((a, b) => bary.get(a)! - bary.get(b)!);
+      result[li] = [layerNum, sorted];
+    }
+  }
+
+  return result;
+}
+
 function buildLayerAssignment(
   ids: string[],
   edges: ForceEdge[],
@@ -60,7 +156,10 @@ function buildLayerAssignment(
     if (!layers.has(l)) layers.set(l, []);
     layers.get(l)!.push(id);
   }
-  const sortedLayers = [...layers.entries()].sort((a, b) => a[0] - b[0]);
+  const sortedLayers = minimizeCrossings(
+    [...layers.entries()].sort((a, b) => a[0] - b[0]),
+    edges.filter((e) => idSet.has(e.a) && idSet.has(e.b)),
+  );
 
   return { sortedLayers, layer };
 }
@@ -116,17 +215,16 @@ export function topoGridLayoutSized(
 
   const { sortedLayers } = buildLayerAssignment(ids, edges);
 
-  // Precompute max height per layer for vertical accumulation
-  const maxHPerLayer = sortedLayers.map(([, layerIds]) =>
-    Math.max(...layerIds.map((id) => nodeById.get(id)!.h))
-  );
+  // Use a uniform row height (global max) so all layer pairs have the same
+  // center-to-center distance — visually consistent spacing regardless of
+  // individual node heights (e.g. port nodes with short labels).
+  const uniformH = Math.max(...nodes.map((n) => n.h));
 
-  // Centre y of each layer, accumulated from top
+  // Centre y of each layer, with uniform center-to-center spacing
   const layerCenterY: number[] = [0];
+  const rowStep = uniformH + vGap;
   for (let i = 1; i < sortedLayers.length; i++) {
-    layerCenterY.push(
-      layerCenterY[i - 1] + maxHPerLayer[i - 1] / 2 + vGap + maxHPerLayer[i] / 2,
-    );
+    layerCenterY.push(layerCenterY[i - 1] + rowStep);
   }
 
   // Compute positions
@@ -200,17 +298,16 @@ export function topoGridLayoutSizedLTR(
 
   const { sortedLayers } = buildLayerAssignment(ids, edges);
 
-  // Precompute max width per layer (column) for horizontal accumulation
-  const maxWPerLayer = sortedLayers.map(([, layerIds]) =>
-    Math.max(...layerIds.map((id) => nodeById.get(id)!.w))
-  );
+  // Use a uniform column width (global max) so all layer pairs have the same
+  // center-to-center distance — visually consistent spacing regardless of
+  // individual node widths (e.g. port nodes with short labels).
+  const uniformW = Math.max(...nodes.map((n) => n.w));
 
-  // Centre x of each layer, accumulated from left
+  // Centre x of each layer, with uniform center-to-center spacing
   const layerCenterX: number[] = [0];
+  const colStep = uniformW + hGap;
   for (let i = 1; i < sortedLayers.length; i++) {
-    layerCenterX.push(
-      layerCenterX[i - 1] + maxWPerLayer[i - 1] / 2 + hGap + maxWPerLayer[i] / 2,
-    );
+    layerCenterX.push(layerCenterX[i - 1] + colStep);
   }
 
   // Compute positions

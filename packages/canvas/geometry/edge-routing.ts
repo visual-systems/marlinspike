@@ -94,8 +94,12 @@ export function segmentIntersectsBox(
     clip(dy, y1 - p1.y);
 }
 
-/** Check if a point is inside a box (used to skip src/dst node obstacles). */
-function pointInBox(p: Point, box: Box, margin = 5): boolean {
+/**
+ * Check if a point is near a box (used to skip src/dst node obstacles).
+ * Margin must cover the surface-point offset (up to 15px from node surface)
+ * so that source/destination nodes are correctly excluded from obstacles.
+ */
+function pointNearBox(p: Point, box: Box, margin = 20): boolean {
   return Math.abs(p.x - box.x) < box.w / 2 + margin &&
     Math.abs(p.y - box.y) < box.h / 2 + margin;
 }
@@ -109,7 +113,7 @@ function relevantObstacles(
   dst: Point,
   obstacles: ReadonlyArray<Box>,
 ): Box[] {
-  return obstacles.filter((b) => !pointInBox(src, b) && !pointInBox(dst, b));
+  return obstacles.filter((b) => !pointNearBox(src, b) && !pointNearBox(dst, b));
 }
 
 /** Check if any segment of a polyline hits an obstacle. */
@@ -233,12 +237,52 @@ function findTwoSegPath(
  * Strategy: for each blocking obstacle, try detouring around it by going
  * perpendicular first, then parallel, then back to the destination angle.
  */
+/**
+ * Compute step distances to try for detour paths around obstacles.
+ * Includes distances that would clear each blocking obstacle's bounding box
+ * along the given direction, plus fixed fractions of the forward projection.
+ */
+function detourSteps(
+  src: Point,
+  dir: Point,
+  obstacles: Box[],
+  forwardDot: number,
+): number[] {
+  const steps: number[] = [];
+
+  // Fixed fractions of the forward projection
+  for (const frac of [0.3, 0.5, 0.7]) {
+    const s = forwardDot * frac;
+    if (s > 5) steps.push(s);
+  }
+
+  // Distances to clear each obstacle's bounding box along this direction
+  for (const obs of obstacles) {
+    // Project the obstacle extents onto the direction
+    const hw = obs.w / 2 + 10; // margin to clear the box
+    const hh = obs.h / 2 + 10;
+    const cx = obs.x - src.x;
+    const cy = obs.y - src.y;
+    const proj = cx * dir.x + cy * dir.y;
+
+    // Clear-before and clear-after distances
+    const extentProj = Math.abs(hw * dir.x) + Math.abs(hh * dir.y);
+    const before = proj - extentProj;
+    const after = proj + extentProj;
+    if (before > 5) steps.push(before);
+    if (after > 5) steps.push(after);
+  }
+
+  return steps.sort((a, b) => a - b);
+}
+
 function findDetourPath(
   src: Point,
   dst: Point,
   dirs: Point[],
   obstacles: Box[],
   cornerRadius: number,
+  maxLen: number,
 ): EdgeRoutingResult | null {
   const vx = dst.x - src.x;
   const vy = dst.y - src.y;
@@ -246,18 +290,18 @@ function findDetourPath(
   // For each allowed direction as the initial segment:
   // try going in that direction, then routing the remainder as a 2-seg path
   let bestResult: EdgeRoutingResult | null = null;
-  let bestLen = Infinity;
+  let bestLen = maxLen;
 
   for (const d1 of dirs) {
-    // Try different distances along d1
     const dot = d1.x * vx + d1.y * vy;
-    if (dot < 0) continue; // don't go away from destination
 
-    // Try stepping in d1 direction enough to clear obstacles
-    for (const stepFrac of [0.3, 0.5, 0.7]) {
-      const step = dot * stepFrac;
-      if (step < 5) continue;
+    // Allow perpendicular directions (dot ≈ 0) as well as forward ones
+    // Only skip directions going strongly backward
+    if (dot < -5) continue;
 
+    const steps = detourSteps(src, d1, obstacles, Math.max(dot, 0));
+
+    for (const step of steps) {
       const wp: Point = { x: src.x + d1.x * step, y: src.y + d1.y * step };
 
       // Find 2-seg path from waypoint to dst
@@ -447,7 +491,10 @@ export function angularRoute(
     if (obs.length > 0) {
       const pathPoints = [src, { x: mx, y: my }, dst];
       if (pathHitsObstacle(pathPoints, obs)) {
-        const detour = findDetourPath(src, dst, dirs, obs, cornerRadius);
+        // Cap detour length to 1.5x the direct 2-seg path — prefer clipping
+        // an obstacle over routing wildly off-course.
+        const maxDetour = (a + b) * 1.5;
+        const detour = findDetourPath(src, dst, dirs, obs, cornerRadius, maxDetour);
         if (detour) return detour;
       }
     }

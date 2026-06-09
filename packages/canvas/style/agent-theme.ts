@@ -8,6 +8,9 @@
 import type { CanvasEdge, CanvasNode, CanvasPort } from "../scene/types.ts";
 import type { CanvasTheme, EdgeStyle, NodeStyle, PortStyle } from "./types.ts";
 import { containerFill } from "./color.ts";
+import { angularRouter, MANHATTAN_ANGLES } from "../geometry/edge-routing.ts";
+
+const route = angularRouter(MANHATTAN_ANGLES, 0);
 
 const BACKGROUND = "#1a1a1a";
 
@@ -30,6 +33,12 @@ function resolveNodeStyle(node: CanvasNode<unknown>): NodeStyle {
   } else if (dashed) {
     fill = "#222222";
     stroke = "#383838";
+  } else if (node.portDirection === "in") {
+    fill = "#1a2030";
+    stroke = "#4488ff";
+  } else if (node.portDirection === "out") {
+    fill = "#2a2a2a";
+    stroke = "#ffffff";
   }
 
   const labelFill = selected ? "#e0e0e0" : highlighted ? "#88aaff" : "#888888";
@@ -72,6 +81,7 @@ export const agentTheme: CanvasTheme<unknown> = {
   edge: resolveEdgeStyle,
   port: resolvePortStyle,
   background: BACKGROUND,
+  edgeRouter: route,
   decorations: (node) => {
     if (!node.containerLabel) return [];
     return [{

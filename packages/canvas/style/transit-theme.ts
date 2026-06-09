@@ -7,7 +7,8 @@
  */
 
 import type { CanvasEdge, CanvasNode, CanvasPort } from "../scene/types.ts";
-import type { CanvasTheme, EdgeStyle, NodeStyle, PortStyle } from "./types.ts";
+import type { CanvasTheme, EdgeStyle, PortStyle, ResolvedNode } from "./types.ts";
+import { CIRCLE_GEOMETRY, RECT_GEOMETRY } from "../geometry/node-geometry.ts";
 import { angularRouter, TRANSIT_ANGLES } from "../geometry/edge-routing.ts";
 import { containerFill } from "./color.ts";
 
@@ -30,9 +31,10 @@ function nodeColour(id: string): string {
   return LINE_COLOURS[colourIndex(id)];
 }
 
-function resolveNodeStyle(node: CanvasNode<unknown>): NodeStyle {
+function resolveNode(node: CanvasNode<unknown>): ResolvedNode {
   const base = nodeColour(node.id);
   const { selected, highlighted } = node;
+  const isPort = node.portDirection != null;
 
   let fill = base;
   let stroke = "#3a3530";
@@ -48,15 +50,23 @@ function resolveNodeStyle(node: CanvasNode<unknown>): NodeStyle {
   } else if (highlighted) {
     stroke = "#1a1510";
     strokeWidth = 2;
+  } else if (isPort) {
+    // Port nodes: white fill with direction-coloured stroke (terminal/interchange style)
+    fill = "#ffffff";
+    stroke = node.portDirection === "in" ? "#2060c0" : "#d03030";
+    strokeWidth = 2;
   }
 
   return {
-    fill,
-    stroke,
-    strokeWidth,
-    labelFill: "#3a3530",
-    labelFont: "sans-serif",
-    labelSize: 9,
+    geometry: (isPort || node.containerLabel != null) ? RECT_GEOMETRY : CIRCLE_GEOMETRY,
+    style: {
+      fill,
+      stroke,
+      strokeWidth,
+      labelFill: "#3a3530",
+      labelFont: "sans-serif",
+      labelSize: 9,
+    },
   };
 }
 
@@ -91,7 +101,8 @@ function darken(hex: string): string {
 
 /** Transit theme: metro-map style, bold coloured lines, circle station dots. */
 export const transitTheme: CanvasTheme<unknown> = {
-  node: resolveNodeStyle,
+  node: (n) => resolveNode(n).style,
+  resolveNode,
   edge: resolveEdgeStyle,
   port: resolvePortStyle,
   background: BACKGROUND,

@@ -34,6 +34,12 @@ function resolveNode(node: CanvasNode<unknown>): ResolvedNode {
   } else if (dashed) {
     fill = "#a08828";
     stroke = "#145a4a";
+  } else if (node.portDirection === "in") {
+    fill = "#2a6a5a";
+    stroke = "#30a090";
+  } else if (node.portDirection === "out") {
+    fill = "#d4b040";
+    stroke = "#e0c060";
   }
 
   const labelFill = selected ? "#d0ffd0" : highlighted ? "#ffe080" : "#1a3a2a";

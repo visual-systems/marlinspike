@@ -349,6 +349,7 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
           selected: isSelected,
           highlighted: isHighlighted,
           dashed: isDashed,
+          portDirection: isInput ? "in" : isOutput ? "out" : undefined,
           state: baseState,
         });
       }

@@ -44,6 +44,8 @@ export interface CanvasNode<S = unknown> {
   depth?: number;
   /** Label for container backgrounds — used by themes for container label rendering. */
   containerLabel?: string;
+  /** Port direction when this node represents a port-child pinned to a container boundary. */
+  portDirection?: "in" | "out";
   /** Consumer-specific state, typed per-consumer. Opaque to the package. */
   state?: S;
   /**

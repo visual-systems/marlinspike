@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
-import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
+import { useEffect, useMemo, useRef, useState } from "@hono/hono/jsx/dom";
 import {
   collectSubtreeIds,
   type Edge,
@@ -446,11 +446,13 @@ function stepLayout(
     // Re-pin port children after centering — centerNodes shifts all nodes,
     // which moves port children away from their correct boundary positions.
     const repinned = pinPortNodes(centered, node, next, treeNodes);
-    // Compute bounding box from interior (non-anchored) nodes only. When all
-    // children are port-pinned, use empty list → fallback box. Port children
-    // derive positions FROM parent dimensions; they must not determine them.
-    const interior = repinned.filter((n) => !n.anchor);
-    const bb = boundingBox(interior.length > 0 ? interior : [], GROUP_PADDING);
+    // Deterministic topo layouts: compute BB from centered (pre-repinning)
+    // nodes so port columns contribute their natural topo-grid spacing.
+    // Force layouts: use interior-only (port positions depend on container size).
+    const bbNodes = algorithm.preservesPositions
+      ? repinned.filter((n) => !n.anchor)
+      : centered.map((n) => (n.anchor ? { ...n, anchor: undefined } : n));
+    const bb = boundingBox(bbNodes.length > 0 ? bbNodes : [], GROUP_PADDING);
     next.set(nodeId, { nodes: repinned, settled, ticks: level.ticks + 1, bbox: bb });
 
     // Ensure expanded groups with ports are large enough for port children.
@@ -1550,15 +1552,21 @@ export function Canvas(
     showRefEdges: ws.canvasShowRefEdges,
     styleOverrides: styleOverridesMap,
   };
-  const canvasScene = buildCanvasScene(sceneOpts);
+  // Memoize scene building and rendering — these are expensive and must NOT
+  // recompute on view (zoom/pan) changes. Only recompute when the actual scene
+  // inputs change (layout, workspace state, interaction state, theme).
   const activeTheme = resolveTheme(ws.canvasThemeId);
-  const renderRoot: RenderGroup = renderScene(canvasScene, activeTheme);
+  const { canvasScene, renderRoot, baseSvgContent } = useMemo(() => {
+    const scene = buildCanvasScene(sceneOpts);
+    const root: RenderGroup = renderScene(scene, activeTheme);
+    const [svg] = renderWith(svgRenderer, root);
+    return { canvasScene: scene, renderRoot: root, baseSvgContent: svg };
+  }, [ws, layout, mode, edgeDraw, hoveredNodeId, diagnostics, highlightEntityIds]);
 
-  // Append ghost edge (UI-layer, changes every mouse move)
+  // Ghost edge is cheap (one path) — compute inline, render as separate SVG group
   const ghost = ghostEdgePrimitive(mode, edgeDraw, mouseCanvas);
-  if (ghost) renderRoot.children.push(ghost);
+  const ghostSvg = ghost ? renderWith(svgRenderer, ghost)[0] : "";
 
-  const [svgContent] = renderWith(svgRenderer, renderRoot);
   // Update refs so event handlers can access current values
   renderRootRef.current = renderRoot;
   sceneRef.current = canvasScene;
@@ -1591,8 +1599,10 @@ export function Canvas(
         <g
           transform={`translate(${view.tx}, ${view.ty}) scale(${view.scale})`}
           style="pointer-events:none;"
-          dangerouslySetInnerHTML={{ __html: svgContent }}
-        />
+        >
+          <g dangerouslySetInnerHTML={{ __html: baseSvgContent }} />
+          {ghostSvg && <g dangerouslySetInnerHTML={{ __html: ghostSvg }} />}
+        </g>
       </svg>
 
       {/* Top-right bar: canvas-wide controls + breadcrumb */}
