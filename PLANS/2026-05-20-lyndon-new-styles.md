@@ -129,6 +129,31 @@ Like `marlinTheme`, they use only universal `CanvasNode` fields (`selected`, `hi
 - [x] 4.2 Document angular routing in README (edge routing section)
 - [x] 4.3 Update plan file with progress
 
+### Phase 4.5 — Cross-theme consistency fixes (completed in-branch)
+
+- [x] 4.5.1 Promote `portDirection` to universal `CanvasNode` field in `packages/canvas/scene/types.ts`
+- [x] 4.5.2 All 6 themes style port-child nodes by direction (not just classic)
+- [x] 4.5.3 Transit theme uses RECT geometry for port nodes (interchange metaphor) and containers
+- [x] 4.5.4 Edge routing detour cap (1.5x direct path) to prevent wild detours
+- [x] 4.5.5 Zoom performance fix — memoize scene building, separate ghost edge rendering
+- [x] 4.5.6 Port gap uniformity — algorithm-aware bounding box replaces `portPadding` hack
+
+### Phase 5 — Marlinspike theme factory
+
+Currently only the classic theme uses `MarlinNodeState` for domain-aware styling (errors,
+warnings, hover, edge-draw, refs, candidates, etc.). The other 5 themes are `CanvasTheme<unknown>`
+and lose all domain feedback when selected. The theme IS the domain translation layer — all
+Marlinspike themes should be `CanvasTheme<MarlinNodeState>`.
+
+- [x] 5A. Define `MarlinThemePalette` interface — `src/ui/lib/marlin-theme-palette.ts`
+- [x] 5B. Implement `createMarlinTheme(palette)` factory — `src/ui/lib/marlin-theme-factory.ts`
+- [x] 5C. Define 6 palette constants — `src/ui/lib/marlin-palettes.ts`
+- [x] 5D. Wire factory-created themes into `THEME_MAP` in `canvas.tsx`
+- [x] 5E. classic-theme.ts is now dead code (unreferenced); kept for reference
+- [x] 5F. CI green (596 tests pass), all themes now domain-aware
+
+See Claude plan file for detailed design.
+
 ## Open Questions
 
 - **Colour rotation in transit theme** — use node ID hash for deterministic colour assignment

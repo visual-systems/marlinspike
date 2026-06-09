@@ -411,9 +411,3 @@ export function buildCanvasScene(opts: BuildSceneOptions): CanvasScene<MarlinNod
 
   return { nodes: allNodes, edges: allEdges };
 }
-
-// ---------------------------------------------------------------------------
-// Theme — re-export from classic-theme.ts
-// ---------------------------------------------------------------------------
-
-export { classicTheme as marlinIdeTheme } from "./classic-theme.ts";

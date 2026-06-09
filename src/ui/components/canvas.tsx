@@ -25,17 +25,7 @@ import { Dropdown } from "./dropdown.tsx";
 import { SmallBtn } from "./widgets.tsx";
 import { type BBox, boundingBox, centerNodes, type ForceNode } from "@marlinspike/layout";
 import { rectPortPositions } from "@marlinspike/layout";
-import {
-  agentTheme,
-  containerFlowTheme,
-  hitTest,
-  marlinTheme,
-  renderScene,
-  renderWith,
-  shenzhenTheme,
-  svgRenderer,
-  transitTheme,
-} from "@marlinspike/canvas";
+import { hitTest, renderScene, renderWith, svgRenderer } from "@marlinspike/canvas";
 import type {
   CanvasNode,
   CanvasScene,
@@ -47,11 +37,18 @@ import {
   buildCanvasScene,
   type BuildSceneOptions,
   type CanvasInteractionState,
-  marlinIdeTheme,
   type MarlinNodeState,
 } from "../lib/canvas-adapter.ts";
 import type { CanvasThemeId } from "../workspace.ts";
-import { CLASSIC_CONSTANTS } from "../lib/classic-theme.ts";
+import { createMarlinTheme } from "../lib/marlin-theme-factory.ts";
+import {
+  AGENT_PALETTE,
+  CLASSIC_PALETTE,
+  CONTAINER_FLOW_PALETTE,
+  MARLIN_PALETTE,
+  SHENZHEN_PALETTE,
+  TRANSIT_PALETTE,
+} from "../lib/marlin-palettes.ts";
 import {
   createFIELD,
   createJANK,
@@ -71,18 +68,17 @@ import {
 // Theme resolver
 // ---------------------------------------------------------------------------
 
-// deno-lint-ignore no-explicit-any
-const THEME_MAP: Record<CanvasThemeId, CanvasTheme<any>> = {
-  classic: marlinIdeTheme,
-  marlin: marlinTheme,
-  containerFlow: containerFlowTheme,
-  shenzhen: shenzhenTheme,
-  transit: transitTheme,
-  agent: agentTheme,
+const THEME_MAP: Record<CanvasThemeId, CanvasTheme<MarlinNodeState>> = {
+  classic: createMarlinTheme(CLASSIC_PALETTE),
+  marlin: createMarlinTheme(MARLIN_PALETTE),
+  containerFlow: createMarlinTheme(CONTAINER_FLOW_PALETTE),
+  shenzhen: createMarlinTheme(SHENZHEN_PALETTE),
+  transit: createMarlinTheme(TRANSIT_PALETTE),
+  agent: createMarlinTheme(AGENT_PALETTE),
 };
 
 function resolveTheme(id: CanvasThemeId): CanvasTheme<MarlinNodeState> {
-  return (THEME_MAP[id] ?? marlinIdeTheme) as CanvasTheme<MarlinNodeState>;
+  return THEME_MAP[id] ?? THEME_MAP.classic;
 }
 
 const THEME_ITEMS: { value: string; label: string }[] = [
@@ -106,14 +102,14 @@ type CanvasMode = "select" | "add-node" | "add-edge";
 // ---------------------------------------------------------------------------
 
 /** Radius of collapsed leaf/composite nodes (circles) */
-const LEAF_R = CLASSIC_CONSTANTS.leafRadius;
+const LEAF_R = CLASSIC_PALETTE.constants!.leafRadius;
 /** Force-body diameter (used for repulsion body sizing) */
 const LEAF_W = LEAF_R * 2;
 const LEAF_H = LEAF_R * 2;
 /** Padding inside expanded group bounding boxes */
-const GROUP_PADDING = CLASSIC_CONSTANTS.groupPadding;
+const GROUP_PADDING = CLASSIC_PALETTE.constants!.groupPadding;
 /** Height of the label strip at the top of an expanded group rect */
-const LABEL_H = CLASSIC_CONSTANTS.labelH;
+const LABEL_H = CLASSIC_PALETTE.constants!.labelH;
 const DRAG_THRESHOLD_SQ = 16; // 4px
 
 // ---------------------------------------------------------------------------
