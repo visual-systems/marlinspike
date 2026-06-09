@@ -36,6 +36,10 @@ export interface EdgeStyle {
   opacity?: number;
   /** Endpoint decoration at destination. Default "arrow". */
   endCap?: "arrow" | "dot" | "none";
+  /** Outline/halo stroke color drawn behind the main edge for contrast against busy backgrounds. */
+  outlineStroke?: string;
+  /** Outline total width (should be larger than strokeWidth to create a visible halo). */
+  outlineWidth?: number;
 }
 
 /** Visual properties for rendering a port dot. */

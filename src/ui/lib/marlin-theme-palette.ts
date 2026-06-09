@@ -95,6 +95,8 @@ export interface MarlinThemePalette {
     labelSize: number;
     /** Default end cap for normal edges. */
     endCap?: "arrow" | "dot" | "none";
+    /** Optional edge outline/halo for contrast against busy backgrounds. */
+    outline?: { stroke: string; width: number };
   };
 
   /** Ref indicator text color. */

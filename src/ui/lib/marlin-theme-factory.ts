@@ -180,6 +180,8 @@ export function createMarlinTheme(palette: MarlinThemePalette): CanvasTheme<Marl
       labelFont: palette.edges.labelFont,
       labelSize: palette.edges.labelSize,
       endCap: palette.edges.endCap,
+      outlineStroke: palette.edges.outline?.stroke,
+      outlineWidth: palette.edges.outline ? strokeWidth + palette.edges.outline.width : undefined,
     };
   }
 

@@ -437,6 +437,7 @@ export const TRANSIT_PALETTE: MarlinThemePalette = {
     labelFont: SANS,
     labelSize: 10,
     endCap: "none",
+    outline: { stroke: "#e8e4dc", width: 3 },
   },
   refIndicatorFill: "#6a6560",
   refLabelFill: "#3a3530",
