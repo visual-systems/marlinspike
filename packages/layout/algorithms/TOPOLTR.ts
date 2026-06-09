@@ -1,0 +1,36 @@
+// ---------------------------------------------------------------------------
+// TOPOLTR — deterministic topological grid layout (left-to-right)
+// ---------------------------------------------------------------------------
+
+import { topoGridLayoutLTR, topoGridLayoutSizedLTR } from "../topo-grid.ts";
+import type { LayoutAlgorithm } from "../types.ts";
+
+export interface TopoltrConfig {
+  /** Horizontal spacing between layers (columns) */
+  hSpacing: number;
+  /** Vertical spacing between node centres within a layer */
+  vSpacing: number;
+}
+
+export const DEFAULT_TOPOLTR_CONFIG: TopoltrConfig = {
+  hSpacing: 160,
+  vSpacing: 130,
+};
+
+export function createTOPOLTR(config: TopoltrConfig): LayoutAlgorithm {
+  return {
+    id: "TOPOLTR",
+    name: "TOPOLTR",
+    preservesPositions: false,
+    initNodes(ids, edges, leafW, leafH, _defaults) {
+      return topoGridLayoutLTR(ids, edges, leafW, leafH, config.hSpacing, config.vSpacing);
+    },
+    tick(nodes, edges, _ticks) {
+      const next = topoGridLayoutSizedLTR(nodes, edges, config.hSpacing, config.vSpacing);
+      const settled = next.every(
+        (n, i) => Math.abs(n.x - nodes[i].x) < 0.5 && Math.abs(n.y - nodes[i].y) < 0.5,
+      );
+      return { nodes: next, settled };
+    },
+  };
+}

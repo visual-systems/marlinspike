@@ -5,16 +5,15 @@
 // Replaces point-mass Coulomb repulsion (JANK) with SDF-based forces:
 //   - Circle SDF for square/collapsed nodes (leaves render as circles)
 //   - Rectangle SDF for expanded composite bounding boxes
-//   - Line SDF for edge-clearance repulsion
 //   - Virtual bounding circles for inter-component cohesion
 //
-// Geometry primitives (sdfOf, surfaceToSurface, sdfGradient, lineSdfDist)
-// are provided by @marlinspike/canvas. ForceNode structurally satisfies
-// SdfShape, so no casts are needed.
+// Geometry primitives (sdfOf, surfaceToSurface, sdfGradient) are provided
+// by @marlinspike/canvas. ForceNode structurally satisfies SdfShape, so no
+// casts are needed.
 // ---------------------------------------------------------------------------
 
 import type { ForceEdge, ForceNode } from "./types.ts";
-import { lineSdfDist, sdfGradient, sdfOf, surfaceToSurface } from "@marlinspike/canvas";
+import { sdfGradient, sdfOf, surfaceToSurface } from "@marlinspike/canvas";
 
 // ---------------------------------------------------------------------------
 // Config — physics parameters for tickSdfLevel
@@ -35,11 +34,6 @@ export interface SdfPhysicsConfig {
   springK: number;
   /** Spring natural rest length in surface-to-surface px (not center-to-center) */
   springRestLength: number;
-  // Line SDF (node-from-edge clearance)
-  /** Minimum clearance distance from node surface to non-incident edges (px) */
-  edgeClearance: number;
-  /** Repulsion strength for node-from-edge forces (0 = disabled) */
-  edgeRepulsionK: number;
   // Inter-component cohesion
   /** Repulsion strength for virtual bounding circle inter-component forces */
   componentRepulsionK: number;
@@ -167,8 +161,6 @@ export function tickSdfLevel(
     sdfGradientEps,
     springK,
     springRestLength,
-    edgeClearance,
-    edgeRepulsionK,
     componentRepulsionK,
     damping,
     maxVelocity: maxV,
@@ -228,47 +220,6 @@ export function tickSdfLevel(
     if (!b.pinned) {
       b.vx -= nx * force;
       b.vy -= ny * force;
-    }
-  }
-
-  // Line SDF — push nodes away from non-incident edges.
-  // Reaction forces are applied back to the edge endpoints to satisfy Newton's
-  // 3rd law. Without this, the net impulse on the system is non-zero each tick,
-  // injecting angular momentum that causes slow rotation of the layout.
-  if (edgeRepulsionK > 0) {
-    for (const e of edges) {
-      const ea = map.get(e.a);
-      const eb = map.get(e.b);
-      if (!ea || !eb) continue;
-      for (const id of ids) {
-        if (id === e.a || id === e.b) continue;
-        const n = map.get(id)!;
-        const d = lineSdfDist(n.x, n.y, ea.x, ea.y, eb.x, eb.y);
-        if (d >= edgeClearance) continue;
-        // Closest-point parameter t ∈ [0,1]: t=0 → force lands on ea, t=1 → eb
-        const dx = eb.x - ea.x;
-        const dy = eb.y - ea.y;
-        const lenSq = dx * dx + dy * dy;
-        const edgeT = lenSq < 1e-9
-          ? 0.5
-          : Math.max(0, Math.min(1, ((n.x - ea.x) * dx + (n.y - ea.y) * dy) / lenSq));
-        const falloff = 1 - d / edgeClearance;
-        const mag = edgeRepulsionK * falloff;
-        const [gx, gy] = lineSdfGrad(n.x, n.y, ea.x, ea.y, eb.x, eb.y);
-        if (!n.pinned) {
-          n.vx += gx * mag;
-          n.vy += gy * mag;
-        }
-        // Equal and opposite reaction on edge endpoints (weighted by t)
-        if (!ea.pinned) {
-          ea.vx -= gx * mag * (1 - edgeT);
-          ea.vy -= gy * mag * (1 - edgeT);
-        }
-        if (!eb.pinned) {
-          eb.vx -= gx * mag * edgeT;
-          eb.vy -= gy * mag * edgeT;
-        }
-      }
     }
   }
 

@@ -196,6 +196,30 @@ const myTheme: CanvasTheme<{ role: string }> = {
 };
 ```
 
+## Edge routing
+
+Themes can provide an `edgeRouter` callback to override the default straight/arc edge paths. The
+`angularRouter` factory creates routers that constrain edges to allowed travel angles:
+
+```typescript
+import { angularRouter, MANHATTAN_ANGLES, TRANSIT_ANGLES } from "@marlinspike/canvas";
+
+// Manhattan: horizontal and vertical segments only (sharp corners)
+const manhattan = angularRouter(MANHATTAN_ANGLES, 0);
+
+// Transit: horizontal, vertical, and 45-degree diagonals (rounded corners)
+const transit = angularRouter(TRANSIT_ANGLES, 8);
+
+// Use in a theme
+const myTheme: CanvasTheme = {
+  // ...resolvers...
+  edgeRouter: manhattan,
+};
+```
+
+The angle set is specified as half-angles — each theta produces two travel directions (theta and
+theta + pi). `[0, pi/2]` gives four cardinal directions; `[0, pi/4, pi/2]` adds two diagonals.
+
 ## Relationship to Marlinspike
 
 This is the rendering layer for Marlinspike's graph canvas. The IDE builds a
@@ -275,10 +299,19 @@ The layout package computes positions; this package renders them. See the
 
 `hitTest`, `PointerHandler`, `InteractionHint`, `CanvasInteraction`
 
-### Bundled theme
+### Edge routing
 
-`marlinTheme` — a simple dark theme suitable for demos and tests. Used as default when no theme is
-passed to `renderScene`.
+`angularRoute`, `angularRouter`, `MANHATTAN_ANGLES`, `TRANSIT_ANGLES`, `EdgeRoutingResult`
+
+### Bundled themes
+
+| Theme                | Description                                                                                    |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| `marlinTheme`        | Dark palette, default when no theme passed to `renderScene`                                    |
+| `containerFlowTheme` | Dark navy, teal strokes, amber highlights, rectangular nodes, manhattan routing                |
+| `shenzhenTheme`      | Circuit-board aesthetic, golden-yellow fills, teal traces, monospace labels, manhattan routing |
+| `transitTheme`       | Light paper background, bold coloured station dots, transit-angle routing with rounded corners |
+| `agentTheme`         | Clean minimal dark, circular nodes, thin gray edges, straight routing                          |
 
 ## Live demos
 

@@ -40,6 +40,12 @@ export interface CanvasNode<S = unknown> {
   selected?: boolean;
   highlighted?: boolean;
   dashed?: boolean;
+  /** Nesting depth for hierarchical layouts. 0 = root level. */
+  depth?: number;
+  /** Label for container backgrounds — used by themes for container label rendering. */
+  containerLabel?: string;
+  /** Port direction when this node represents a port-child pinned to a container boundary. */
+  portDirection?: "in" | "out";
   /** Consumer-specific state, typed per-consumer. Opaque to the package. */
   state?: S;
   /**

@@ -5,6 +5,14 @@
 
 import type { AlgorithmId } from "@marlinspike/layout";
 
+export type CanvasThemeId =
+  | "classic"
+  | "marlin"
+  | "containerFlow"
+  | "shenzhen"
+  | "transit"
+  | "agent";
+
 // Re-export graph types and functions from @marlinspike/graph
 export type { Edge, Port, TreeNode } from "@marlinspike/graph";
 export {
@@ -130,6 +138,7 @@ export interface WorkspaceState {
   canvasNodePositions: Record<string, { x: number; y: number; pinned?: boolean }>;
   canvasSelected: Selection;
   canvasAlgorithm: AlgorithmId;
+  canvasThemeId: CanvasThemeId;
   /** When true, overlay virtual edges showing ref→target relationships. */
   canvasShowRefEdges: boolean;
   /** Live unsaved edits keyed by entity ID. Shared between code panels and inspector. */
@@ -500,6 +509,7 @@ export function freshProfileState(
     canvasNodePositions: {},
     canvasSelected: null,
     canvasAlgorithm: "SDF",
+    canvasThemeId: "classic",
     canvasShowRefEdges: false,
     entityDrafts: {},
     connectedGraphs: [{
@@ -526,6 +536,7 @@ type ProfileStateFields = Pick<
   | "canvasNodePositions"
   | "canvasSelected"
   | "canvasAlgorithm"
+  | "canvasThemeId"
   | "canvasShowRefEdges"
   | "entityDrafts"
   | "connectedGraphs"
@@ -634,6 +645,7 @@ export async function loadProfileState(
     canvasNodePositions: canvasState?.canvasNodePositions ?? {},
     canvasSelected: canvasState?.canvasSelected ?? null,
     canvasAlgorithm: canvasState?.canvasAlgorithm ?? "SDF",
+    canvasThemeId: (canvasState?.canvasThemeId as CanvasThemeId | undefined) ?? "classic",
     canvasShowRefEdges: canvasState?.canvasShowRefEdges ?? false,
     entityDrafts: canvasState?.entityDrafts ?? {},
     connectedGraphs: [{
@@ -857,6 +869,7 @@ export function loadState(): WorkspaceState {
           | undefined) ?? {},
         canvasSelected: null,
         canvasAlgorithm: (parsed.canvasAlgorithm as AlgorithmId | undefined) ?? "SDF",
+        canvasThemeId: (parsed.canvasThemeId as CanvasThemeId | undefined) ?? "classic",
         canvasShowRefEdges: (parsed.canvasShowRefEdges as boolean | undefined) ?? false,
         entityDrafts: {},
       });
@@ -1087,6 +1100,7 @@ export async function loadStateAsync(): Promise<WorkspaceState> {
       canvasNodePositions: canvasState?.canvasNodePositions ?? {},
       canvasSelected: canvasState?.canvasSelected ?? null,
       canvasAlgorithm: canvasState?.canvasAlgorithm ?? ds.canvasAlgorithm,
+      canvasThemeId: (canvasState?.canvasThemeId as CanvasThemeId | undefined) ?? ds.canvasThemeId,
       canvasShowRefEdges: canvasState?.canvasShowRefEdges ?? false,
       entityDrafts: canvasState?.entityDrafts ?? {},
     });
@@ -1187,6 +1201,7 @@ async function migrateToSurreal(state: WorkspaceState, databaseId: string): Prom
     canvasNodePositions: state.canvasNodePositions,
     canvasSelected: state.canvasSelected,
     canvasAlgorithm: state.canvasAlgorithm,
+    canvasThemeId: state.canvasThemeId,
     canvasShowRefEdges: state.canvasShowRefEdges,
     entityDrafts: state.entityDrafts,
   });

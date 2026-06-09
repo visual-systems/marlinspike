@@ -3,8 +3,9 @@
 // ---------------------------------------------------------------------------
 
 import type { LayoutAlgorithm } from "../types.ts";
-import { initPositions, maxVelocity } from "../force.ts";
+import { maxVelocity } from "../force.ts";
 import { applyAnchorForces, type SdfPhysicsConfig, tickSdfLevel } from "../sdf-force.ts";
+import { topoGridLayout } from "../topo-grid.ts";
 
 // ---------------------------------------------------------------------------
 // SdfConfig
@@ -34,9 +35,6 @@ export const DEFAULT_SDF_CONFIG: SdfConfig = {
   // springRestLength is surface-to-surface, not center-to-center.
   // For leaf circles (r=26 each), C2C 160 ≈ S2S 108. Use 80 for a compact layout.
   springRestLength: 80,
-  // Line SDF
-  edgeClearance: 30,
-  edgeRepulsionK: 5,
   // Inter-component cohesion
   componentRepulsionK: 20,
   // Integration
@@ -62,8 +60,15 @@ export function createSDF(config: SdfConfig): LayoutAlgorithm {
     id: "SDF",
     name: "SDF",
     preservesPositions: true,
-    initNodes(ids, _edges, leafW, leafH, defaults) {
-      return initPositions(ids, config.spread, defaults, leafW, leafH);
+    initNodes(ids, edges, leafW, leafH, defaults) {
+      // Seed from topological grid so nodes start in roughly the right
+      // topological order, avoiding local minima in the force simulation.
+      const topo = topoGridLayout(ids, edges, leafW, leafH, config.spread * 1.5, config.spread);
+      return topo.map((n) => {
+        const d = defaults.get(n.id);
+        if (d) return { ...n, x: d.x, y: d.y, pinned: d.pinned ?? false };
+        return n;
+      });
     },
     tick(nodes, edges, ticks) {
       const afterSdf = tickSdfLevel(nodes, edges, config);

@@ -58,6 +58,7 @@ function wsWithFocus(focusId: string | null): WorkspaceState {
     canvasNodePositions: {},
     canvasSelected: null,
     canvasAlgorithm: "SDF",
+    canvasThemeId: "classic",
     canvasShowRefEdges: false,
     entityDrafts: {},
   };
@@ -204,6 +205,7 @@ function wsWith(treeNodes: TreeNode[], focusId: string | null): WorkspaceState {
     canvasNodePositions: {},
     canvasSelected: null,
     canvasAlgorithm: "SDF",
+    canvasThemeId: "classic",
     canvasShowRefEdges: false,
     entityDrafts: {},
   };

@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 /** @jsxImportSource @hono/hono/jsx/dom */
-import { useEffect, useRef, useState } from "@hono/hono/jsx/dom";
+import { useEffect, useMemo, useRef, useState } from "@hono/hono/jsx/dom";
 import {
   collectSubtreeIds,
   type Edge,
@@ -26,21 +26,36 @@ import { SmallBtn } from "./widgets.tsx";
 import { type BBox, boundingBox, centerNodes, type ForceNode } from "@marlinspike/layout";
 import { rectPortPositions } from "@marlinspike/layout";
 import { hitTest, renderScene, renderWith, svgRenderer } from "@marlinspike/canvas";
-import type { CanvasNode, CanvasScene, RenderGroup, RenderPrimitive } from "@marlinspike/canvas";
+import type {
+  CanvasNode,
+  CanvasScene,
+  CanvasTheme,
+  RenderGroup,
+  RenderPrimitive,
+} from "@marlinspike/canvas";
 import {
   buildCanvasScene,
   type BuildSceneOptions,
   type CanvasInteractionState,
-  marlinIdeTheme,
   type MarlinNodeState,
 } from "../lib/canvas-adapter.ts";
-import { CLASSIC_CONSTANTS } from "../lib/classic-theme.ts";
+import type { CanvasThemeId } from "../workspace.ts";
+import { createMarlinTheme } from "../lib/marlin-theme-factory.ts";
+import {
+  AGENT_PALETTE,
+  CLASSIC_PALETTE,
+  CONTAINER_FLOW_PALETTE,
+  MARLIN_PALETTE,
+  SHENZHEN_PALETTE,
+  TRANSIT_PALETTE,
+} from "../lib/marlin-palettes.ts";
 import {
   createFIELD,
   createJANK,
   createPORT,
   createSDF,
   createTOPOGRID,
+  createTOPOLTR,
   DEFAULT_FIELD_CONFIG,
   DEFAULT_JANK_CONFIG,
   DEFAULT_PORT_CONFIG,
@@ -48,6 +63,32 @@ import {
   type LayoutAlgorithm,
   topoCharge,
 } from "@marlinspike/layout";
+
+// ---------------------------------------------------------------------------
+// Theme resolver
+// ---------------------------------------------------------------------------
+
+const THEME_MAP: Record<CanvasThemeId, CanvasTheme<MarlinNodeState>> = {
+  classic: createMarlinTheme(CLASSIC_PALETTE),
+  marlin: createMarlinTheme(MARLIN_PALETTE),
+  containerFlow: createMarlinTheme(CONTAINER_FLOW_PALETTE),
+  shenzhen: createMarlinTheme(SHENZHEN_PALETTE),
+  transit: createMarlinTheme(TRANSIT_PALETTE),
+  agent: createMarlinTheme(AGENT_PALETTE),
+};
+
+function resolveTheme(id: CanvasThemeId): CanvasTheme<MarlinNodeState> {
+  return THEME_MAP[id] ?? THEME_MAP.classic;
+}
+
+const THEME_ITEMS: { value: string; label: string }[] = [
+  { value: "classic", label: "Classic" },
+  { value: "marlin", label: "Marlin" },
+  { value: "containerFlow", label: "Container Flow" },
+  { value: "shenzhen", label: "Shenzhen" },
+  { value: "transit", label: "Transit" },
+  { value: "agent", label: "Agent" },
+];
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,14 +102,14 @@ type CanvasMode = "select" | "add-node" | "add-edge";
 // ---------------------------------------------------------------------------
 
 /** Radius of collapsed leaf/composite nodes (circles) */
-const LEAF_R = CLASSIC_CONSTANTS.leafRadius;
+const LEAF_R = CLASSIC_PALETTE.constants!.leafRadius;
 /** Force-body diameter (used for repulsion body sizing) */
 const LEAF_W = LEAF_R * 2;
 const LEAF_H = LEAF_R * 2;
 /** Padding inside expanded group bounding boxes */
-const GROUP_PADDING = CLASSIC_CONSTANTS.groupPadding;
+const GROUP_PADDING = CLASSIC_PALETTE.constants!.groupPadding;
 /** Height of the label strip at the top of an expanded group rect */
-const LABEL_H = CLASSIC_CONSTANTS.labelH;
+const LABEL_H = CLASSIC_PALETTE.constants!.labelH;
 const DRAG_THRESHOLD_SQ = 16; // 4px
 
 // ---------------------------------------------------------------------------
@@ -401,11 +442,13 @@ function stepLayout(
     // Re-pin port children after centering — centerNodes shifts all nodes,
     // which moves port children away from their correct boundary positions.
     const repinned = pinPortNodes(centered, node, next, treeNodes);
-    // Compute bounding box from interior (non-anchored) nodes only. When all
-    // children are port-pinned, use empty list → fallback box. Port children
-    // derive positions FROM parent dimensions; they must not determine them.
-    const interior = repinned.filter((n) => !n.anchor);
-    const bb = boundingBox(interior.length > 0 ? interior : [], GROUP_PADDING);
+    // Deterministic topo layouts: compute BB from centered (pre-repinning)
+    // nodes so port columns contribute their natural topo-grid spacing.
+    // Force layouts: use interior-only (port positions depend on container size).
+    const bbNodes = algorithm.preservesPositions
+      ? repinned.filter((n) => !n.anchor)
+      : centered.map((n) => (n.anchor ? { ...n, anchor: undefined } : n));
+    const bb = boundingBox(bbNodes.length > 0 ? bbNodes : [], GROUP_PADDING);
     next.set(nodeId, { nodes: repinned, settled, ticks: level.ticks + 1, bbox: bb });
 
     // Ensure expanded groups with ports are large enough for port children.
@@ -467,6 +510,7 @@ function stepLayout(
 
 function makeCanvasAlgorithm(id: WorkspaceState["canvasAlgorithm"]): LayoutAlgorithm {
   if (id === "TOPOGRID") return createTOPOGRID({ hSpacing: 160, vSpacing: 130 });
+  if (id === "TOPOLTR") return createTOPOLTR({ hSpacing: 160, vSpacing: 130 });
   if (id === "SDF") return createSDF(DEFAULT_SDF_CONFIG);
   if (id === "FIELD") return createFIELD(DEFAULT_FIELD_CONFIG);
   if (id === "PORT") return createPORT(DEFAULT_PORT_CONFIG);
@@ -756,6 +800,7 @@ function CanvasTopBar(
         items={[
           { value: "JANK", label: "JANK" },
           { value: "TOPOGRID", label: "TOPOGRID" },
+          { value: "TOPOLTR", label: "TOPOLTR" },
           { value: "SDF", label: "SDF" },
           { value: "FIELD", label: "FIELD" },
           { value: "PORT", label: "PORT" },
@@ -765,6 +810,16 @@ function CanvasTopBar(
         onSelect={(id) =>
           update((s) => ({ ...s, canvasAlgorithm: id as WorkspaceState["canvasAlgorithm"] }))}
         width={90}
+      />
+      <div style={dividerStyle} />
+      <span style="color:#404466; user-select:none;">theme</span>
+      <Dropdown
+        items={THEME_ITEMS}
+        selectedValue={ws.canvasThemeId}
+        placeholder="theme"
+        onSelect={(id) =>
+          update((s) => ({ ...s, canvasThemeId: id as WorkspaceState["canvasThemeId"] }))}
+        width={120}
       />
       <ToggleDropdown ws={ws} update={update} />
       <span
@@ -1493,14 +1548,21 @@ export function Canvas(
     showRefEdges: ws.canvasShowRefEdges,
     styleOverrides: styleOverridesMap,
   };
-  const canvasScene = buildCanvasScene(sceneOpts);
-  const renderRoot: RenderGroup = renderScene(canvasScene, marlinIdeTheme);
+  // Memoize scene building and rendering — these are expensive and must NOT
+  // recompute on view (zoom/pan) changes. Only recompute when the actual scene
+  // inputs change (layout, workspace state, interaction state, theme).
+  const activeTheme = resolveTheme(ws.canvasThemeId);
+  const { canvasScene, renderRoot, baseSvgContent } = useMemo(() => {
+    const scene = buildCanvasScene(sceneOpts);
+    const root: RenderGroup = renderScene(scene, activeTheme);
+    const [svg] = renderWith(svgRenderer, root);
+    return { canvasScene: scene, renderRoot: root, baseSvgContent: svg };
+  }, [ws, layout, mode, edgeDraw, hoveredNodeId, diagnostics, highlightEntityIds]);
 
-  // Append ghost edge (UI-layer, changes every mouse move)
+  // Ghost edge is cheap (one path) — compute inline, render as separate SVG group
   const ghost = ghostEdgePrimitive(mode, edgeDraw, mouseCanvas);
-  if (ghost) renderRoot.children.push(ghost);
+  const ghostSvg = ghost ? renderWith(svgRenderer, ghost)[0] : "";
 
-  const [svgContent] = renderWith(svgRenderer, renderRoot);
   // Update refs so event handlers can access current values
   renderRootRef.current = renderRoot;
   sceneRef.current = canvasScene;
@@ -1510,7 +1572,9 @@ export function Canvas(
       ref={containerRef}
       // deno-lint-ignore no-explicit-any
       tabIndex={0 as any}
-      style="position:absolute; inset:0; overflow:hidden; background:#0d0d1e; outline:none; touch-action:none;"
+      style={`position:absolute; inset:0; overflow:hidden; background:${
+        activeTheme.background ?? "#0d0d1e"
+      }; outline:none; touch-action:none;`}
       onKeyDown={(e: KeyboardEvent) => {
         if (e.key === "Escape") {
           setMode("select");
@@ -1531,8 +1595,10 @@ export function Canvas(
         <g
           transform={`translate(${view.tx}, ${view.ty}) scale(${view.scale})`}
           style="pointer-events:none;"
-          dangerouslySetInnerHTML={{ __html: svgContent }}
-        />
+        >
+          <g dangerouslySetInnerHTML={{ __html: baseSvgContent }} />
+          {ghostSvg && <g dangerouslySetInnerHTML={{ __html: ghostSvg }} />}
+        </g>
       </svg>
 
       {/* Top-right bar: canvas-wide controls + breadcrumb */}

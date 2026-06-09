@@ -217,6 +217,7 @@ async function syncCanvasState(
     canvasNodePositions: next.canvasNodePositions,
     canvasSelected: next.canvasSelected,
     canvasAlgorithm: next.canvasAlgorithm,
+    canvasThemeId: next.canvasThemeId,
     entityDrafts: next.entityDrafts,
   };
   await saveCanvasState(canvas);

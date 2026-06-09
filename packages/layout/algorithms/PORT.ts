@@ -32,7 +32,6 @@ export const DEFAULT_PORT_CONFIG: PortConfig = {
   restGap: 20,
   springRestLength: 140,
   maxRepulsionDist: 100,
-  edgeClearance: 50,
   // Stronger field to maintain LTR ordering against SDF forces
   fieldStrength: 5,
   // LTR topogrid spacing

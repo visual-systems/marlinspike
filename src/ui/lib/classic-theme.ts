@@ -142,8 +142,8 @@ function resolveNodeStyle(node: CanvasNode<MarlinNodeState>): ResolvedNode {
     if (s.isEdgeSource || s.isHovered) fill = "#1e2a4a";
     else if (s.hasError) fill = "#2a1a1a";
     else if (selected) fill = "#1e2a4a";
-    else if (s.isInput) fill = "#101828";
-    else if (s.isOutput) fill = "#181410";
+    else if (node.portDirection === "in") fill = "#101828";
+    else if (node.portDirection === "out") fill = "#181410";
 
     if (s.isEdgeSource) stroke = "#5070c0";
     else if (s.isHovered) stroke = "#6080e0";
@@ -152,8 +152,8 @@ function resolveNodeStyle(node: CanvasNode<MarlinNodeState>): ResolvedNode {
     else if (selected) stroke = "#5070c0";
     else if (s.isCandidate) stroke = "#3050a0";
     else if (highlighted) stroke = "#50c070";
-    else if (s.isInput) stroke = "#4080c0";
-    else if (s.isOutput) stroke = "#c06040";
+    else if (node.portDirection === "in") stroke = "#4080c0";
+    else if (node.portDirection === "out") stroke = "#c06040";
 
     if (s.isEdgeSource || selected || s.isHovered) strokeWidth = 2;
     else if (s.isCandidate || s.hasError || s.hasWarning || highlighted) strokeWidth = 1.5;

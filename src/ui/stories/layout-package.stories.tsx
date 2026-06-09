@@ -20,7 +20,6 @@ import {
   type ForceEdge,
   type ForceNode,
   type LayoutAlgorithm,
-  lineClosestPoint,
   maxVelocity,
   rectPortPositions,
   topoCharge,
@@ -31,7 +30,6 @@ import {
   CIRCLE_GEOMETRY,
   hitTest,
   isCircleShape,
-  lineSdfDist,
   marlinTheme,
   renderScene,
   renderWith,
@@ -1105,8 +1103,6 @@ interface SdfAlgConfig {
   sdfGradientEps: number;
   springK: number;
   springRestLength: number;
-  edgeClearance: number;
-  edgeRepulsionK: number;
   componentRepulsionK: number;
   damping: number;
   maxVelocity: number;
@@ -1130,8 +1126,6 @@ interface FieldAlgConfig {
   sdfGradientEps: number;
   springK: number;
   springRestLength: number;
-  edgeClearance: number;
-  edgeRepulsionK: number;
   componentRepulsionK: number;
   damping: number;
   maxVelocity: number;
@@ -1155,8 +1149,6 @@ interface PortAlgConfig {
   sdfGradientEps: number;
   springK: number;
   springRestLength: number;
-  edgeClearance: number;
-  edgeRepulsionK: number;
   componentRepulsionK: number;
   damping: number;
   maxVelocity: number;
@@ -1208,8 +1200,6 @@ const DEFAULT_SDF_STORY: SdfAlgConfig = {
   sdfGradientEps: DEFAULT_SDF_CONFIG.sdfGradientEps,
   springK: DEFAULT_SDF_CONFIG.springK,
   springRestLength: DEFAULT_SDF_CONFIG.springRestLength,
-  edgeClearance: DEFAULT_SDF_CONFIG.edgeClearance,
-  edgeRepulsionK: DEFAULT_SDF_CONFIG.edgeRepulsionK,
   componentRepulsionK: DEFAULT_SDF_CONFIG.componentRepulsionK,
   damping: DEFAULT_SDF_CONFIG.damping,
   maxVelocity: DEFAULT_SDF_CONFIG.maxVelocity,
@@ -1231,8 +1221,6 @@ const DEFAULT_FIELD_STORY: FieldAlgConfig = {
   sdfGradientEps: DEFAULT_FIELD_CONFIG.sdfGradientEps,
   springK: DEFAULT_FIELD_CONFIG.springK,
   springRestLength: DEFAULT_FIELD_CONFIG.springRestLength,
-  edgeClearance: DEFAULT_FIELD_CONFIG.edgeClearance,
-  edgeRepulsionK: DEFAULT_FIELD_CONFIG.edgeRepulsionK,
   componentRepulsionK: DEFAULT_FIELD_CONFIG.componentRepulsionK,
   damping: DEFAULT_FIELD_CONFIG.damping,
   maxVelocity: DEFAULT_FIELD_CONFIG.maxVelocity,
@@ -1256,8 +1244,6 @@ const DEFAULT_PORT_STORY: PortAlgConfig = {
   sdfGradientEps: DEFAULT_PORT_CONFIG.sdfGradientEps,
   springK: DEFAULT_PORT_CONFIG.springK,
   springRestLength: DEFAULT_PORT_CONFIG.springRestLength,
-  edgeClearance: DEFAULT_PORT_CONFIG.edgeClearance,
-  edgeRepulsionK: DEFAULT_PORT_CONFIG.edgeRepulsionK,
   componentRepulsionK: DEFAULT_PORT_CONFIG.componentRepulsionK,
   damping: DEFAULT_PORT_CONFIG.damping,
   maxVelocity: DEFAULT_PORT_CONFIG.maxVelocity,
@@ -1775,51 +1761,6 @@ function tickSim(
 // Recursive SVG rendering
 // ---------------------------------------------------------------------------
 
-/**
- * Compute bent edge path points for an edge (a→b) avoiding non-incident nodes.
- * Returns [ax, ay, bx, by] for a straight line, or [ax, ay, mx, my, bx, by]
- * when a node obstructs the edge within clearance.
- */
-function bentEdgePoints(
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-  levelNodes: Array<{ id: string; x: number; y: number }>,
-  edgeNodeIds: [string, string],
-  clearance: number,
-): number[] {
-  let bestDist = clearance;
-  let bestT = 0.5;
-  let bestGx = 0;
-  let bestGy = 0;
-  let bestBendMag = 0;
-
-  for (const n of levelNodes) {
-    if (n.id === edgeNodeIds[0] || n.id === edgeNodeIds[1]) continue;
-    const d = lineSdfDist(n.x, n.y, ax, ay, bx, by);
-    if (d >= clearance || d >= bestDist) continue;
-    const { t, cx, cy } = lineClosestPoint(n.x, n.y, ax, ay, bx, by);
-    // Perpendicular direction away from n, at the closest point on segment
-    const ex = cx - n.x;
-    const ey = cy - n.y;
-    const len = Math.sqrt(ex * ex + ey * ey);
-    if (len < 1e-9) continue;
-    bestDist = d;
-    bestT = t;
-    bestGx = ex / len;
-    bestGy = ey / len;
-    bestBendMag = clearance - d;
-  }
-
-  if (bestBendMag === 0) return [ax, ay, bx, by];
-
-  // Bend point at parameter bestT along the segment, displaced perpendicularly
-  const bendX = ax + bestT * (bx - ax) + bestGx * bestBendMag;
-  const bendY = ay + bestT * (by - ay) + bestGy * bestBendMag;
-  return [ax, ay, bendX, bendY, bx, by];
-}
-
 function renderLevel(
   parentId: string,
   nodes: NodeDef[],
@@ -1894,32 +1835,6 @@ function renderLevel(
         const a = posMap.get(e.a);
         const b = posMap.get(e.b);
         if (!a || !b) return null;
-        if (
-          (cfg.id === "SDF" || cfg.id === "FIELD" || cfg.id === "PORT") && cfg.edgeClearance > 0
-        ) {
-          const pts = bentEdgePoints(
-            a.x,
-            a.y,
-            b.x,
-            b.y,
-            level.nodes,
-            [e.a, e.b],
-            cfg.edgeClearance,
-          );
-          const pointsStr = pts.reduce(
-            (acc, v, i) => acc + (i % 2 === 0 ? (i === 0 ? "" : " ") + v : "," + v),
-            "",
-          );
-          return (
-            <polyline
-              key={e.id}
-              points={pointsStr}
-              fill="none"
-              stroke="#2a2a50"
-              stroke-width={invScale}
-            />
-          );
-        }
         return (
           <line
             key={e.id}

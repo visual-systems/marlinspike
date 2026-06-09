@@ -22,6 +22,8 @@ export interface EdgeRenderData {
   r: number;
   sweep: number;
   arcC?: Point;
+  /** Override arrival direction (unit vector) from custom edge router. */
+  endTangent?: Point;
 }
 
 /**
@@ -115,6 +117,18 @@ export function renderEdge<S>(data: EdgeRenderData, theme: CanvasTheme<S>): Rend
   const children: RenderPrimitive[] = [];
   const isInteractive = data.edge.interactive !== false;
 
+  // Outline/halo (drawn first so it sits behind everything)
+  if (style.outlineStroke && style.outlineWidth && style.outlineWidth > 0) {
+    children.push({
+      kind: "path",
+      d: data.d,
+      stroke: style.outlineStroke,
+      strokeWidth: style.outlineWidth,
+      fill: "none",
+      opacity: style.opacity,
+    });
+  }
+
   // Transparent hit area (only for interactive edges)
   if (isInteractive) {
     children.push({
@@ -141,7 +155,7 @@ export function renderEdge<S>(data: EdgeRenderData, theme: CanvasTheme<S>): Rend
   // Endpoint decoration
   const endCap = style.endCap ?? "arrow";
   if (endCap === "arrow") {
-    const tangent = pathEndTangent(
+    const tangent = data.endTangent ?? pathEndTangent(
       data.src,
       data.dst,
       data.isArc,

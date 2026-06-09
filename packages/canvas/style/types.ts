@@ -10,6 +10,8 @@
  */
 
 import type { CanvasEdge, CanvasNode, CanvasPort } from "../scene/types.ts";
+import type { EdgeRoutingResult } from "../geometry/edge-routing.ts";
+import type { Point } from "../geometry/surface.ts";
 
 /** Visual properties for rendering a node. */
 export interface NodeStyle {
@@ -34,6 +36,10 @@ export interface EdgeStyle {
   opacity?: number;
   /** Endpoint decoration at destination. Default "arrow". */
   endCap?: "arrow" | "dot" | "none";
+  /** Outline/halo stroke color drawn behind the main edge for contrast against busy backgrounds. */
+  outlineStroke?: string;
+  /** Outline total width (should be larger than strokeWidth to create a visible halo). */
+  outlineWidth?: number;
 }
 
 /** Visual properties for rendering a port dot. */
@@ -113,4 +119,24 @@ export interface CanvasTheme<S = unknown> {
   resolveNode?: (node: CanvasNode<S>) => ResolvedNode;
   /** Layout constants. When absent, consumers use their own defaults. */
   constants?: ThemeConstants;
+  /**
+   * Custom edge routing. When present, replaces default straight/arc path computation.
+   * Receives surface-clipped endpoints and returns an SVG path with arrival direction.
+   * Optional context provides obstacle bounding boxes and previously routed paths
+   * for obstacle avoidance and co-linearity prevention.
+   */
+  edgeRouter?: (
+    src: Point,
+    dst: Point,
+    edge: CanvasEdge,
+    ctx?: EdgeRoutingContext,
+  ) => EdgeRoutingResult;
+}
+
+/** Context passed to edge routers for obstacle and co-linearity awareness. */
+export interface EdgeRoutingContext {
+  /** Bounding boxes of all nodes in the scene. */
+  obstacles: ReadonlyArray<{ x: number; y: number; w: number; h: number }>;
+  /** Previously routed edge paths (accumulated as edges are processed). */
+  routedPaths: ReadonlyArray<{ src: Point; dst: Point; d: string }>;
 }
